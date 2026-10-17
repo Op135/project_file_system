@@ -1,13 +1,15 @@
 """ECN微信路由、去重和失败重试测试；所有外部发送均使用模拟接口。"""
 
+import copy
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from src.ecn_management_config import ECN_LEVEL_COMPLEX, ECNState, load_ecn_config
+from src.ecn_management_config import ECN_LEVEL_COMPLEX, ECNState, load_ecn_config, ECN_EXECUTION_STAGE_MATERIAL
 from src.modules.ecn import notifications
 from src.modules.ecn.models import get_ecn_template
+from src.permission_catalog import ECN_EXECUTION_PURCHASE_CONFIRM_PERMISSION
 from tests.test_error_management_concurrency import load_isolated_db_storage
 
 
@@ -78,6 +80,86 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
             config=self.settings,
             user_service=self.service,
             storage=self.storage,
+        )
+
+    def configure_same_named_material_nodes(self, *, parallel=False):
+        self.record["workflow"].update(
+            current_state=ECNState.ECN_EXECUTING,
+            current_phase="ECN_EXECUTION_PHASE",
+            scheme_participants={},
+        )
+        self.record["change_items"] = [{
+            "item_id": "M1", "scheme_category": "material", "projects": ["P1"],
+            "change_type": "更换", "traceability_levels": ["供应商"],
+        }]
+        tasks = {
+            key: {
+                "label": "采购", "level": "供应商", "stage_index": stage,
+                "responsible_type": "workflow_users", "responsible_key": "采购",
+                "required_permission_code": ECN_EXECUTION_PURCHASE_CONFIRM_PERMISSION,
+                "users": ["writer"], "confirmed": False,
+            }
+            for key, stage in (("供应商::prepare", 0), ("供应商::verify", 0 if parallel else 1))
+        }
+        self.record["execution_info"] = {
+            "stage": ECN_EXECUTION_STAGE_MATERIAL,
+            "ordinary_confirmations": {}, "erp_confirmation": {"confirmed": True},
+            "material_confirmations": {"M1": {"traceability_tasks": tasks}},
+        }
+        return tasks
+
+    async def test_next_same_named_node_sends_new_notification_immediately(self):
+        tasks = self.configure_same_named_material_nodes()
+        await self.save_record()
+        self.assertEqual(await self.check(), (1, 0))
+        first_message = self.sender.call_args.args[0]
+        self.assertEqual(await self.check(), (0, 0))
+        tasks["供应商::prepare"]["confirmed"] = True
+        await self.save_record()
+        # 模拟正常两轮扫描，不等待24小时；新节点即使文案相同也应提醒。
+        self.assertEqual(await self.check(), (1, 0))
+        self.assertEqual(self.sender.call_args.args[0], first_message)
+        self.assertNotIn("供应商::verify", first_message)
+        self.assertEqual(await self.check(), (0, 0))
+
+    async def test_same_named_parallel_nodes_keep_individual_tokens(self):
+        tasks = self.configure_same_named_material_nodes(parallel=True)
+        details = notifications.pending_task_details(self.record, {"writer": "研发硬件"}, self.service)
+        self.assertEqual(len(details["writer"]), 2)
+        self.assertEqual(details["writer"][0], details["writer"][1])
+        before = notifications.build_personal_task_tokens(self.record, "writer", details["writer"])
+        self.assertEqual(len(before), 2)
+        # 普通字符串重复仍须去重，不受携带内部标识的责任项影响。
+        self.assertEqual(len(notifications.build_personal_task_tokens(self.record, "writer", ["待办", "待办"])), 1)
+        await self.save_record()
+        self.assertEqual(await self.check(), (1, 0))
+        tasks["供应商::prepare"]["confirmed"] = True
+        details = notifications.pending_task_details(self.record, {"writer": "研发硬件"}, self.service)
+        remaining = notifications.build_personal_task_tokens(self.record, "writer", details["writer"])
+        self.assertEqual(len(remaining), 1)
+        self.assertTrue(set(remaining) < set(before))
+        await self.save_record()
+        self.assertEqual(await self.check(), (0, 0))
+
+    async def test_failed_same_named_node_notification_still_obeys_retry_backoff(self):
+        self.configure_same_named_material_nodes()
+        await self.save_record()
+        self.sender.return_value = (False, "temporary failure")
+        self.assertEqual(await self.check(), (0, 1))
+        self.assertEqual(await self.check(), (0, 0))
+        self.sender.assert_awaited_once()
+
+    async def test_same_node_key_in_another_scheme_has_distinct_token(self):
+        self.configure_same_named_material_nodes()
+        spec = {"key": "供应商::prepare", "label": "采购", "level": "供应商"}
+        first = notifications.material_task_summary(self.record, "M1", spec)
+        other = copy.deepcopy(self.record)
+        other["change_items"][0]["item_id"] = "M2"
+        second = notifications.material_task_summary(other, "M2", spec)
+        self.assertEqual(first, second)
+        self.assertNotEqual(
+            notifications.build_personal_task_tokens(self.record, "writer", [first]),
+            notifications.build_personal_task_tokens(other, "writer", [second]),
         )
 
     async def test_system_admin_full_permissions_do_not_create_business_notifications(self):

@@ -61,7 +61,7 @@ class ECNMaterialCodeTests(unittest.IsolatedAsyncioTestCase):
         permission_codes = [
             item["code"]
             for item in self.service.list_permissions()
-            if item.get("module") == "ecn"
+            if str(item.get("code") or "").startswith("ecn.")
         ]
         role_id = self.service.create_security_role(
             code="test.ecn.material.all",

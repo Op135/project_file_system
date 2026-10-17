@@ -30,6 +30,7 @@ from ...ecn_access import (
     build_ecn_access_snapshot,
     can_confirm_ecn_material_spec,
     can_execute_ecn_assistant_stage,
+    can_view_ecn,
     get_active_ecn_actor_role,
     is_ecn_material_spec_orphaned,
     resolve_ecn_material_spec_responsibility,
@@ -61,6 +62,7 @@ from ...ecn_management_config import (
     is_ecn_material_disposition_required,
     is_ecn_material_execution_closed,
     is_ecn_special_execution_complete,
+    can_ecn_assistant_confirm_special,
 )
 from ...issue_workflow_utils import schedule_background_task
 from ...workflow_notifications import send_workflow_completion_cc
@@ -686,7 +688,9 @@ def build_execution_panel(
                 if current_wf.get("current_state") != ECNState.ECN_EXECUTING:
                     blocked["reason"] = "当前ECN已不在执行确认状态。"
                     return db_storage.ATOMIC_NO_UPDATE
-                if actor_role is None or not can_execute_ecn_assistant_stage(
+                if actor_role is None or not can_view_ecn(
+                    actor_role, current_user, user_service=app.state.user_service,
+                ) or not can_execute_ecn_assistant_stage(
                     actor_role,
                     current_user,
                     user_service=app.state.user_service,
@@ -741,165 +745,165 @@ def build_execution_panel(
                 return
 
             ACTIVE_ECN_OVERVIEW_EXECUTIONS.add(execution_ecn_id)
-            notify_execution_safely(
-                event_client,
-                "已开始逐条执行系统内资料方案，请稍候。",
-                "info",
-                4000,
-            )
-            sync_execution_local_data()
-            render_execution_tab()
-            fresh_data = db_storage.get_deep_item(["ecn_management_data", local_data["ecn_id"]])
-            if not isinstance(fresh_data, dict):
-                ACTIVE_ECN_OVERVIEW_EXECUTIONS.discard(execution_ecn_id)
-                notify_execution_safely(event_client, "无法读取待执行ECN数据。", "negative")
-                return
-
             try:
-                async def checkpoint_overview_result(
-                    item_id: str,
-                    item_result: dict,
-                    item_status: str,
-                ) -> None:
-                    checkpoint_state = {"applied": False}
+                notify_execution_safely(
+                    event_client,
+                    "已开始逐条执行系统内资料方案，请稍候。",
+                    "info",
+                    4000,
+                )
+                sync_execution_local_data()
+                render_execution_tab()
+                fresh_data = db_storage.get_deep_item(["ecn_management_data", local_data["ecn_id"]])
+                if not isinstance(fresh_data, dict):
+                    notify_execution_safely(event_client, "无法读取待执行ECN数据。", "negative")
+                    return
 
-                    def save_checkpoint(current_ecn):
-                        if not isinstance(current_ecn, dict):
-                            return db_storage.ATOMIC_NO_UPDATE
-                        execution_info = current_ecn.get("execution_info", {})
-                        if (
-                            not isinstance(execution_info, dict)
-                            or execution_info.get("stage") != ECN_EXECUTION_STAGE_OVERVIEW_RUNNING
-                            or execution_info.get("overview_run_id") != operation_id
-                        ):
-                            return db_storage.ATOMIC_NO_UPDATE
-                        overview_results = execution_info.setdefault("overview_results", {})
-                        if not isinstance(overview_results, dict):
-                            overview_results = {}
-                            execution_info["overview_results"] = overview_results
-                        overview_results[item_id] = copy.deepcopy(item_result)
-                        for current_item in current_ecn.get("change_items", []):
+                try:
+                    async def checkpoint_overview_result(
+                        item_id: str,
+                        item_result: dict,
+                        item_status: str,
+                    ) -> None:
+                        checkpoint_state = {"applied": False}
+
+                        def save_checkpoint(current_ecn):
+                            if not isinstance(current_ecn, dict):
+                                return db_storage.ATOMIC_NO_UPDATE
+                            execution_info = current_ecn.get("execution_info", {})
                             if (
-                                isinstance(current_item, dict)
-                                and str(current_item.get("item_id") or "") == item_id
+                                not isinstance(execution_info, dict)
+                                or execution_info.get("stage") != ECN_EXECUTION_STAGE_OVERVIEW_RUNNING
+                                or execution_info.get("overview_run_id") != operation_id
                             ):
-                                current_item["execute_status"] = item_status
-                                break
-                        checkpoint_state["applied"] = True
-                        return current_ecn
+                                return db_storage.ATOMIC_NO_UPDATE
+                            overview_results = execution_info.setdefault("overview_results", {})
+                            if not isinstance(overview_results, dict):
+                                overview_results = {}
+                                execution_info["overview_results"] = overview_results
+                            overview_results[item_id] = copy.deepcopy(item_result)
+                            for current_item in current_ecn.get("change_items", []):
+                                if (
+                                    isinstance(current_item, dict)
+                                    and str(current_item.get("item_id") or "") == item_id
+                                ):
+                                    current_item["execute_status"] = item_status
+                                    break
+                            checkpoint_state["applied"] = True
+                            return current_ecn
 
-                    saved = await atomic_ecn_deep_update(
-                        ["ecn_management_data", execution_ecn_id],
-                        save_checkpoint,
+                        saved = await atomic_ecn_deep_update(
+                            ["ecn_management_data", execution_ecn_id],
+                            save_checkpoint,
+                        )
+                        if not saved or not checkpoint_state["applied"]:
+                            raise RuntimeError("系统内资料执行进度保存失败")
+
+                    overview_results = await execute_ecn_overview_schemes(
+                        fresh_data,
+                        operation_time,
+                        progress_callback=checkpoint_overview_result,
                     )
-                    if not saved or not checkpoint_state["applied"]:
-                        raise RuntimeError("系统内资料执行进度保存失败")
+                except Exception as exc:
+                    logger.exception("ECN系统内资料批量执行异常：%s", local_data.get("ecn_id"))
+                    checkpointed_data = db_storage.get_deep_item(
+                        ["ecn_management_data", execution_ecn_id]
+                    )
+                    if isinstance(checkpointed_data, dict):
+                        fresh_data = checkpointed_data
+                    overview_results = copy.deepcopy(fresh_data.get("execution_info", {}).get("overview_results", {}))
+                    for result in overview_results.values():
+                        if isinstance(result, dict) and result.get("status") != ECN_EXECUTION_RESULT_SUCCESS:
+                            result["status"] = ECN_EXECUTION_RESULT_FAILED
+                            result["message"] = str(exc)
 
-                overview_results = await execute_ecn_overview_schemes(
-                    fresh_data,
-                    operation_time,
-                    progress_callback=checkpoint_overview_result,
+                executed_item_statuses = {
+                    str(item.get("item_id")): item.get("execute_status")
+                    for item in fresh_data.get("change_items", [])
+                    if isinstance(item, dict) and item.get("item_id")
+                }
+                all_overview_succeeded = all(
+                    isinstance(result, dict) and result.get("status") == ECN_EXECUTION_RESULT_SUCCESS
+                    for result in overview_results.values()
                 )
-            except Exception as exc:
-                logger.exception("ECN系统内资料批量执行异常：%s", local_data.get("ecn_id"))
-                checkpointed_data = db_storage.get_deep_item(
-                    ["ecn_management_data", execution_ecn_id]
-                )
-                if isinstance(checkpointed_data, dict):
-                    fresh_data = checkpointed_data
-                overview_results = copy.deepcopy(fresh_data.get("execution_info", {}).get("overview_results", {}))
-                for result in overview_results.values():
-                    if isinstance(result, dict) and result.get("status") != ECN_EXECUTION_RESULT_SUCCESS:
-                        result["status"] = ECN_EXECUTION_RESULT_FAILED
-                        result["message"] = str(exc)
+                finish_state = {"applied": False}
 
-            executed_item_statuses = {
-                str(item.get("item_id")): item.get("execute_status")
-                for item in fresh_data.get("change_items", [])
-                if isinstance(item, dict) and item.get("item_id")
-            }
-            all_overview_succeeded = all(
-                isinstance(result, dict) and result.get("status") == ECN_EXECUTION_RESULT_SUCCESS
-                for result in overview_results.values()
-            )
-            finish_state = {"applied": False}
-
-            def finish_execution(current_ecn):
-                if not isinstance(current_ecn, dict):
-                    return db_storage.ATOMIC_NO_UPDATE
-                execution_info = current_ecn.setdefault("execution_info", {})
-                if (
-                    execution_info.get("stage") != ECN_EXECUTION_STAGE_OVERVIEW_RUNNING
-                    or execution_info.get("overview_run_id") != operation_id
-                ):
-                    return db_storage.ATOMIC_NO_UPDATE
-                finish_state["applied"] = True
-                execution_info["overview_results"] = copy.deepcopy(overview_results)
-                for item in current_ecn.get("change_items", []):
-                    if isinstance(item, dict) and str(item.get("item_id")) in executed_item_statuses:
-                        item["execute_status"] = executed_item_statuses[str(item.get("item_id"))]
-
-                approval_log = current_ecn.setdefault("approval_log", [])
-                if all_overview_succeeded:
-                    material_confirmations = execution_info.get("material_confirmations", {})
+                def finish_execution(current_ecn):
+                    if not isinstance(current_ecn, dict):
+                        return db_storage.ATOMIC_NO_UPDATE
+                    execution_info = current_ecn.setdefault("execution_info", {})
                     if (
-                        isinstance(material_confirmations, dict) and material_confirmations
-                    ) or not is_ecn_special_execution_complete(execution_info):
-                        execution_info["stage"] = ECN_EXECUTION_STAGE_MATERIAL
-                        action_text = "系统内资料执行完成，继续跟进物料及移交事项"
-                    else:
-                        execution_info["stage"] = ECN_EXECUTION_STAGE_COMPLETED
-                        execution_info["completed_time"] = operation_time
-                        current_ecn.setdefault("workflow", {})["current_state"] = ECNState.CLOSED
-                        current_ecn["workflow"]["pending_roles"] = []
-                        action_text = "系统内资料执行完成，ECN关闭"
-                else:
-                    execution_info["stage"] = ECN_EXECUTION_STAGE_OVERVIEW_FAILED
-                    action_text = "系统内资料执行存在失败项"
-                append_ecn_approval_log_once(
-                    approval_log,
-                    {
-                        "user": current_user,
-                        "role": execution_info.get("overview_started_role") or current_role,
-                        "action": action_text,
-                        "time": operation_time,
-                    },
-                )
-                return current_ecn
+                        execution_info.get("stage") != ECN_EXECUTION_STAGE_OVERVIEW_RUNNING
+                        or execution_info.get("overview_run_id") != operation_id
+                    ):
+                        return db_storage.ATOMIC_NO_UPDATE
+                    finish_state["applied"] = True
+                    execution_info["overview_results"] = copy.deepcopy(overview_results)
+                    for item in current_ecn.get("change_items", []):
+                        if isinstance(item, dict) and str(item.get("item_id")) in executed_item_statuses:
+                            item["execute_status"] = executed_item_statuses[str(item.get("item_id"))]
 
-            try:
-                finished = bool(
-                    await atomic_ecn_deep_update(
-                        ["ecn_management_data", local_data["ecn_id"]],
-                        finish_execution,
+                    approval_log = current_ecn.setdefault("approval_log", [])
+                    if all_overview_succeeded:
+                        material_confirmations = execution_info.get("material_confirmations", {})
+                        if (
+                            isinstance(material_confirmations, dict) and material_confirmations
+                        ) or not is_ecn_special_execution_complete(execution_info):
+                            execution_info["stage"] = ECN_EXECUTION_STAGE_MATERIAL
+                            action_text = "系统内资料执行完成，继续跟进物料及移交事项"
+                        else:
+                            execution_info["stage"] = ECN_EXECUTION_STAGE_COMPLETED
+                            execution_info["completed_time"] = operation_time
+                            current_ecn.setdefault("workflow", {})["current_state"] = ECNState.CLOSED
+                            current_ecn["workflow"]["pending_roles"] = []
+                            action_text = "系统内资料执行完成，ECN关闭"
+                    else:
+                        execution_info["stage"] = ECN_EXECUTION_STAGE_OVERVIEW_FAILED
+                        action_text = "系统内资料执行存在失败项"
+                    append_ecn_approval_log_once(
+                        approval_log,
+                        {
+                            "user": current_user,
+                            "role": execution_info.get("overview_started_role") or current_role,
+                            "action": action_text,
+                            "time": operation_time,
+                        },
                     )
-                    and finish_state["applied"]
-                )
-            except Exception:
-                logger.exception("ECN系统内资料执行结果保存异常：%s", execution_ecn_id)
-                finished = False
+                    return current_ecn
+
+                try:
+                    finished = bool(
+                        await atomic_ecn_deep_update(
+                            ["ecn_management_data", local_data["ecn_id"]],
+                            finish_execution,
+                        )
+                        and finish_state["applied"]
+                    )
+                except Exception:
+                    logger.exception("ECN系统内资料执行结果保存异常：%s", execution_ecn_id)
+                    finished = False
+                sync_execution_local_data()
+                render_execution_tab()
+                if finished and all_overview_succeeded:
+                    notify_execution_safely(
+                        event_client,
+                        "系统内资料方案全部执行成功。",
+                        "positive",
+                    )
+                elif finished:
+                    notify_execution_safely(
+                        event_client,
+                        "存在执行失败项，请查看结果并重试。",
+                        "negative",
+                    )
+                else:
+                    notify_execution_safely(
+                        event_client,
+                        "执行结果保存失败，请刷新后确认。",
+                        "negative",
+                    )
             finally:
                 ACTIVE_ECN_OVERVIEW_EXECUTIONS.discard(execution_ecn_id)
-            sync_execution_local_data()
-            render_execution_tab()
-            if finished and all_overview_succeeded:
-                notify_execution_safely(
-                    event_client,
-                    "系统内资料方案全部执行成功。",
-                    "positive",
-                )
-            elif finished:
-                notify_execution_safely(
-                    event_client,
-                    "存在执行失败项，请查看结果并重试。",
-                    "negative",
-                )
-            else:
-                notify_execution_safely(
-                    event_client,
-                    "执行结果保存失败，请刷新后确认。",
-                    "negative",
-                )
 
         async def request_final_material_confirmation() -> bool:
             with (
@@ -955,6 +959,9 @@ def build_execution_panel(
                 )
                 if actor_role is None:
                     blocked["reason"] = "当前账号已停用或不存在，不能确认执行项。"
+                    return db_storage.ATOMIC_NO_UPDATE
+                if not can_view_ecn(actor_role, current_user, user_service=app.state.user_service):
+                    blocked["reason"] = "当前用户已无ECN查看权限，请关闭详情。"
                     return db_storage.ATOMIC_NO_UPDATE
                 if (
                     current_wf.get("current_state") != ECNState.ECN_EXECUTING
@@ -1378,11 +1385,6 @@ def build_execution_panel(
                                                         ).props("flat dense size=sm color=indigo no-caps")
 
                 item_map = get_execution_change_items()
-                assistant_can_operate = (
-                    stage == ECN_EXECUTION_STAGE_ASSISTANT
-                    and wf.get("current_state") == ECNState.ECN_EXECUTING
-                    and can_execute_assistant
-                )
                 with ui.card().classes("w-full p-0 gap-0 border border-slate-300 shadow-sm overflow-hidden"):
                     with ui.row().classes(
                         "w-full items-center justify-between px-4 py-2.5 bg-slate-300 text-slate-900"
@@ -1456,7 +1458,8 @@ def build_execution_panel(
                                                 and (
                                                     confirmation.get("assignee") == current_user
                                                     if confirmation.get("assignee")
-                                                    else assistant_can_operate
+                                                    else can_execute_assistant
+                                                    and can_ecn_assistant_confirm_special(execution_info, confirmation)
                                                 )
                                             ):
                                                 checkbox.props("disable")
@@ -1582,7 +1585,8 @@ def build_execution_panel(
                                             and (
                                                 erp_confirmation.get("assignee") == current_user
                                                 if erp_confirmation.get("assignee")
-                                                else assistant_can_operate
+                                                else can_execute_assistant
+                                                and can_ecn_assistant_confirm_special(execution_info, erp_confirmation)
                                             )
                                         ):
                                             erp_checkbox.props("disable")

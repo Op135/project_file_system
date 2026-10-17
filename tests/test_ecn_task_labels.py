@@ -55,6 +55,7 @@ def test_material_task_labels_hide_item_and_task_keys():
 
 def test_compact_material_confirmation_label_removes_repeated_responsibility_text():
     missing_sales = {
+        "source_responsible_type": "project_sales",
         "key": "客户/在途::项目销售::RFFM-1009-B",
         "project": "RFFM-1009-B",
         "responsible_type": "hierarchy_users",

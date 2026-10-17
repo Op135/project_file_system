@@ -9,6 +9,7 @@ from ... import (
 from ...ecn_management_config import (
     ECN_DATA_KEY,
     ECN_VERSION_KEY,
+    ECN_EXECUTION_STAGE_OVERVIEW_RUNNING,
 )
 from .editing import (
     ECNConflict,
@@ -99,7 +100,7 @@ async def mutate_record(ecn_id, operation, *, new_record=None, storage=None):
 
 async def delete_record(ecn_id: str, *, username: str, user_service, storage=None) -> tuple[bool, str]:
     """删除单据，并在同一个数据库事务里关闭它遗留的审批待办。"""
-    from ...ecn_access import can_delete_ecn, get_active_ecn_actor_role
+    from ...ecn_access import can_delete_ecn, can_view_ecn, get_active_ecn_actor_role
     from ...ecn_workflow import ECN_WORKFLOW_MODULE
 
     storage = storage or db_storage
@@ -119,11 +120,14 @@ async def delete_record(ecn_id: str, *, username: str, user_service, storage=Non
             if (
                 not isinstance(actor, dict)
                 or actor_role is None
+                or not can_view_ecn(actor_role, username, user_service=user_service)
                 or not can_delete_ecn(actor_role, username, user_service=user_service)
             ):
                 raise ECNConflict("当前用户没有删除ECN单据的权限。")
             if not isinstance(current, dict) or ecn_id not in current:
                 raise ECNConflict("单据已不存在，请刷新列表。")
+            if current[ecn_id].get("execution_info", {}).get("stage") == ECN_EXECUTION_STAGE_OVERVIEW_RUNNING:
+                raise ECNConflict("系统内资料正在执行，不能删除单据；请等待执行结束或恢复中断的执行。")
             updated = copy.deepcopy(current)
             deleted_record = copy.deepcopy(updated[ecn_id])
             updated.pop(ecn_id)

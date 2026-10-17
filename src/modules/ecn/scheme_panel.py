@@ -33,6 +33,7 @@ from ...ecn_access import (
     can_view_ecn_scheme_non_image_file,
 )
 from ...ecn_management_config import (
+    build_ecn_scheme_snapshot,
     ECN_ITEM_STATUS_NEEDS_IMPROVEMENT,
     ECN_ITEM_STATUS_NORMAL,
     ECN_ITEM_STATUS_REVISED_CONFIRMED,
@@ -632,6 +633,7 @@ def build_scheme_panel(
 
                             def open_validation_review_dialog(item: dict) -> None:
                                 report = get_ecn_validation_report(item)
+                                expected_scheme = build_ecn_scheme_snapshot(item)
                                 review_dialog = ui.dialog().props("persistent")
                                 with review_dialog, ui.card().classes("w-[560px] max-w-[94vw] p-5 gap-3"):
                                     ui.label("审批方案验证报告").classes("text-lg font-bold text-blue-950")
@@ -658,6 +660,7 @@ def build_scheme_panel(
                                             str(review_note.value or ""),
                                             current_user,
                                             current_role,
+                                            expected_scheme=expected_scheme,
                                         )
                                         if not result.ok or result.record is None:
                                             ui.notify(result.message, type="warning", multi_line=True)

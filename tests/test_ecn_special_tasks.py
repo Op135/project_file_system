@@ -12,10 +12,12 @@ from src.ecn_management_config import (
     ECNState,
     ECN_EXECUTION_STAGE_ASSISTANT,
     ECN_EXECUTION_STAGE_MATERIAL,
+    ECN_EXECUTION_STAGE_COMPLETED,
     is_ecn_assistant_execution_ready,
     load_ecn_config,
 )
 from src.modules.ecn import notifications
+from src.modules.ecn.execution_review import revoke_execution_confirmation, verify_execution_result
 from src.modules.ecn.special_tasks import update_special_task, finish_if_complete
 from src.modules.ecn.transfer_notifications import send_transfer_cancellations, STATE_KEY
 from src.modules.ecn.list_view import (
@@ -111,6 +113,52 @@ class SpecialTasksTests(unittest.IsolatedAsyncioTestCase):
         await self.storage.set_item("ecn_management_data", {"ECN-test": self.record})
         self.assertTrue((await self.update(confirmed=True)).ok)
         self.assertFalse((await self.update(assignee="writer")).ok)
+
+    async def test_review_reopened_special_and_erp_can_be_reconfirmed_without_reexecution(self):
+        baseline = copy.deepcopy(self.record)
+        for key in ("A", "__erp__"):
+            with self.subTest(key=key):
+                self.record = copy.deepcopy(baseline)
+                self.record["workflow"]["current_state"] = ECNState.CLOSED
+                execution = self.record["execution_info"]
+                execution["stage"] = ECN_EXECUTION_STAGE_COMPLETED
+                execution["ordinary_confirmations"]["A"].update(confirmed=True, user="manager")
+                execution["erp_confirmation"].update(confirmed=True, user="manager")
+                execution["overview_results"] = {"overview-1": {"status": "success"}}
+                await self.storage.set_item("ecn_management_data", {"ECN-test": self.record})
+                target = execution["erp_confirmation"] if key == "__erp__" else execution["ordinary_confirmations"][key]
+                revoked = await revoke_execution_confirmation(
+                    "ECN-test", "special", key, "", copy.deepcopy(target), "仍需补充落实", [],
+                    "writer", "研发硬件", user_service=self.service, storage=self.storage,
+                )
+                self.assertTrue(revoked.ok, revoked.message)
+                assert revoked.record is not None
+                self.record = revoked.record
+                pending = notifications.collect_pending_users(self.record, self.service)
+                self.assertIn("manager", pending)
+                details = notifications.pending_task_details(self.record, pending, self.service)
+                self.assertTrue(any("复核退回，请重新确认" in detail for detail in details["manager"]))
+                target = self.record["execution_info"]["erp_confirmation"] if key == "__erp__" else self.item()
+                stale = copy.deepcopy(target)
+                result = await update_special_task(
+                    "ECN-test", key, copy.deepcopy(target), username="manager", role="研发经理",
+                    service=self.service, confirmed=True, storage=self.storage,
+                )
+                self.assertTrue(result.ok, result.message)
+                assert result.record is not None
+                self.record = result.record
+                self.assertEqual(self.record["workflow"]["current_state"], ECNState.CLOSED)
+                self.assertEqual(self.record["execution_info"]["overview_results"], {"overview-1": {"status": "success"}})
+                self.assertNotIn("manager", notifications.collect_pending_users(self.record, self.service))
+                repeated = await update_special_task(
+                    "ECN-test", key, stale, username="manager", role="研发经理", service=self.service,
+                    confirmed=True, storage=self.storage,
+                )
+                self.assertFalse(repeated.ok)
+                verified = await verify_execution_result(
+                    "ECN-test", "writer", "研发硬件", user_service=self.service, storage=self.storage,
+                )
+                self.assertTrue(verified.ok, verified.message)
 
     async def test_concurrent_reassignments_use_independent_connections(self):
         other = load_isolated_db_storage("special_db_other", self.path)

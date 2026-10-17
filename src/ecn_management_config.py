@@ -1082,6 +1082,20 @@ def is_ecn_special_execution_complete(execution_info: Any) -> bool:
     return all(item.get("confirmed") is True for item in get_ecn_special_confirmations(execution_info).values())
 
 
+def can_ecn_assistant_confirm_special(execution_info: Any, confirmation: Any) -> bool:
+    """未移交事项通常仅第一阶段可处理；复核退回项允许在后续阶段重新确认。"""
+    if not isinstance(execution_info, dict) or not isinstance(confirmation, dict) or confirmation.get("assignee"):
+        return False
+    if execution_info.get("stage") == ECN_EXECUTION_STAGE_ASSISTANT:
+        return True
+    return (
+        execution_info.get("stage") in {ECN_EXECUTION_STAGE_OVERVIEW_FAILED, ECN_EXECUTION_STAGE_MATERIAL}
+        and confirmation.get("confirmed") is not True
+        and isinstance(confirmation.get("review_revocation"), dict)
+        and bool(confirmation["review_revocation"])
+    )
+
+
 def get_ecn_material_execution_specs(
     item: Any,
     material_entry: Any = None,
@@ -1132,6 +1146,9 @@ def get_ecn_material_execution_specs(
                 "responsible_type": "assigned_user"
                 if manual_assignee
                 else responsible_type,
+                "source_responsible_type": str(task.get("responsible_type") or ""),
+                "approval_mode": str(task.get("approval_mode") or "any"),
+                "co_signer": str(task.get("co_signer") or ""),
                 "manual_assignment": bool(manual_assignee),
                 "label": label,
                 "project": str(task.get("project") or ""),

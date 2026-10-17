@@ -276,6 +276,7 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
         if not level_timing:
             return
         level_dialog = ui.dialog().props("persistent")
+        level_baseline = copy.deepcopy(local_data)
         level_state = {"code": get_ecn_level_code(local_data)}
         with level_dialog, ui.card().classes("w-[500px] max-w-[94vw] p-5 gap-3"):
             ui.label("判定 ECN 等级").classes("text-lg font-bold text-blue-950")
@@ -290,7 +291,7 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
             async def submit_level() -> None:
                 result = await set_ecn_level(
                     str(local_data.get("ecn_id") or ""),
-                    copy.deepcopy(local_data),
+                    level_baseline,
                     str(level_state["code"]),
                     level_timing,
                     current_user,

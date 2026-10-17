@@ -13,9 +13,10 @@ from ...ecn_access import (
     can_approve_ecn_validation_report,
     can_designate_ecn_validation_report,
     can_view_ecn_validation_report,
+    can_view_ecn,
     get_active_ecn_actor_role,
 )
-from ...ecn_management_config import ECN_LEVEL_COMPLEX, ECNState, get_ecn_level_code
+from ...ecn_management_config import ECN_LEVEL_COMPLEX, ECNState, get_ecn_level_code, build_ecn_scheme_snapshot
 from .editing import ECNConflict
 from .models import append_ecn_approval_log_once
 from .repository import mutate_record
@@ -66,6 +67,8 @@ async def set_validation_report_required(
         actor_role = get_active_ecn_actor_role(user, role, user_service=service)
         if actor_role is None:
             raise ECNConflict("当前账号已停用或不存在。")
+        if not can_view_ecn(actor_role, user, user_service=service):
+            raise ECNConflict("当前用户已无ECN查看权限，请关闭详情。")
         if not can_designate_ecn_validation_report(actor_role, user, user_service=service):
             raise ECNConflict("当前用户没有指定验证报告的权限。")
         _require_complex_scheming(record)
@@ -123,6 +126,7 @@ async def review_validation_report(
     user: str,
     role: str,
     *,
+    expected_scheme: dict,
     user_service=None,
     storage=None,
 ):
@@ -133,12 +137,16 @@ async def review_validation_report(
         actor_role = get_active_ecn_actor_role(user, role, user_service=service)
         if actor_role is None:
             raise ECNConflict("当前账号已停用或不存在。")
+        if not can_view_ecn(actor_role, user, user_service=service):
+            raise ECNConflict("当前用户已无ECN查看权限，请关闭详情。")
         if not can_view_ecn_validation_report(
             actor_role, user, user_service=service
         ) or not can_approve_ecn_validation_report(actor_role, user, user_service=service):
             raise ECNConflict("当前用户需要同时具备查看和审批验证报告权限。")
         _require_complex_scheming(record)
         item = _find_item(record, item_id)
+        if build_ecn_scheme_snapshot(item) != expected_scheme:
+            raise ECNConflict("方案内容已变化，请重新查看最新方案和验证报告后审批。")
         if item.get("author") == user:
             raise ECNConflict("方案出具人不能审批本人提交的验证报告。")
         current_report = item.get("validation_report", {})

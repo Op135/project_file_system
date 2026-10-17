@@ -13,6 +13,7 @@ from ...ecn_management_config import (
     ECN_EXECUTION_STAGE_OVERVIEW_FAILED,
     get_ecn_special_confirmations,
     is_ecn_special_execution_complete,
+    can_ecn_assistant_confirm_special,
 )
 from .editing import ECNConflict
 from .repository import mutate_record
@@ -109,10 +110,12 @@ async def update_special_task(
             if old:
                 if username != old:
                     raise ECNConflict("仅当前指定接收人可以确认该移交事项。")
-            elif execution.get("stage") != ECN_EXECUTION_STAGE_ASSISTANT or not can_execute_ecn_assistant_stage(
+            elif not can_ecn_assistant_confirm_special(execution, item) or not can_execute_ecn_assistant_stage(
                 actor_role, username, user_service=service
             ):
                 raise ECNConflict("当前用户或阶段不允许确认未移交事项。")
+            if not old and execution.get("stage") != ECN_EXECUTION_STAGE_ASSISTANT and confirmed is not True:
+                raise ECNConflict("后续阶段的复核退回项只能重新确认完成。")
             item.update(confirmed=confirmed, user=username, role=actor_role, time=now)
             if confirmed:
                 item.pop("review_revocation", None)

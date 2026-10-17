@@ -231,6 +231,18 @@ def validate_overview_scheme_dependencies(record: dict) -> None:
                 continue
             source_id = get_pending_overview_anchor_source(state.get("anchor_row_id"))
             if not source_id:
+                if first_col_label and label != first_col_label:
+                    row_id = str(state.get("anchor_row_id") or "")
+                    if not row_id:
+                        raise ECNConflict("新增子参数必须绑定有效的表格基准行。")
+                    for base_item in items:
+                        if not isinstance(base_item, dict) or base_item.get("label") != first_col_label:
+                            continue
+                        base_state = base_item.get("project_states", {}).get(project, {})
+                        old_data = base_state.get("old_data", {})
+                        if (base_state.get("action") == ECN_OVERVIEW_ACTION_DEACTIVATE
+                            and isinstance(old_data, dict) and str(old_data.get("row_id") or "") == row_id):
+                            raise ECNConflict(f"项目 {project} 的基准行已有失效方案，不能继续绑定新增子参数。")
                 continue
             source = item_by_id.get(source_id)
             source_states = source.get("project_states", {}) if isinstance(source, dict) else {}
@@ -250,6 +262,17 @@ def validate_overview_scheme_dependencies(record: dict) -> None:
                     f"方案 {item_id or '（未编号）'} 在项目 {project} 关联的新增基准行已失效，"
                     "请重新选择表格基准行。"
                 )
+
+
+def invalidate_scheme_validation_report(item: dict) -> None:
+    """方案业务内容变化后保留报告附件，但撤销旧内容对应的审批结论。"""
+    report = item.get("validation_report")
+    if not isinstance(report, dict) or report.get("required") is not True:
+        return
+    attachments = report.get("attachments", [])
+    report["status"] = "pending_review" if isinstance(attachments, list) and attachments else "pending_upload"
+    for key in ("reviewed_by", "reviewed_at", "review_note"):
+        report.pop(key, None)
 
 
 def reconcile_removed_scheme_associations(record: dict, user: str) -> set[str]:
@@ -288,6 +311,7 @@ def reconcile_removed_scheme_associations(record: dict, user: str) -> set[str]:
                 removed.setdefault("projects", []).extend(invalid_state_projects)
         if not removed:
             continue
+        invalidate_scheme_validation_report(item)
         previous_notice = item.get("association_change_notice", {})
         previous_notice = previous_notice if isinstance(previous_notice, dict) else {}
         previous_removed = previous_notice.get("removed", {})
@@ -348,13 +372,7 @@ def save_scheme(current: dict, expected: dict, item: dict, original: dict | None
         validation_report = existing.get("validation_report", {})
         if isinstance(validation_report, dict) and validation_report:
             updated["validation_report"] = copy.deepcopy(validation_report)
-            if validation_report.get("required") is True:
-                attachments = validation_report.get("attachments", [])
-                updated["validation_report"]["status"] = (
-                    "pending_review" if isinstance(attachments, list) and attachments else "pending_upload"
-                )
-                for key in ("reviewed_by", "reviewed_at", "review_note"):
-                    updated["validation_report"].pop(key, None)
+            invalidate_scheme_validation_report(updated)
         if updated["rejection_history"]:
             updated["review_status"] = ECN_ITEM_STATUS_NEEDS_IMPROVEMENT
         mark_rejected_scheme_item_revised(updated)

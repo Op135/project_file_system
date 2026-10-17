@@ -1,7 +1,6 @@
 # -*- encoding: utf-8 -*-
 import asyncio
 import copy
-import os
 import uuid
 
 from nicegui import (
@@ -170,6 +169,8 @@ def open_overview_change_dialog(ecn_data, current_user, on_save_callback, edit_i
     expected_item = copy.deepcopy(edit_item)
     new_item_id = str(uuid.uuid4())
     is_edit = edit_item is not None
+    staged_overview_uploads: list[dict] = []
+    upload_state = {"busy": False, "closed": False}
     # 编辑过程必须使用隔离草稿，避免输入框通过双向绑定提前污染已保存方案。
     edit_data = copy.deepcopy(edit_item) if is_edit else {}
 
@@ -992,27 +993,33 @@ def open_overview_change_dialog(ecn_data, current_user, on_save_callback, edit_i
                                     ui.label("上传新文件").classes("text-xs text-gray-500 mb-1")
 
                                     async def handle_upload(e):
-                                        from ...config import FILES_URL_DIR, UPLOADS_DIR
-
-                                        original_filename = e.file.name
-                                        file_type = e.file.content_type
-                                        upload_path = config.get("upload_path", UPLOADS_DIR)
-                                        filepath = f"{upload_path}/{original_filename}"
+                                        if upload_state["busy"]:
+                                            return ui.notify("请等待当前文件上传完成。", type="warning")
+                                        upload_state["busy"] = True
                                         try:
-                                            file_content = await e.file.read()
-                                            os.makedirs(upload_path, exist_ok=True)
-                                            with open(filepath, "wb") as f:
-                                                f.write(file_content)
-                                            sel_state["new_data"]["content"] = original_filename
-                                            sel_state["validated_url"] = f"{FILES_URL_DIR}/{original_filename}"
-                                            sel_state["validated_file_type"] = file_type
+                                            staged = await stage_upload(e.file, current_user)
+                                            if upload_state["closed"]:
+                                                cleanup_staged([staged])
+                                                return
+                                            cleanup_staged(staged_overview_uploads)
+                                            staged_overview_uploads[:] = [staged]
+                                            staged["file_type"] = e.file.content_type
+                                            sel_state["new_data"].clear()
+                                            sel_state["new_data"].update(content=staged["name"], overview_upload=staged)
+                                            sel_state["validated_url"] = ""
+                                            sel_state["validated_file_type"] = e.file.content_type
                                             sel_state["is_valid"] = True
-                                            ui.notify(f"文件 {original_filename} 暂存成功", type="positive")
+                                            ui.notify(f"文件 {staged['name']} 暂存成功，执行前不会修改正式文件", type="positive")
                                         except Exception as ex:
                                             sel_state["is_valid"] = False
                                             ui.notify(f"上传失败: {ex}", type="negative")
+                                        finally:
+                                            upload_state["busy"] = False
 
                                     def handle_upload_removed():
+                                        cleanup_staged(staged_overview_uploads)
+                                        staged_overview_uploads.clear()
+                                        sel_state["new_data"].pop("overview_upload", None)
                                         sel_state["new_data"]["content"] = ""
                                         invalidate_path_validation()
 
@@ -1034,6 +1041,8 @@ def open_overview_change_dialog(ecn_data, current_user, on_save_callback, edit_i
                     build_matrix_and_sync_state()
 
         async def save_item():
+            if upload_state["busy"]:
+                return ui.notify("文件仍在上传，请等待上传完成。", type="warning")
             if not sel_state["projects"]:
                 return ui.notify("请至少选择一个目标项目", type="warning")
             if not sel_state["role"] or not sel_state["label"]:
@@ -1111,6 +1120,12 @@ def open_overview_change_dialog(ecn_data, current_user, on_save_callback, edit_i
             ui.button("取消", on_click=dialog.close).props("flat color=grey")
             ui.button("确认修改" if is_edit else "确认添加", on_click=save_item).props("color=primary")
 
+    def cleanup_overview_uploads():
+        upload_state["closed"] = True
+        cleanup_staged(staged_overview_uploads)
+        staged_overview_uploads.clear()
+
+    dialog.on("close", cleanup_overview_uploads)
     dialog.on("close", dialog.delete)
     dialog.open()
 

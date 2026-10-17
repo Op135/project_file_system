@@ -165,6 +165,7 @@ class ECNResponsibilityEscalationTests(unittest.TestCase):
         spec = self.project_sales_spec([])
         spec.update(
             key="客户/在途::项目销售::P1",
+            source_responsible_type="project_sales",
             responsible_type="sales_supervisor",
             responsible_key="销售主管",
             roles=["销售主管"],

@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from src import overview_storage
 from src.ecn_management_config import ECN_EXECUTION_RESULT_SUCCESS, ECN_OVERVIEW_ACTION_UPDATE
+from src.ecn_management_config import ECNState, ECN_EXECUTION_STAGE_OVERVIEW_RUNNING
 from src.modules.ecn import overview_execution
 from src.pages.ecn_management import (
     append_ecn_approval_log_once,
@@ -76,6 +77,23 @@ class ECNManagementRecordTests(unittest.TestCase):
 
 
 class ECNOverviewExecutionTests(unittest.IsolatedAsyncioTestCase):
+    def child_record(self):
+        return {
+            "ecn_id": "ECN26101703", "execution_info": {"overview_results": {}},
+            "change_items": [{
+                "item_id": "child", "type": "overview_update", "scheme_category": "overview_document",
+                "author": "方案人", "role": "研发", "label": "子参数", "first_col_label": "基准参数",
+                "config_processing_type": "text", "new_data": {"content": "子内容"},
+                "projects": ["P1"], "req_idxs": [], "linked_docs": [], "linked_materials": [],
+                "project_states": {"P1": {"action": "add", "anchor_row_id": "row-1"}},
+            }],
+        }
+
+    async def prepare_execution(self, record):
+        record["workflow"] = {"current_state": ECNState.ECN_EXECUTING}
+        record.setdefault("execution_info", {}).update(stage=ECN_EXECUTION_STAGE_OVERVIEW_RUNNING, overview_run_id="test-run")
+        await self.storage.set_item("ecn_management_data", {record["ecn_id"]: record})
+
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.storage = load_isolated_db_storage(
@@ -87,6 +105,108 @@ class ECNOverviewExecutionTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.storage.close_db()
         self.temp.cleanup()
+
+    async def test_checkpoint_gap_locks_generated_results_and_rejects_changed_retry(self):
+        fake_app = SimpleNamespace(storage=SimpleNamespace(general={"project_req_max_ver": {"P1": "1.0"}}))
+
+        async def fail_checkpoint(*args):
+            raise RuntimeError("simulated checkpoint failure")
+
+        for action in ("add", "update", "deactivate"):
+            with self.subTest(action=action):
+                value = self.child_record()
+                item = value["change_items"][0]
+                item["label"] = "基准参数"
+                item["project_states"]["P1"] = {"action": action, "chip_id": "old"}
+                await self.prepare_execution(value)
+                original = {"基准参数": {"old": {
+                    "id": "old", "content": "original", "row_id": "row-1", "enabled": True,
+                    "select_activ_dic": {"1.0": True}, "timestamp": {},
+                }}}
+                await self.storage.set_item("P1_over_data", original)
+                retry = copy.deepcopy(value)
+                with patch.object(overview_execution, "db_storage", self.storage), patch.object(overview_execution, "app", fake_app):
+                    with self.assertRaisesRegex(RuntimeError, "checkpoint failure"):
+                        await overview_execution.execute_ecn_overview_schemes(value, "2026-10-17 12:00:00", progress_callback=fail_checkpoint)
+                    written = await self.storage.get_fresh_item("P1_over_data", {})
+                    chip_id = "old" if action == "deactivate" else next(key for key in written["基准参数"] if key != "old")
+                    changed = {**written["基准参数"][chip_id], "content": "unreviewed change"}
+                    # 必须通过真实普通写入口验证，不能只断言锁集合。
+                    with self.assertRaisesRegex(overview_storage.OverviewWriteError, "已被ECN方案占用"):
+                        await overview_storage.set_deep_item(["P1_over_data", "基准参数", chip_id], changed, storage=self.storage)
+                    with self.assertRaises(overview_storage.OverviewWriteError):
+                        await overview_storage.del_deep_item(["P1_over_data", "基准参数", chip_id], storage=self.storage)
+                    # 直接改隔离数据库模拟绕过业务门禁；来源标记仍在，不能因此误判成功。
+                    damaged = copy.deepcopy(written)
+                    damaged["基准参数"][chip_id] = changed
+                    await self.storage.set_item("P1_over_data", damaged)
+                    failed = await overview_execution.execute_ecn_overview_schemes(copy.deepcopy(retry), "2026-10-17 12:10:00")
+                    self.assertEqual(failed["child"]["status"], "failed")
+                    self.assertIn("内容或状态已变化", failed["child"]["projects"]["P1"]["message"])
+                    self.assertEqual(await self.storage.get_fresh_item("P1_over_data", {}), damaged)
+                    if action == "update":
+                        damaged_old = copy.deepcopy(written)
+                        damaged_old["基准参数"]["old"]["enabled"] = True
+                        await self.storage.set_item("P1_over_data", damaged_old)
+                        failed_old = await overview_execution.execute_ecn_overview_schemes(copy.deepcopy(retry), "2026-10-17 12:11:00")
+                        self.assertEqual(failed_old["child"]["status"], "failed")
+                    await self.storage.set_item("P1_over_data", written)
+                    succeeded = await overview_execution.execute_ecn_overview_schemes(copy.deepcopy(retry), "2026-10-17 12:12:00")
+                    self.assertEqual(succeeded["child"]["status"], "success")
+                    self.assertEqual(await self.storage.get_fresh_item("P1_over_data", {}), written)
+                # 进度确认完成后解除临时保护，不永久锁住正式新节点。
+                retry["change_items"][0]["execute_status"] = "success"
+                await self.storage.set_item("ecn_management_data", {retry["ecn_id"]: retry})
+                self.assertTrue(await overview_storage.set_deep_item(["P1_over_data", "基准参数", chip_id], changed, storage=self.storage))
+
+    async def test_existing_anchor_is_locked_until_dependent_scheme_finishes(self):
+        value = self.child_record()
+        await self.prepare_execution(value)
+        base = {"id": "base", "row_id": "row-1", "content": "基准", "select_activ_dic": {"1.0": True}}
+        await self.storage.set_item("P1_over_data", {"基准参数": {"base": base}})
+        with self.assertRaisesRegex(overview_storage.OverviewWriteError, "ECN方案占用"):
+            await overview_storage.del_deep_item(["P1_over_data", "基准参数", "base"], storage=self.storage)
+        for changed in ({**base, "content": "改动"}, {**base, "select_activ_dic": {"1.0": False}}):
+            with self.assertRaises(overview_storage.OverviewWriteError):
+                await overview_storage.set_deep_item(["P1_over_data", "基准参数", "base"], changed, storage=self.storage)
+        value["change_items"][0]["execute_status"] = "success"
+        await self.storage.set_item("ecn_management_data", {value["ecn_id"]: value})
+        self.assertTrue(await overview_storage.del_deep_item(["P1_over_data", "基准参数", "base"], storage=self.storage))
+
+    async def test_execution_rejects_missing_or_inactive_existing_anchor(self):
+        fake_app = SimpleNamespace(storage=SimpleNamespace(general={"project_req_max_ver": {"P1": "1.0"}}))
+        for active in (None, False, True):
+            with self.subTest(active=active):
+                value = self.child_record()
+                await self.prepare_execution(value)
+                base = {} if active is None else {"base": {"row_id": "row-1", "select_activ_dic": {"1.0": active}}}
+                await self.storage.set_item("P1_over_data", {"基准参数": base})
+                with patch.object(overview_execution, "db_storage", self.storage), patch.object(overview_execution, "app", fake_app):
+                    results = await overview_execution.execute_ecn_overview_schemes(value, "2026-10-17 12:00:00")
+                self.assertEqual(results["child"]["status"], "success" if active else "failed")
+                stored = await self.storage.get_fresh_item("P1_over_data", {})
+                self.assertEqual(bool(stored.get("子参数")), bool(active))
+
+    async def test_stale_execution_cannot_write_after_deletion_or_batch_change(self):
+        fake_app = SimpleNamespace(storage=SimpleNamespace(general={"project_req_max_ver": {"P1": "1.0"}}))
+        for change in ("deleted", "run", "stage", "scheme"):
+            with self.subTest(change=change):
+                value = self.child_record()
+                value["change_items"][0].update(label="基准参数")
+                await self.prepare_execution(value)
+                snapshot = copy.deepcopy(value)
+                if change == "run":
+                    value["execution_info"]["overview_run_id"] = "new-run"
+                elif change == "stage":
+                    value["execution_info"]["stage"] = "failed"
+                elif change == "scheme":
+                    value["change_items"][0]["new_data"]["content"] = "新版本方案"
+                await self.storage.set_item("ecn_management_data", {} if change == "deleted" else {value["ecn_id"]: value})
+                await self.storage.set_item("P1_over_data", {})
+                with patch.object(overview_execution, "db_storage", self.storage), patch.object(overview_execution, "app", fake_app):
+                    results = await overview_execution.execute_ecn_overview_schemes(snapshot, "2026-10-17 12:00:00")
+                self.assertEqual(results["child"]["status"], "failed")
+                self.assertEqual(await self.storage.get_fresh_item("P1_over_data", {}), {})
 
     async def test_replace_is_atomic_and_retry_is_idempotent(self):
         old_chip = {
@@ -120,6 +240,7 @@ class ECNOverviewExecutionTests(unittest.IsolatedAsyncioTestCase):
         fake_app = SimpleNamespace(
             storage=SimpleNamespace(general={"project_req_max_ver": {"P1": "1.0"}})
         )
+        await self.prepare_execution(record)
         retry_without_checkpoint = copy.deepcopy(record)
 
         with patch.object(overview_execution, "db_storage", self.storage), patch.object(
@@ -215,6 +336,15 @@ class ECNOverviewExecutionTests(unittest.IsolatedAsyncioTestCase):
         fake_app = SimpleNamespace(
             storage=SimpleNamespace(general={"project_req_max_ver": {"P1": "1.0"}})
         )
+        await self.prepare_execution(record)
+
+        async def check_pending_anchor_protection(item_id, _result, _status):
+            if item_id == "base":
+                stored = await self.storage.get_fresh_item("P1_over_data", {})
+                base_id = next(iter(stored["基准参数"]))
+                with self.assertRaisesRegex(overview_storage.OverviewWriteError, "ECN方案占用"):
+                    await overview_storage.del_deep_item(["P1_over_data", "基准参数", base_id], storage=self.storage)
+
         with patch.object(overview_execution, "db_storage", self.storage), patch.object(
             overview_execution,
             "app",
@@ -223,6 +353,7 @@ class ECNOverviewExecutionTests(unittest.IsolatedAsyncioTestCase):
             results = await overview_execution.execute_ecn_overview_schemes(
                 record,
                 "2026-10-17 12:00:00",
+                progress_callback=check_pending_anchor_protection,
             )
 
         self.assertEqual(results["base"]["status"], ECN_EXECUTION_RESULT_SUCCESS)

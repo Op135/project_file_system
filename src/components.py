@@ -1622,7 +1622,7 @@ class FileThumbnail:
             # multi_line=True,
             close_button="✖",
         )
-        ui.download(self.local_file_path)
+        ui.download(self.local_file_path, self.file_neme_suffix)
         if on_complete:
             on_complete()
 
@@ -2456,7 +2456,7 @@ class InteractiveButton:
             resolved_svn_url = str(chip_info.get("url_path") or "")
 
             if chip_info["type"] in ["file", "video"] and chip_info.get("enabled"):
-                filepath = f"{self.upload_path}/{chip_text}"
+                filepath = str(chip_info.get("local_file_path") or f"{self.upload_path}/{chip_text}")
                 file_exists = await async_path_exists(filepath)
                 if file_exists:
                     try:
@@ -2709,8 +2709,8 @@ class InteractiveButton:
 
         elif chip_info.get("type") == "image":
             image_name = chip_info.get("content")
-            image_path = f"{self.upload_path}/{image_name}"
-            url_path = f"{FILES_URL_DIR}/{image_name}"
+            image_path = str(chip_info.get("local_file_path") or f"{self.upload_path}/{image_name}")
+            url_path = str(chip_info.get("url_path") or f"{FILES_URL_DIR}/{image_name}")
             file_exists = await async_path_exists(image_path)
             # 定义前端实际请求的 URL
             display_url = url_path
@@ -4862,7 +4862,7 @@ class InteractiveButton:
             # multi_line=True,
             close_button="✖",
         )
-        ui.download(filepath)
+        ui.download(filepath, file_name)
         if on_complete:
             on_complete()
 
@@ -8213,7 +8213,7 @@ class OverviewTableGroup:
         ui.run_javascript(f'window.open("{url_path.replace(" ", "%20")}", "_blank");')
 
     async def check_and_download(self, filepath, file_name):
-        ui.download(filepath)
+        ui.download(filepath, file_name)
 
     # ================= 完全照搬的视图、下载与网络请求相关 =================
     def play_overview_video(self, url_path):

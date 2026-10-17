@@ -14,7 +14,10 @@ from src.approval_workflow import (
     is_assigned_approver,
     resolve_approval_workflow,
 )
-from src.ecn_management_config import ECN_SCHEME_GROUP_MATERIAL, ECNState
+from src.ecn_management_config import (
+    ECN_SCHEME_GROUP_MATERIAL, ECNState, get_ecn_material_execution_specs, is_ecn_material_execution_closed,
+)
+from src.ecn_access import can_confirm_ecn_material_spec
 from src.ecn_workflow import (
     build_ecn_execution_info_from_workflows,
     finish_ecr_approval,
@@ -731,6 +734,78 @@ class ApprovalWorkflowTests(unittest.TestCase):
         )
         self.assertTrue(malformed_result["warnings"])
 
+    def execution_node(self, key, stage=0, mode="any", usernames=("李四", "王五")):
+        user_ids = []
+        for username in usernames:
+            user = self.service.get_user(username)
+            assert user is not None
+            user_ids.append(user["user_id"])
+        return {
+            "node_key": key, "name": "采购", "responsible_key": "采购", "approval_mode": mode,
+            "required_permission_code": ECN_EXECUTION_PURCHASE_CONFIRM_PERMISSION,
+            "stage_index": stage, "project_scoped": False,
+            "approver": {"strategy": "users", "user_ids": user_ids},
+        }
+
+    def build_material_execution(self, nodes):
+        for position_id in (self.approver_position_id, self.observer_position_id):
+            self.service.set_position_permissions(position_id, ["ecn.view", ECN_EXECUTION_PURCHASE_CONFIRM_PERMISSION])
+        workflow_id, _ = self.service.save_approval_workflow_draft(
+            code="ecn.execution.audit", module="ecn", event="execution_supplier", name="供应商执行回归",
+            priority=1, condition={}, approver={"nodes": nodes},
+            required_permission_code=ECN_EXECUTION_PURCHASE_CONFIRM_PERMISSION,
+            approval_mode="sequential", actor_username="admin",
+        )
+        self.service.publish_approval_workflow(workflow_id, actor_username="admin")
+        item = {"item_id": "M1", "scheme_category": ECN_SCHEME_GROUP_MATERIAL, "change_type": "更换",
+                "traceability_levels": ["供应商"], "projects": ["P1"]}
+        execution = build_ecn_execution_info_from_workflows([item], {}, "张三", user_service=self.service)
+        return item, execution["material_confirmations"]["M1"]
+
+    def test_repeated_responsibility_names_keep_both_execution_nodes(self):
+        item, entry = self.build_material_execution([self.execution_node("prepare"), self.execution_node("verify", stage=1)])
+        tasks = entry["traceability_tasks"]
+        self.assertEqual(set(tasks), {"供应商::prepare", "供应商::verify"})
+        specs = {spec["key"]: spec for spec in get_ecn_material_execution_specs(item, entry)}
+        self.assertTrue(specs["供应商::prepare"]["available"])
+        self.assertFalse(specs["供应商::verify"]["available"])
+        tasks["供应商::prepare"]["confirmed"] = True
+        specs = {spec["key"]: spec for spec in get_ecn_material_execution_specs(item, entry)}
+        self.assertTrue(specs["供应商::verify"]["available"])
+
+    def test_all_execution_node_requires_each_person_before_advancing(self):
+        item, entry = self.build_material_execution([
+            self.execution_node("joint", mode="all"), self.execution_node("finish", stage=1, usernames=("李四",)),
+        ])
+        tasks = entry["traceability_tasks"]
+        first_key, second_key = "供应商::joint::user:李四", "供应商::joint::user:王五"
+        self.assertEqual(set(tasks), {first_key, second_key, "供应商::finish"})
+        specs = {spec["key"]: spec for spec in get_ecn_material_execution_specs(item, entry)}
+        self.assertTrue(can_confirm_ecn_material_spec(specs[first_key], "审批岗位", "李四", user_service=self.service))
+        self.assertFalse(can_confirm_ecn_material_spec(specs[second_key], "审批岗位", "李四", user_service=self.service))
+        tasks[first_key]["confirmed"] = True
+        self.assertFalse(tasks[second_key]["confirmed"])
+        self.assertFalse(is_ecn_material_execution_closed(entry))
+        specs = {spec["key"]: spec for spec in get_ecn_material_execution_specs(item, entry)}
+        self.assertTrue(specs[second_key]["available"])
+        self.assertFalse(specs["供应商::finish"]["available"])
+        tasks[second_key]["confirmed"] = True
+        specs = {spec["key"]: spec for spec in get_ecn_material_execution_specs(item, entry)}
+        self.assertTrue(specs["供应商::finish"]["available"])
+        tasks["供应商::finish"]["confirmed"] = True
+        self.assertTrue(is_ecn_material_execution_closed(entry))
+
+    def test_any_execution_node_preserves_single_responsibility_pool(self):
+        item, entry = self.build_material_execution([self.execution_node("pool")])
+        self.assertEqual(len(entry["traceability_tasks"]), 1)
+        task = entry["traceability_tasks"]["供应商::pool"]
+        self.assertEqual(set(task["users"]), {"李四", "王五"})
+        spec = get_ecn_material_execution_specs(item, entry)[0]
+        self.assertTrue(can_confirm_ecn_material_spec(spec, "审批岗位", "李四", user_service=self.service))
+        self.assertTrue(can_confirm_ecn_material_spec(spec, "其他有权岗位", "王五", user_service=self.service))
+        task.update(confirmed=True, user="李四")
+        self.assertTrue(is_ecn_material_execution_closed(entry))
+
     def test_published_execution_workflow_builds_concrete_task_snapshot(self):
         self.service.set_position_permissions(
             self.approver_position_id,
@@ -781,7 +856,7 @@ class ApprovalWorkflowTests(unittest.TestCase):
             "张三",
             user_service=self.service,
         )
-        task = execution["material_confirmations"]["M1"]["traceability_tasks"]["供应商::采购"]
+        task = execution["material_confirmations"]["M1"]["traceability_tasks"]["供应商::stage_1_purchase"]
 
         self.assertEqual(execution["workflow_source"], "approval_workflows")
         self.assertEqual(task["users"], ["李四"])
@@ -872,11 +947,11 @@ class ApprovalWorkflowTests(unittest.TestCase):
         )
         tasks = execution["material_confirmations"]["M1"]["traceability_tasks"]
 
-        self.assertEqual(tasks["客户/在途::项目销售::P1"]["users"], ["张三"])
-        self.assertNotIn("客户/在途::销售主管::P1", tasks)
-        self.assertEqual(tasks["客户/在途::PMC"]["users"], ["王五"])
-        self.assertEqual(tasks["客户/在途::项目销售::P1"]["stage_index"], 0)
-        self.assertEqual(tasks["客户/在途::PMC"]["stage_index"], 1)
+        self.assertEqual(tasks["客户/在途::stage_1_project_sales::P1"]["users"], ["张三"])
+        self.assertNotIn("客户/在途::stage_1_sales_supervisor::P1", tasks)
+        self.assertEqual(tasks["客户/在途::stage_2_pmc"]["users"], ["王五"])
+        self.assertEqual(tasks["客户/在途::stage_1_project_sales::P1"]["stage_index"], 0)
+        self.assertEqual(tasks["客户/在途::stage_2_pmc"]["stage_index"], 1)
 
         missing_sales_execution = build_ecn_execution_info_from_workflows(
             [item],
@@ -885,8 +960,8 @@ class ApprovalWorkflowTests(unittest.TestCase):
             user_service=self.service,
         )
         missing_sales_tasks = missing_sales_execution["material_confirmations"]["M1"]["traceability_tasks"]
-        self.assertEqual(missing_sales_tasks["客户/在途::项目销售::P1"]["users"], [])
-        self.assertNotIn("客户/在途::销售主管::P1", missing_sales_tasks)
+        self.assertEqual(missing_sales_tasks["客户/在途::stage_1_project_sales::P1"]["users"], [])
+        self.assertNotIn("客户/在途::stage_1_sales_supervisor::P1", missing_sales_tasks)
 
     def test_workflow_editor_nodes_support_old_single_and_new_sequence_versions(self):
         """管理界面应把旧单节点与新串行版本统一转换成可编辑节点。"""

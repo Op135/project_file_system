@@ -4,12 +4,13 @@ import copy
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi import HTTPException
 
-from src.ecn_management_config import ECNState
-from src.modules.ecn import actions, attachment_preview, attachments, repository
+from src.ecn_management_config import ECNState, ECN_EXECUTION_STAGE_OVERVIEW_RUNNING
+from src.modules.ecn import actions, attachment_preview, attachments, repository, overview_execution
 from src.modules.ecn.models import get_ecn_template
 from src.user_service import UserService
 from tests.test_error_management_concurrency import load_isolated_db_storage
@@ -57,6 +58,85 @@ class ECNAttachmentTests(unittest.IsolatedAsyncioTestCase):
         self.db_patch.stop()
         await self.storage.close_db()
         self.temp.cleanup()
+
+    async def test_overview_upload_is_isolated_and_execution_never_overwrites_same_name(self):
+        formal_dir = Path(self.temp.name) / "formal"
+        formal_dir.mkdir()
+        original_file = formal_dir / Uploaded.name
+        original_file.write_bytes(b"approved-original")
+        staged = await attachments.stage_upload(Uploaded(), "owner")
+        value = get_ecn_template()
+        value["ecn_id"] = "ECN26101799"
+        value["workflow"].update(current_state=ECNState.ECN_SCHEMING, current_phase="ECN_SCHEME_PHASE")
+        value["target_projects"] = ["P1"]
+        item = {
+            "item_id": "upload-scheme", "type": "overview_update", "scheme_category": "overview_document",
+            "author": "owner", "role": "研发", "label": "file-param", "first_col_label": "file-param",
+            "config_processing_type": "file", "projects": ["P1"], "req_idxs": [], "linked_docs": [], "linked_materials": [],
+            "project_states": {"P1": {"action": "add"}}, "new_data": {"content": Uploaded.name, "overview_upload": staged},
+        }
+        await self.storage.set_item("ecn_management_data", {value["ecn_id"]: value})
+        saved = await actions.edit_scheme(value["ecn_id"], value, item, None, "owner", "测试岗位", user_service=self.service, storage=self.storage)
+        self.assertTrue(saved.ok, saved.message)
+        assert saved.record is not None
+        self.assertEqual(original_file.read_bytes(), b"approved-original")
+        self.assertEqual(list(formal_dir.iterdir()), [original_file])
+        value = saved.record
+        value["workflow"]["current_state"] = ECNState.ECN_EXECUTING
+        value["execution_info"].update(stage=ECN_EXECUTION_STAGE_OVERVIEW_RUNNING, overview_run_id="run-1")
+        await self.storage.set_item("ecn_management_data", {value["ecn_id"]: value})
+        fake_app = SimpleNamespace(storage=SimpleNamespace(general={
+            "project_req_max_ver": {"P1": "1.0"}, "over_config_data_flat": {"file-param": {"upload_path": str(formal_dir)}},
+        }))
+        retry = copy.deepcopy(value)
+        with patch.object(overview_execution, "db_storage", self.storage), patch.object(overview_execution, "app", fake_app):
+            results = await overview_execution.execute_ecn_overview_schemes(value, "2026-10-17 12:00:00")
+            repeated = await overview_execution.execute_ecn_overview_schemes(retry, "2026-10-17 12:01:00")
+        self.assertEqual(results["upload-scheme"]["status"], "success")
+        self.assertEqual(repeated["upload-scheme"]["status"], "success")
+        stored = await self.storage.get_fresh_item("P1_over_data", {})
+        chip = next(iter(stored["file-param"].values()))
+        self.assertEqual(chip["content"], Uploaded.name)
+        final_path = Path(chip["local_file_path"])
+        self.assertNotEqual(final_path, original_file)
+        self.assertEqual(final_path.read_bytes(), b"test-pdf-content")
+        self.assertEqual(original_file.read_bytes(), b"approved-original")
+        self.assertEqual(len(list(formal_dir.iterdir())), 2)
+        await attachments.cleanup_published_attachments(saved.record)
+        self.assertTrue(final_path.is_file())
+
+    async def test_running_ecn_cannot_be_deleted(self):
+        value = get_ecn_template()
+        value["ecn_id"] = "ECN26101798"
+        value["execution_info"]["stage"] = ECN_EXECUTION_STAGE_OVERVIEW_RUNNING
+        await self.storage.set_item("ecn_management_data", {value["ecn_id"]: value})
+        with patch("src.ecn_access.can_delete_ecn", return_value=True):
+            deleted, message = await repository.delete_record(value["ecn_id"], username="owner", user_service=self.service, storage=self.storage)
+        self.assertFalse(deleted)
+        self.assertIn("正在执行", message)
+        self.assertIn(value["ecn_id"], await self.storage.get_fresh_item("ecn_management_data", {}))
+
+    async def test_rejected_overview_save_removes_archive_and_keeps_staging_for_retry(self):
+        staged = await attachments.stage_upload(Uploaded(), "owner")
+        value = get_ecn_template()
+        value["ecn_id"] = "ECN26101797"
+        value["workflow"].update(current_state=ECNState.ECN_SCHEMING, current_phase="ECN_SCHEME_PHASE")
+        value["target_projects"] = ["P1"]
+        item = {
+            "item_id": "upload-scheme", "type": "overview_update", "scheme_category": "overview_document",
+            "author": "owner", "label": "file-param", "first_col_label": "file-param",
+            "config_processing_type": "file", "projects": ["P1"], "req_idxs": [], "linked_docs": [], "linked_materials": [],
+            "project_states": {"P1": {"action": "add"}}, "new_data": {"content": Uploaded.name, "overview_upload": staged},
+        }
+        changed = copy.deepcopy(value)
+        changed["workflow"]["current_state"] = ECNState.ECN_REVIEWING
+        await self.storage.set_item("ecn_management_data", {value["ecn_id"]: changed})
+        saved = await actions.edit_scheme(value["ecn_id"], value, item, None, "owner", "测试岗位", user_service=self.service, storage=self.storage)
+        self.assertFalse(saved.ok)
+        self.assertTrue(attachments.resolve_staged_attachment(staged).is_file())
+        self.assertEqual([file for file in self.files.rglob("*") if file.is_file()], [attachments.resolve_staged_attachment(staged)])
+        attachments.cleanup_staged([staged])
+        self.assertFalse(attachments.resolve_staged_attachment(staged).exists())
 
     async def test_new_ecr_attachment_moves_under_assignee_and_allocated_number(self):
         draft = get_ecn_template()

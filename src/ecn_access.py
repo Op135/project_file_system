@@ -24,6 +24,7 @@ from .ecn_management_config import (
     role_matches_keywords,
     is_ecn_scheme_ready_for_review,
     get_ecn_special_confirmations,
+    can_ecn_assistant_confirm_special,
     ECNState,
     ECN_SCHEME_GROUP_ORDINARY_DOCUMENT,
     ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT,
@@ -739,7 +740,7 @@ def resolve_ecn_material_spec_responsibility(
     project = str(spec.get("project") or "").strip()
     prefix = f"{project} · " if project else ""
     target_text = "、".join(target_users) if stayed_at_level else "、".join(target_titles)
-    missing_project_sales = responsible_key == "销售主管" and "::项目销售::" in str(spec.get("key") or "")
+    missing_project_sales = responsible_key == "销售主管" and spec.get("source_responsible_type") == "project_sales"
     if stayed_at_level:
         label = (
             f"{prefix}项目销售未识别，转销售主管：{target_text}"
@@ -1086,6 +1087,14 @@ def is_ecn_pending_for_user(
         if not isinstance(execution_info, dict):
             return False
         stage = execution_info.get("stage")
+        if any(
+            confirmation.get("review_revocation")
+            and can_ecn_assistant_confirm_special(execution_info, confirmation)
+            for confirmation in get_ecn_special_confirmations(execution_info).values()
+        ) and _can_execute_assistant_with_snapshot(
+            current_role, current_user, user_service=user_service, access_snapshot=access_snapshot
+        ):
+            return True
         if stage in {
             ECN_EXECUTION_STAGE_ASSISTANT,
             ECN_EXECUTION_STAGE_OVERVIEW_RUNNING,

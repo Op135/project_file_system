@@ -50,6 +50,7 @@ async def atomic_deep_update(
     update_function: Callable,
     *args,
     allow_ecn: bool = False,
+    transaction_guard: Callable | None = None,
     storage=None,
     **kwargs,
 ) -> bool:
@@ -64,6 +65,13 @@ async def atomic_deep_update(
 
     async def apply(current_top: Any, connection):
         nonlocal blocked
+        if transaction_guard is not None:
+            permitted = transaction_guard(current_top, connection)
+            if inspect.isawaitable(permitted):
+                permitted = await permitted
+            if permitted is not True:
+                blocked = True
+                return storage.ATOMIC_NO_UPDATE
         before = copy.deepcopy(current_top)
         if not deep_path:
             new_top = update_function(copy.deepcopy(current_top), *args, **kwargs)

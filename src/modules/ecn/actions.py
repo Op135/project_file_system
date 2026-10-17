@@ -26,6 +26,7 @@ from ...ecn_access import (
     can_edit_ecn_impact,
     can_edit_ecn_scheme,
     can_submit_ecn_scheme_review,
+    can_view_ecn,
     get_active_ecn_actor_role,
 )
 from ...ecn_management_config import (
@@ -82,7 +83,7 @@ from .repository import (
     mutate_record,
 )
 from ...issue_workflow_utils import schedule_background_task
-from .overview_locks import collect_ecn_overview_locks
+from .overview_locks import collect_ecn_overview_locks, collect_ecn_overview_row_dependencies, active_overview_row_exists
 from ...workflow_notifications import send_workflow_completion_cc
 from .attachments import (
     cleanup_published_attachments,
@@ -91,6 +92,7 @@ from .attachments import (
     validate_scheme_attachments,
 )
 from .scheme_notifications import send_scheme_sales_completion_notifications
+from .overview_files import prepare_overview_upload
 
 
 def require_permission(check, role, user, service):
@@ -102,6 +104,8 @@ def require_active_actor_role(user: str, role: str, service) -> str:
     actor_role = get_active_ecn_actor_role(user, role, user_service=service)
     if actor_role is None:
         raise ECNConflict("当前账号已停用或不存在，不能执行此操作。")
+    if not can_view_ecn(actor_role, user, user_service=service):
+        raise ECNConflict("当前用户已无ECN查看权限，请关闭详情。")
     return actor_role
 
 
@@ -147,6 +151,7 @@ async def validate_overview_scheme_target_lock(
         ecn_row = await cursor.fetchone()
     all_records = json.loads(ecn_row[0]) if ecn_row else {}
     locks = collect_ecn_overview_locks(all_records)
+    dependencies = collect_ecn_overview_row_dependencies(all_records)
     item_id = str(item.get("item_id") or "").strip()
     label = str(item.get("label") or "").strip()
     project_states = item.get("project_states", {})
@@ -154,7 +159,7 @@ async def validate_overview_scheme_target_lock(
         return
     overview_cache: dict[str, dict] = {}
     for project, state in project_states.items():
-        if not isinstance(state, dict) or state.get("action") not in {"update", "deactivate"}:
+        if not isinstance(state, dict):
             continue
         project_name = str(project or "").strip()
         chip_id = str(state.get("chip_id") or "").strip()
@@ -170,11 +175,32 @@ async def validate_overview_scheme_target_lock(
                 overview_row = await cursor.fetchone()
             overview_cache[top_key] = json.loads(overview_row[0]) if overview_row else {}
         label_data = overview_cache[top_key].get(label, {})
+        if state.get("action") == "add":
+            first_label = str(item.get("first_col_label") or "")
+            row_id = str(state.get("anchor_row_id") or "")
+            if first_label and first_label != label and not row_id.startswith("PENDING_NEW_"):
+                version = str(app.storage.general.get("project_req_max_ver", {}).get(project_name, "0.0"))
+                if not active_overview_row_exists(overview_cache[top_key], first_label, row_id, version):
+                    raise ECNConflict(f"{project_name} 的表格基准行已不存在或失活，请重新选择。")
+                base_chips = overview_cache[top_key].get(first_label, {})
+                for base_id, base in base_chips.items():
+                    if isinstance(base, dict) and str(base.get("row_id") or "") == row_id:
+                        owner = locks.get((project_name, first_label, str(base_id)))
+                        if owner and owner["ecn_id"] != ecn_id:
+                            raise ECNConflict(f"{project_name} 的基准行已被 {owner['ecn_id']} 占用。")
+            continue
+        if state.get("action") not in {"update", "deactivate"}:
+            continue
         latest_chip = label_data.get(chip_id) if isinstance(label_data, dict) else None
         if not isinstance(latest_chip, dict):
             raise ECNConflict(f"{project_name} 的目标概述已不存在，请重新选择。")
         if latest_chip != state.get("old_data"):
             raise ECNConflict(f"{project_name} 的目标概述已变化，请重新打开方案后选择。")
+        row_id = str(latest_chip.get("row_id") or "")
+        for dependency in dependencies:
+            if (dependency["project"], dependency["label"], dependency["row_id"]) == (project_name, label, row_id):
+                if dependency["ecn_id"] != ecn_id or state.get("action") == "deactivate":
+                    raise ECNConflict(f"{project_name} 的基准行仍被 {dependency['ecn_id']} 的子参数方案依赖，不能更改或失效。")
 
 
 async def save_review(
@@ -200,17 +226,37 @@ async def save_review(
 
 
 async def edit_scheme(ecn_id, expected, item, original, user, role, *, delete=False, user_service=None, storage=None):
+    published_paths: list[Path] = []
+    pending_upload = item.get("new_data", {}).get("overview_upload") if isinstance(item, dict) else None
+
     async def operation(current, connection):
         actor_role = require_active_actor_role(user, role, user_service)
         require_permission(can_edit_ecn_scheme, actor_role, user, user_service)
         if delete:
             return delete_scheme(current, expected, original, user)
         validate_scheme_attachments(current, item, user)
-        updated = save_scheme(current, expected, item, original, user)
-        await validate_overview_scheme_target_lock(connection, ecn_id, item)
+        prepared, installed = await asyncio.to_thread(prepare_overview_upload, item, original, ecn_id, user)
+        if installed is not None:
+            published_paths.append(installed)
+        updated = save_scheme(current, expected, prepared, original, user)
+        await validate_overview_scheme_target_lock(connection, ecn_id, prepared)
         return updated
 
-    result = await mutate_record(ecn_id, operation, storage=storage)
+    try:
+        result = await mutate_record(ecn_id, operation, storage=storage)
+    except Exception:
+        for path in published_paths:
+            path.unlink(missing_ok=True)
+        raise
+    if not result.ok:
+        for path in published_paths:
+            path.unlink(missing_ok=True)
+    elif isinstance(pending_upload, dict) and pending_upload.get("pending_path"):
+        cleanup_staged([pending_upload])
+    if result.ok and not delete and isinstance(original, dict):
+        previous_upload = original.get("new_data", {}).get("overview_upload")
+        if previous_upload and previous_upload != pending_upload:
+            await cleanup_published_attachments(previous_upload)
     if delete and result.ok:
         await cleanup_published_attachments(original)
     return result
@@ -683,6 +729,9 @@ async def execute_action(
             project_sales or {},
             project_summary,
         )
+        if action == "initiate_scheme_review":
+            for scheme in updated.get("change_items", []):
+                await validate_overview_scheme_target_lock(connection, str(updated["ecn_id"]), scheme)
         if is_new and staged_ecr_attachments:
             basic = updated["basic_info"]
             finalized = []
@@ -802,6 +851,9 @@ async def set_ecn_level(
         else:
             raise ECNConflict("ECN等级判定时机无效。")
 
+        expected_workflow = expected.get("workflow", {})
+        if any(workflow.get(key) != expected_workflow.get(key) for key in ("ecn_level", "ecn_level_decisions")):
+            raise ECNConflict("ECN等级判定已被其他页面修改，请刷新后重新核对。")
         previous_level = get_ecn_level_code(current)
         was_decided = bool(str(workflow.get("ecn_level") or "") in ECN_LEVEL_LABELS)
         if was_decided and previous_level == level_code:

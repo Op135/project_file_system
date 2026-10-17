@@ -58,7 +58,10 @@ def _execution_workflow_task(
     )
     responsible_type = "project_sales" if strategy == "project_sales" else "workflow_users"
     suffix = f"::{project}" if project else ""
-    task_key = f"{level}::{responsible_key}{suffix}"
+    node_key = str(node.get("node_key") or "").strip()
+    if not node_key:
+        raise ValueError("执行流程节点缺少唯一编码")
+    task_key = f"{level}::{node_key}{suffix}"
     workflow = workflow_result.get("workflow", {})
     version = workflow_result.get("version", {})
     label = (
@@ -79,6 +82,7 @@ def _execution_workflow_task(
         "stage_index": int(node.get("stage_index", 0)),
         "roles": [],
         "users": list(dict.fromkeys(users)),
+        "approval_mode": str(node.get("approval_mode") or "any"),
         "required_permission_code": str(node.get("required_permission_code") or ""),
         "position_ids": list(dict.fromkeys(position_ids)),
         "workflow_assignment": {
@@ -196,7 +200,25 @@ def build_ecn_execution_info_from_workflows(
                         project=project if project_scoped else "",
                     )
                     task["disposition_instruction"] = disposition_instruction
-                    tasks[task_key] = task
+                    if task["approval_mode"] == "all" and task["users"]:
+                        for username in task["users"]:
+                            personal_task = copy.deepcopy(task)
+                            personal_task["users"] = [username]
+                            personal_task["co_signer"] = username
+                            personal_task["label"] = " · ".join(
+                                value for value in (project if project_scoped else "", str(node.get("name") or task["responsible_key"]), username)
+                                if value
+                            )
+                            personal_key = f"{task_key}::user:{username}"
+                            if personal_key in tasks:
+                                raise ValueError("执行流程包含重复的人员确认项")
+                            tasks[personal_key] = personal_task
+                    else:
+                        if task["approval_mode"] == "all" and task["responsible_type"] != "project_sales":
+                            raise ValueError("执行会签节点没有可确认的具体人员")
+                        if task_key in tasks:
+                            raise ValueError("执行流程包含重复的节点编码")
+                        tasks[task_key] = task
         material_entry["traceability_tasks"] = tasks
     execution["workflow_source"] = "approval_workflows"
     return execution

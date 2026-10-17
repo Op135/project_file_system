@@ -59,9 +59,8 @@ def compact_material_confirmation_label(spec: dict[str, Any]) -> str:
         if isinstance(raw_users, (list, tuple, set))
         else ""
     )
-    task_key = str(spec.get("key") or "")
     if responsible_type == "hierarchy_users" and users:
-        if "::项目销售::" in task_key or str(spec.get("resolution_mode") or "") == "manager_escalation":
+        if spec.get("source_responsible_type") == "project_sales" or str(spec.get("resolution_mode") or "") == "manager_escalation":
             detail = f"{users}（代确认）"
         else:
             detail = " ".join(value for value in (responsible_key, users) if value)
@@ -79,13 +78,14 @@ def material_confirmation_tooltip_text(
     lines: list[str] = []
     responsible_type = str(spec.get("responsible_type") or "")
     responsible_key = str(spec.get("responsible_key") or "").strip()
-    task_key = str(spec.get("key") or "")
     resolution_mode = str(spec.get("resolution_mode") or "")
     if spec.get("manual_assignment") is True or responsible_type == "assigned_user":
         lines.append("分配依据：研发助理人工改派")
+    elif spec.get("co_signer"):
+        lines.append(f"分配依据：流程逐人会签（{spec['co_signer']}）")
     elif responsible_type == "project_sales":
         lines.append("分配依据：项目资料中的销售负责人")
-    elif "::项目销售::" in task_key and responsible_key == "销售主管":
+    elif spec.get("source_responsible_type") == "project_sales" and responsible_key == "销售主管":
         if resolution_mode == "manager_escalation":
             lines.append("分配依据：项目未识别到销售负责人，销售主管也无法处理，沿直属上级逐级转交")
         else:

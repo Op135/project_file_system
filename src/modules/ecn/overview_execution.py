@@ -1,7 +1,11 @@
 # -*- encoding: utf-8 -*-
 import copy
+import asyncio
+import json
+import hashlib
 import logging
 import uuid
+from pathlib import Path
 from collections.abc import Awaitable, Callable
 
 from nicegui import (
@@ -18,6 +22,9 @@ from ...ecn_management_config import (
     ECN_OVERVIEW_ACTION_ADD,
     ECN_OVERVIEW_ACTION_DEACTIVATE,
     ECN_OVERVIEW_ACTION_UPDATE,
+    ECN_EXECUTION_STAGE_OVERVIEW_RUNNING,
+    ECNState,
+    build_ecn_scheme_snapshot,
     get_ecn_overview_project_new_data,
 )
 from ...overview_operation import (
@@ -25,6 +32,8 @@ from ...overview_operation import (
     get_automatic_overview_reason,
 )
 from .editing import get_pending_overview_anchor_source
+from .overview_locks import active_overview_row_exists
+from .overview_files import publish_overview_upload
 
 logger = logging.getLogger(__name__)
 
@@ -75,15 +84,35 @@ def _has_ecn_source_marker(chip: object, ecn_id: str, source_operation_id: str) 
     if not isinstance(chip, dict):
         return False
     history = chip.get("timestamp", {})
-    return bool(
-        isinstance(history, dict)
-        and any(
+    if not isinstance(history, dict):
+        return False
+    for entry in history.values():
+        if (
             isinstance(entry, dict)
             and str(entry.get("source_id") or "") == ecn_id
             and str(entry.get("source_operation_id") or "") == source_operation_id
-            for entry in history.values()
-        )
-    )
+        ):
+            if entry.get("result_fingerprint") != _overview_result_fingerprint(chip):
+                raise ValueError("已执行概述内容或状态已变化，不能直接认定执行成功，请核对处理。")
+            return True
+    return False
+
+
+def _overview_result_fingerprint(chip: dict) -> str:
+    snapshot = copy.deepcopy(chip)
+    history = snapshot.get("timestamp", {})
+    if isinstance(history, dict):
+        for entry in history.values():
+            if isinstance(entry, dict):
+                entry.pop("result_fingerprint", None)
+    return hashlib.sha256(json.dumps(snapshot, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def _stamp_execution_result(chip: dict, ecn_id: str, source_operation_id: str) -> None:
+    fingerprint = _overview_result_fingerprint(chip)
+    for entry in chip.get("timestamp", {}).values():
+        if isinstance(entry, dict) and entry.get("source_id") == ecn_id and entry.get("source_operation_id") == source_operation_id:
+            entry["result_fingerprint"] = fingerprint
 
 
 async def execute_ecn_overview_schemes(
@@ -97,6 +126,7 @@ async def execute_ecn_overview_schemes(
     stored_results = execution_info.setdefault("overview_results", {})
     results = copy.deepcopy(stored_results) if isinstance(stored_results, dict) else {}
     ecn_id = str(ecn_data.get("ecn_id") or "")
+    run_id = str(execution_info.get("overview_run_id") or "")
     change_items = [item for item in ecn_data.get("change_items", []) if isinstance(item, dict)]
     # 待新增表格子项只能在其基准列方案成功后执行；保持其它方案原有顺序。
     change_items.sort(
@@ -229,10 +259,36 @@ async def execute_ecn_overview_schemes(
                     raise ValueError(f"不支持的执行动作：{action or '未配置'}")
 
                 operation_state = {"applied": False, "error": ""}
+                installed_file: Path | None = None
                 source_operation_id = f"{ecn_id}:{item_id}:{project}:{action}"
                 scheme_author = str(item.get("author") or "").strip()
                 if not scheme_author:
                     raise ValueError("方案未记录实际提供人，无法执行")
+
+                async def require_live_execution(_current_project, connection):
+                    async with connection.execute(
+                        f"SELECT value FROM {db_storage.TABLE_NAME} WHERE key = ?", ("ecn_management_data",)
+                    ) as cursor:
+                        row = await cursor.fetchone()
+                    records = json.loads(row[0]) if row else {}
+                    live = records.get(ecn_id) if isinstance(records, dict) else None
+                    if not isinstance(live, dict):
+                        operation_state["error"] = "ECN单据已不存在，已停止执行"
+                        return False
+                    live_execution = live.get("execution_info", {})
+                    if (
+                        not run_id or live.get("workflow", {}).get("current_state") != ECNState.ECN_EXECUTING
+                        or live_execution.get("stage") != ECN_EXECUTION_STAGE_OVERVIEW_RUNNING
+                        or live_execution.get("overview_run_id") != run_id
+                    ):
+                        operation_state["error"] = "ECN执行阶段或批次已变化，已停止旧任务"
+                        return False
+                    live_item = next((value for value in live.get("change_items", [])
+                        if isinstance(value, dict) and str(value.get("item_id") or "") == item_id), None)
+                    if build_ecn_scheme_snapshot(live_item) != build_ecn_scheme_snapshot(item):
+                        operation_state["error"] = "方案内容已变化，已停止旧任务"
+                        return False
+                    return True
 
                 def apply_to_latest_label(current_label: object):
                     label_data = copy.deepcopy(current_label) if isinstance(current_label, dict) else {}
@@ -284,6 +340,8 @@ async def execute_ecn_overview_schemes(
                         existing_new = label_data.get(str(new_chip["id"]))
                         if existing_new is not None:
                             if _has_ecn_source_marker(existing_new, ecn_id, source_operation_id):
+                                if action == ECN_OVERVIEW_ACTION_UPDATE and not _has_ecn_source_marker(old_chip, ecn_id, source_operation_id):
+                                    raise ValueError("原概述缺少本次失活记录，请核对处理。")
                                 operation_state["applied"] = True
                                 return db_storage.ATOMIC_NO_UPDATE
                             operation_state["error"] = "目标位置已存在其它概述数据"
@@ -328,13 +386,48 @@ async def execute_ecn_overview_schemes(
                     operation_state["applied"] = True
                     return label_data
 
+                async def apply_to_latest_project(current_project):
+                    nonlocal installed_file
+                    project_data = copy.deepcopy(current_project) if isinstance(current_project, dict) else {}
+                    first_label = str(item.get("first_col_label") or "")
+                    if (
+                        action == ECN_OVERVIEW_ACTION_ADD and first_label and str(label) != first_label
+                    ):
+                        source_id = get_pending_overview_anchor_source(anchor_row_id)
+                        bound_row = generated_row_ids.get((source_id, project), "") if source_id else str(anchor_row_id or "")
+                        version = str(app.storage.general.get("project_req_max_ver", {}).get(project, "0.0"))
+                        if not active_overview_row_exists(project_data, first_label, bound_row, version):
+                            operation_state["error"] = "绑定的表格基准行已不存在或失活，不能新增子参数"
+                            return db_storage.ATOMIC_NO_UPDATE
+                    try:
+                        label_data = apply_to_latest_label(project_data.get(str(label)))
+                    except ValueError as exc:
+                        operation_state["error"] = str(exc)
+                        return db_storage.ATOMIC_NO_UPDATE
+                    if not isinstance(label_data, dict):
+                        return db_storage.ATOMIC_NO_UPDATE
+                    if action != ECN_OVERVIEW_ACTION_DEACTIVATE and item.get("config_processing_type") in {"file", "image", "video"}:
+                        config = app.storage.general.get("over_config_data_flat", {}).get(str(label), {})
+                        published, installed_file = await asyncio.to_thread(publish_overview_upload, item, project, ecn_id, config)
+                        label_data[deterministic_uuid(item_id, project, "chip")].update(published)
+                    # 文件发布后的最终元数据也必须进入指纹；旧节点失活与新节点一起校验。
+                    if action in {ECN_OVERVIEW_ACTION_UPDATE, ECN_OVERVIEW_ACTION_DEACTIVATE}:
+                        _stamp_execution_result(label_data[str(chip_id)], ecn_id, source_operation_id)
+                    if action in {ECN_OVERVIEW_ACTION_ADD, ECN_OVERVIEW_ACTION_UPDATE}:
+                        _stamp_execution_result(label_data[deterministic_uuid(item_id, project, "chip")], ecn_id, source_operation_id)
+                    project_data[str(label)] = label_data
+                    return project_data
+
                 saved = await overview_storage.atomic_deep_update(
-                    [f"{project}_over_data", str(label)],
-                    apply_to_latest_label,
+                    [f"{project}_over_data"],
+                    apply_to_latest_project,
                     allow_ecn=True,
+                    transaction_guard=require_live_execution,
                     storage=db_storage,
                 )
                 if not saved or operation_state["error"] or not operation_state["applied"]:
+                    if installed_file is not None:
+                        await asyncio.to_thread(installed_file.unlink, missing_ok=True)
                     raise ValueError(operation_state["error"] or "概述资料原子保存失败")
 
                 project_results[project] = {

@@ -37,6 +37,7 @@ from ...ecn_management_config import (
     get_ecn_validation_report,
     is_ecn_scheme_ready_for_review,
     get_ecn_special_confirmations,
+    can_ecn_assistant_confirm_special,
     ECN_LEVEL_COMPLEX,
 )
 from ...wecom_service import resolve_wecom_recipients, send_wecom_text_message, send_wecom_textcard_message
@@ -51,6 +52,17 @@ NOTIFICATION_STATE_KEY = "ecn_wecom_notification_state"
 _scan_lock = asyncio.Lock()
 
 
+class _TaskDescription(str):
+    """显示文本保持纯业务文案，独立保存通知去重所需的具体责任项标识。"""
+
+    task_key: str
+
+    def __new__(cls, description: str, task_key: str):
+        value = super().__new__(cls, description)
+        value.task_key = task_key
+        return value
+
+
 def material_task_summary(record: dict, item_id: str, spec: dict) -> str:
     """把内部方案UUID和责任项键转换为通知中可直接理解的业务摘要。"""
     items = [item for item in record.get("change_items", []) if isinstance(item, dict)]
@@ -63,7 +75,10 @@ def material_task_summary(record: dict, item_id: str, spec: dict) -> str:
     project = str(spec.get("project") or "").strip()
     if project and responsible.startswith(f"{project} · "):
         responsible = responsible[len(project) + 3 :]
-    return f"物料方案 {scheme_no}｜项目：{projects}｜{change_type}｜追溯：{level}｜确认：{responsible}"
+    return _TaskDescription(
+        f"物料方案 {scheme_no}｜项目：{projects}｜{change_type}｜追溯：{level}｜确认：{responsible}",
+        f"material:{item_id}:{spec.get('key')}",
+    )
 
 
 def collect_pending_users(record: dict, service, access_snapshot: dict | None = None) -> dict[str, str]:
@@ -112,6 +127,15 @@ def pending_task_details(
         record, user_service=service, access_snapshot=snapshot
     )
     if state == ECNState.ECN_EXECUTING:
+        for key, confirmation in get_ecn_special_confirmations(execution).items():
+            if not confirmation.get("review_revocation") or not can_ecn_assistant_confirm_special(execution, confirmation):
+                continue
+            for name, role in pending.items():
+                if can_execute_ecn_assistant_stage(role, name, user_service=service, access_snapshot=snapshot):
+                    detail = get_special_message_item(record, key, name)
+                    special_tasks[name].append(
+                        f"复核退回，请重新确认\n事项/方案：{detail['subject']}\n项目：{detail['projects']}\n应执行内容：{detail['content']}"
+                    )
         for item in get_special_message_items(record, list(pending)):
             special_tasks[item["assignee"]].append(
                 f"特定事项\n事项/方案：{item['subject']}\n项目：{item['projects']}\n应执行内容：{item['content']}"
@@ -294,16 +318,20 @@ def build_personal_task_tokens(record: dict, name: str, tasks: list[str]) -> lis
         "stage": execution.get("stage"),
         "participant_status": participant_status,
     }
-    return sorted(
+    return sorted({
         hashlib.sha256(
             json.dumps(
-                {"context": context, "task": str(task)},
+                {
+                    "context": context,
+                    "task": str(task),
+                    "task_key": task.task_key if isinstance(task, _TaskDescription) else "",
+                },
                 sort_keys=True,
                 ensure_ascii=False,
             ).encode()
         ).hexdigest()
-        for task in dict.fromkeys(tasks)
-    )
+        for task in tasks
+    })
 
 
 def build_personal_notification_fingerprint(name: str, task_tokens: list[str]) -> str:
@@ -668,6 +696,8 @@ async def check_and_send_ecn_reminders(
                             if success:
                                 delivery["sent_at"] = time.time()
                                 delivery["notified_task_tokens"] = list(current_tokens)
+                                # 失败重试的退避不能延迟成功投递后新出现的具体责任项。
+                                delivery.pop("attempted_at", None)
                             return delivery
 
                         await storage.atomic_deep_update(state_path, finish)

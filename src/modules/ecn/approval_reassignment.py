@@ -156,6 +156,8 @@ async def reassign_ecn_approval_reviewer(
         if Path(user_service.identity_store.db_path).resolve() != Path(storage.DB_PATH).resolve():
             raise ECNConflict("ECN审批需要身份数据与业务数据使用同一数据库。")
         actor_role = await _actor_role(connection, actor_username)
+        if not await _has_permission(connection, actor_username, ECN_VIEW_PERMISSION):
+            raise ECNConflict("当前用户已无ECN查看权限，请关闭详情。")
         if actor_role is None or not await _has_permission(
             connection,
             actor_username,
