@@ -756,12 +756,57 @@ def build_execution_panel(
                 return
 
             try:
+                async def checkpoint_overview_result(
+                    item_id: str,
+                    item_result: dict,
+                    item_status: str,
+                ) -> None:
+                    checkpoint_state = {"applied": False}
+
+                    def save_checkpoint(current_ecn):
+                        if not isinstance(current_ecn, dict):
+                            return db_storage.ATOMIC_NO_UPDATE
+                        execution_info = current_ecn.get("execution_info", {})
+                        if (
+                            not isinstance(execution_info, dict)
+                            or execution_info.get("stage") != ECN_EXECUTION_STAGE_OVERVIEW_RUNNING
+                            or execution_info.get("overview_run_id") != operation_id
+                        ):
+                            return db_storage.ATOMIC_NO_UPDATE
+                        overview_results = execution_info.setdefault("overview_results", {})
+                        if not isinstance(overview_results, dict):
+                            overview_results = {}
+                            execution_info["overview_results"] = overview_results
+                        overview_results[item_id] = copy.deepcopy(item_result)
+                        for current_item in current_ecn.get("change_items", []):
+                            if (
+                                isinstance(current_item, dict)
+                                and str(current_item.get("item_id") or "") == item_id
+                            ):
+                                current_item["execute_status"] = item_status
+                                break
+                        checkpoint_state["applied"] = True
+                        return current_ecn
+
+                    saved = await atomic_ecn_deep_update(
+                        ["ecn_management_data", execution_ecn_id],
+                        save_checkpoint,
+                    )
+                    if not saved or not checkpoint_state["applied"]:
+                        raise RuntimeError("系统内资料执行进度保存失败")
+
                 overview_results = await execute_ecn_overview_schemes(
                     fresh_data,
                     operation_time,
+                    progress_callback=checkpoint_overview_result,
                 )
             except Exception as exc:
                 logger.exception("ECN系统内资料批量执行异常：%s", local_data.get("ecn_id"))
+                checkpointed_data = db_storage.get_deep_item(
+                    ["ecn_management_data", execution_ecn_id]
+                )
+                if isinstance(checkpointed_data, dict):
+                    fresh_data = checkpointed_data
                 overview_results = copy.deepcopy(fresh_data.get("execution_info", {}).get("overview_results", {}))
                 for result in overview_results.values():
                     if isinstance(result, dict) and result.get("status") != ECN_EXECUTION_RESULT_SUCCESS:

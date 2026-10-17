@@ -30,6 +30,7 @@ from nicegui import app, events, ui
 from nicegui.events import GenericEventArguments, MouseEventArguments, ValueChangeEventArguments
 
 from . import db_storage  # 导入我们创建的模块
+from . import overview_storage
 from .config import (
     FILES_URL_DIR,
     IMG_DIR,
@@ -621,6 +622,76 @@ def _version_sort_key(version: str) -> float:
         return float(version)
     except (TypeError, ValueError):
         return -1.0
+
+
+async def _resolve_active_overview_icon(
+    project: str,
+    chip_type: str,
+    chip_text: str,
+    config: dict,
+) -> Optional[str]:
+    if chip_type in {"file", "image", "video"}:
+        return _get_active_chip_icon(chip_type)
+    if chip_type == "search":
+        is_valid, _, _, _, _ = await validate_search_path(chip_text, config, [project])
+        return "saved_search" if is_valid else "search_off"
+    if chip_type == "svn":
+        is_valid, _, _, _ = await validate_svn_url(chip_text, config, [project])
+        return "saved_search" if is_valid else "search_off"
+    return None
+
+
+async def _save_overview_activation_atomically(
+    project: str,
+    label: str,
+    chip_id: str,
+    expected_states: dict,
+    new_states: dict,
+    creator: str,
+    reason: str,
+    active_icon: Optional[str],
+) -> Optional[bool]:
+    """一次提交版本状态、视觉状态和历史，避免 ECN 建锁时只写入其中一部分。"""
+    conflict = {"message": ""}
+    latest_version = max(new_states, key=_version_sort_key)
+    latest_state = new_states.get(latest_version)
+
+    def update(chip):
+        if not isinstance(chip, dict):
+            conflict["message"] = "概述条目已不存在，请刷新后重试。"
+            return db_storage.ATOMIC_NO_UPDATE
+        if chip.get("select_activ_dic", {}) != expected_states:
+            conflict["message"] = "概述状态已被其他人员修改，请刷新后重新操作。"
+            return db_storage.ATOMIC_NO_UPDATE
+        chip["select_activ_dic"] = copy.deepcopy(new_states)
+        if latest_state is True:
+            chip["icon"] = active_icon
+            chip["enabled"] = True
+            chip["bg_color"] = "bg-light-blue-1"
+        elif latest_state is False:
+            chip["icon"] = "block"
+            chip["enabled"] = False
+            chip["bg_color"] = "bg-grey-5"
+        else:
+            chip["icon"] = "question_mark"
+            chip["enabled"] = None
+            chip["bg_color"] = "bg-amber-5"
+        history_key = append_overview_timestamp(
+            chip,
+            creator=creator,
+            reason=reason,
+        )
+        chip["timestamp"][history_key]["select_activ_dic"] = copy.deepcopy(new_states)
+        return chip
+
+    success = await overview_storage.atomic_deep_update(
+        [f"{project}_over_data", label, chip_id],
+        update,
+    )
+    if conflict["message"]:
+        raise overview_storage.OverviewWriteError(conflict["message"])
+    overview_storage.require_write_success(success)
+    return latest_state
 
 
 def _get_overview_display_version(project: str, labels: list, default: str = "0.0") -> str:
@@ -3871,7 +3942,7 @@ class InteractiveButton:
                             return target_chip
 
                         # 点对点精准写入，将锁的粒度控制在单个 chip 级别
-                        await db_storage.atomic_deep_update(
+                        await overview_storage.checked_atomic_deep_update(
                             [f"{self.project}_over_data", related_label, related_chip_id], process_chip_state
                         )
 
@@ -4034,32 +4105,37 @@ class InteractiveButton:
             )
             if new_select_activ_dic != OLD_CHIP_SELECT_DIC:
                 ui_spinner.set_visibility(True)
-                await db_storage.set_deep_item(
-                    [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], new_select_activ_dic
-                )
-
                 req_max_ver = f"{str(max([int(float(v)) for v in new_select_activ_dic.keys()]))}.0"
-                chip_state = db_storage.get_deep_item(
-                    [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic", req_max_ver]
+                target_state = new_select_activ_dic.get(req_max_ver)
+                chip_type = str(
+                    db_storage.get_deep_item(
+                        [f"{self.project}_over_data", self.label, chip_id, "type"],
+                        "text",
+                    )
                 )
-
-                if chip_state:
-                    await self._update_chip_active_parameter(chip_id, chip_text)
-                elif chip_state is None:
-                    pass
-                else:
-                    await self._update_chip_block_parameter(chip_id)
-
                 creator = app.storage.user.get("current_user", "匿名用户")
-                await db_storage.set_deep_item(
-                    [
-                        f"{self.project}_over_data",
-                        self.label,
-                        chip_id,
-                        "timestamp",
-                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    ],
-                    {"creator": creator, "reason": reason, "select_activ_dic": new_select_activ_dic},
+                config = copy.deepcopy(
+                    app.storage.general.get("over_config_data_flat", {}).get(self.label, {})
+                )
+                active_icon = (
+                    await _resolve_active_overview_icon(
+                        self.project,
+                        chip_type,
+                        chip_text,
+                        config,
+                    )
+                    if target_state is True
+                    else None
+                )
+                chip_state = await _save_overview_activation_atomically(
+                    self.project,
+                    self.label,
+                    chip_id,
+                    OLD_CHIP_SELECT_DIC,
+                    new_select_activ_dic,
+                    str(creator),
+                    reason,
+                    active_icon,
                 )
                 # 数据写入完毕后，推高全局版本号
                 OverviewVersionManager.bump(self.project, self.label)
@@ -4233,7 +4309,7 @@ class InteractiveButton:
         if self._edit_permission_judge():
             if app.storage.user["current_user"] == "admin":
                 # 直接使用 chip_info 获取 ID，杜绝 UI props 报错
-                await db_storage.del_deep_item([f"{self.project}_over_data", self.label, chip_info["id"]])
+                await overview_storage.del_deep_item([f"{self.project}_over_data", self.label, chip_info["id"]])
                 OverviewVersionManager.bump(self.project, self.label)
                 await self._refresh_chip_container()  # 🌟 核心修复：不等待定时器，立刻重绘 UI
             else:
@@ -4243,7 +4319,7 @@ class InteractiveButton:
         if self._edit_permission_judge():
             if app.storage.user["current_user"] == "admin":
                 # 删除了 thumbnail.delete()，统一由 _refresh_chip_container 去刷新销毁
-                await db_storage.del_deep_item([f"{self.project}_over_data", self.label, chip_info["id"]])
+                await overview_storage.del_deep_item([f"{self.project}_over_data", self.label, chip_info["id"]])
                 OverviewVersionManager.bump(self.project, self.label)
                 await self._refresh_chip_container()  # 🌟 核心修复：立刻重绘
             else:
@@ -4271,7 +4347,7 @@ class InteractiveButton:
 
     async def move_up_data(self, chip_data):
         if self._edit_permission_judge():
-            await db_storage.atomic_deep_update(
+            await overview_storage.checked_atomic_deep_update(
                 [f"{self.project}_over_data", self.label], self._move_data, chip_data["id"], -1
             )
             # 数据写入完毕后，推高全局版本号
@@ -4281,7 +4357,7 @@ class InteractiveButton:
 
     async def move_down_data(self, chip_data):
         if self._edit_permission_judge():
-            await db_storage.atomic_deep_update(
+            await overview_storage.checked_atomic_deep_update(
                 [f"{self.project}_over_data", self.label], self._move_data, chip_data["id"], 1
             )
             # 数据写入完毕后，推高全局版本号
@@ -4290,18 +4366,18 @@ class InteractiveButton:
             # await self._update_chip_display()
 
     async def _update_chip_block_parameter(self, chip_id):
-        await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], "block")
-        await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "enabled"], False)
-        await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "bg_color"], "bg-grey-5")
+        await overview_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], "block")
+        await overview_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "enabled"], False)
+        await overview_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "bg_color"], "bg-grey-5")
 
     async def _update_chip_active_parameter(self, chip_id, chip_text):
         c_type = db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "type"])
         if c_type == "file":
-            await db_storage.set_deep_item(
+            await overview_storage.set_deep_item(
                 [f"{self.project}_over_data", self.label, chip_id, "icon"], _get_active_chip_icon(c_type)
             )
         elif c_type in {"image", "video"}:
-            await db_storage.set_deep_item(
+            await overview_storage.set_deep_item(
                 [f"{self.project}_over_data", self.label, chip_id, "icon"], _get_active_chip_icon(c_type)
             )
         elif c_type == "search":
@@ -4321,7 +4397,7 @@ class InteractiveButton:
             }
             is_valid, _, _, _, _ = await validate_search_path(chip_text, config_mock, [self.project])
             icon_val = "saved_search" if is_valid else "search_off"
-            await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], icon_val)
+            await overview_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], icon_val)
         elif c_type == "svn":
             # url = db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "url_path"])
             # file_info = await self.get_url_file_info_async(url)
@@ -4337,12 +4413,12 @@ class InteractiveButton:
             }
             is_valid, _, _, _ = await validate_svn_url(chip_text, config_mock, [self.project])
             icon_val = "saved_search" if is_valid else "search_off"
-            await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], icon_val)
+            await overview_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], icon_val)
         else:
-            await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], None)
+            await overview_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], None)
 
-        await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "enabled"], True)
-        await db_storage.set_deep_item(
+        await overview_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "enabled"], True)
+        await overview_storage.set_deep_item(
             [f"{self.project}_over_data", self.label, chip_id, "bg_color"], "bg-light-blue-1"
         )
 
@@ -4930,38 +5006,31 @@ class InteractiveButton:
             if not chip_applied_states:
                 continue
 
-            await db_storage.set_deep_item(
-                [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], select_activ_dic
-            )
             latest_version = max(select_activ_dic, key=_version_sort_key)
             latest_state = select_activ_dic.get(latest_version)
-            if latest_version in applied_versions:
-                if latest_state is True:
-                    await self._update_chip_active_parameter(chip_id, chip_texts[chip_id])
-                elif latest_state is False:
-                    await self._update_chip_block_parameter(chip_id)
-                else:
-                    await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "enabled"], None)
-                    await db_storage.set_deep_item(
-                        [f"{self.project}_over_data", self.label, chip_id, "icon"], "question_mark"
-                    )
-                    await db_storage.set_deep_item(
-                        [f"{self.project}_over_data", self.label, chip_id, "bg_color"], "bg-amber-5"
-                    )
-
-            await db_storage.set_deep_item(
-                [
-                    f"{self.project}_over_data",
-                    self.label,
-                    chip_id,
-                    "timestamp",
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                ],
-                {
-                    "creator": creator,
-                    "reason": reason,
-                    "select_activ_dic": copy.deepcopy(select_activ_dic),
-                },
+            chip_type = str(chip_data.get("type") or "text")
+            config = copy.deepcopy(
+                app.storage.general.get("over_config_data_flat", {}).get(self.label, {})
+            )
+            active_icon = (
+                await _resolve_active_overview_icon(
+                    self.project,
+                    chip_type,
+                    chip_texts[chip_id],
+                    config,
+                )
+                if latest_state is True
+                else None
+            )
+            await _save_overview_activation_atomically(
+                self.project,
+                self.label,
+                chip_id,
+                copy.deepcopy(chip_data.get("select_activ_dic", {})),
+                select_activ_dic,
+                str(creator),
+                reason,
+                active_icon,
             )
             await _archive_pending_record(self.project, self.label, chip_id, creator)
             applied_states += chip_applied_states
@@ -5218,7 +5287,7 @@ class OverviewTableGroup:
                     row_id = fallback_row_ids[i]
                     chip_data["row_id"] = row_id
                     # 异步回写到数据库，完成旧数据的无缝自动升级迁移，下次访问时将不再触发此修复逻辑
-                    await db_storage.set_deep_item(
+                    await overview_storage.set_deep_item(
                         [f"{self.project}_over_data", label, chip_data["id"], "row_id"], row_id
                     )
 
@@ -5423,38 +5492,28 @@ class OverviewTableGroup:
             if not chip_applied_states:
                 continue
 
-            await db_storage.set_deep_item(
-                [f"{self.project}_over_data", label, chip_id, "select_activ_dic"], select_activ_dic
-            )
             latest_version = max(select_activ_dic, key=_version_sort_key)
             latest_state = select_activ_dic.get(latest_version)
-            if latest_version in applied_versions:
-                if latest_state is True:
-                    await self._update_chip_active_parameter(chip_id, chip_texts[chip_id], config)
-                elif latest_state is False:
-                    await self._update_chip_block_parameter(chip_id, config)
-                else:
-                    await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "enabled"], None)
-                    await db_storage.set_deep_item(
-                        [f"{self.project}_over_data", label, chip_id, "icon"], "question_mark"
-                    )
-                    await db_storage.set_deep_item(
-                        [f"{self.project}_over_data", label, chip_id, "bg_color"], "bg-amber-5"
-                    )
-
-            await db_storage.set_deep_item(
-                [
-                    f"{self.project}_over_data",
-                    label,
-                    chip_id,
-                    "timestamp",
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                ],
-                {
-                    "creator": creator,
-                    "reason": reason,
-                    "select_activ_dic": copy.deepcopy(select_activ_dic),
-                },
+            chip_type = str(chip_data.get("type") or "text")
+            active_icon = (
+                await _resolve_active_overview_icon(
+                    self.project,
+                    chip_type,
+                    chip_texts[chip_id],
+                    config,
+                )
+                if latest_state is True
+                else None
+            )
+            await _save_overview_activation_atomically(
+                self.project,
+                label,
+                chip_id,
+                copy.deepcopy(chip_data.get("select_activ_dic", {})),
+                select_activ_dic,
+                str(creator),
+                reason,
+                active_icon,
             )
             await _archive_pending_record(self.project, label, chip_id, creator)
             applied_states += chip_applied_states
@@ -7029,7 +7088,7 @@ class OverviewTableGroup:
     async def delete_chip_info(self, chip_info, config):
         if self._edit_permission_judge(config):
             if app.storage.user["current_user"] == "admin":
-                await db_storage.del_deep_item([f"{self.project}_over_data", config["label"], chip_info["id"]])
+                await overview_storage.del_deep_item([f"{self.project}_over_data", config["label"], chip_info["id"]])
                 OverviewVersionManager.bump(self.project, config["label"])
                 await self._update_display()
             else:
@@ -7039,7 +7098,7 @@ class OverviewTableGroup:
     async def clear_thumbnail(self, chip_info, config):
         if self._edit_permission_judge(config):
             if app.storage.user["current_user"] == "admin":
-                await db_storage.del_deep_item([f"{self.project}_over_data", config["label"], chip_info["id"]])
+                await overview_storage.del_deep_item([f"{self.project}_over_data", config["label"], chip_info["id"]])
                 OverviewVersionManager.bump(self.project, config["label"])
                 await self._update_display()
             else:
@@ -7082,7 +7141,7 @@ class OverviewTableGroup:
 
         if current_label == first_col_label:
             # 💡 第一列：改变字典顺序，带动整行上移
-            await db_storage.atomic_deep_update(
+            await overview_storage.checked_atomic_deep_update(
                 [f"{self.project}_over_data", current_label], self._move_data, chip_data["id"], -1
             )
         else:
@@ -7101,7 +7160,7 @@ class OverviewTableGroup:
                         ]
                     ):
                         chip_data["row_id"] = target_row_id
-                        await db_storage.set_deep_item(
+                        await overview_storage.set_deep_item(
                             [f"{self.project}_over_data", current_label, chip_data["id"], "row_id"], target_row_id
                         )
                         break
@@ -7126,7 +7185,7 @@ class OverviewTableGroup:
 
         if current_label == first_col_label:
             # 💡 第一列：改变字典顺序，带动整行下移
-            await db_storage.atomic_deep_update(
+            await overview_storage.checked_atomic_deep_update(
                 [f"{self.project}_over_data", current_label], self._move_data, chip_data["id"], 1
             )
         else:
@@ -7144,7 +7203,7 @@ class OverviewTableGroup:
                         ]
                     ):
                         chip_data["row_id"] = target_row_id
-                        await db_storage.set_deep_item(
+                        await overview_storage.set_deep_item(
                             [f"{self.project}_over_data", current_label, chip_data["id"], "row_id"], target_row_id
                         )
                         break
@@ -7624,7 +7683,7 @@ class OverviewTableGroup:
                                 reason=get_automatic_overview_reason("related_pending"),
                             )
 
-                            await db_storage.set_deep_item(
+                            await overview_storage.set_deep_item(
                                 [f"{self.project}_over_data", related_label, related_chip_id], new_chip_data
                             )
 
@@ -7803,7 +7862,7 @@ class OverviewTableGroup:
                             "reason": get_automatic_overview_reason("row_cascade_inactive"),
                             "select_activ_dic": copy.deepcopy(new_chip_data["select_activ_dic"]),
                         }
-                        await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id], new_chip_data)
+                        await overview_storage.set_deep_item([f"{self.project}_over_data", label, chip_id], new_chip_data)
                         change_bool = True
 
                         time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -7897,31 +7956,33 @@ class OverviewTableGroup:
 
                 req_max_ver = f"{str(max([int(float(v)) for v in new_select_activ_dic.keys()]))}.0"
                 ui_spinner.set_visibility(True)
-                await db_storage.set_deep_item(
-                    [f"{self.project}_over_data", label, chip_id, "select_activ_dic"], new_select_activ_dic
+                target_state = new_select_activ_dic.get(req_max_ver)
+                chip_type = str(
+                    db_storage.get_deep_item(
+                        [f"{self.project}_over_data", label, chip_id, "type"],
+                        "text",
+                    )
                 )
-
-                chip_state = db_storage.get_deep_item(
-                    [f"{self.project}_over_data", label, chip_id, "select_activ_dic", req_max_ver]
-                )
-
-                if chip_state:
-                    await self._update_chip_active_parameter(chip_id, chip_text, config)
-                elif chip_state is None:
-                    pass
-                else:
-                    await self._update_chip_block_parameter(chip_id, config)
-
                 creator = app.storage.user.get("current_user", "匿名用户")
-                await db_storage.set_deep_item(
-                    [
-                        f"{self.project}_over_data",
-                        label,
-                        chip_id,
-                        "timestamp",
-                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    ],
-                    {"creator": creator, "reason": reason, "select_activ_dic": new_select_activ_dic},
+                active_icon = (
+                    await _resolve_active_overview_icon(
+                        self.project,
+                        chip_type,
+                        chip_text,
+                        config,
+                    )
+                    if target_state is True
+                    else None
+                )
+                chip_state = await _save_overview_activation_atomically(
+                    self.project,
+                    label,
+                    chip_id,
+                    OLD_CHIP_SELECT_DIC,
+                    new_select_activ_dic,
+                    str(creator),
+                    reason,
+                    active_icon,
                 )
                 # 数据写入完毕后，推高全局版本号
                 OverviewVersionManager.bump(self.project, config["label"])
@@ -7988,19 +8049,19 @@ class OverviewTableGroup:
 
     async def _update_chip_block_parameter(self, chip_id, config):
         label = config["label"]
-        await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "icon"], "block")
-        await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "enabled"], False)
-        await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "bg_color"], "bg-grey-5")
+        await overview_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "icon"], "block")
+        await overview_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "enabled"], False)
+        await overview_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "bg_color"], "bg-grey-5")
 
     async def _update_chip_active_parameter(self, chip_id, chip_text, config):
         label = config["label"]
         c_type = db_storage.get_deep_item([f"{self.project}_over_data", label, chip_id, "type"])
         if c_type == "file":
-            await db_storage.set_deep_item(
+            await overview_storage.set_deep_item(
                 [f"{self.project}_over_data", label, chip_id, "icon"], _get_active_chip_icon(c_type)
             )
         elif c_type in {"image", "video"}:
-            await db_storage.set_deep_item(
+            await overview_storage.set_deep_item(
                 [f"{self.project}_over_data", label, chip_id, "icon"], _get_active_chip_icon(c_type)
             )
         elif c_type == "search":
@@ -8012,7 +8073,7 @@ class OverviewTableGroup:
             # --- 核心修改：调用 utils.py ---
             is_valid, _, _, _, _ = await validate_search_path(chip_text, config, [self.project])
             icon_val = "saved_search" if is_valid else "search_off"
-            await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "icon"], icon_val)
+            await overview_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "icon"], icon_val)
         elif c_type == "svn":
             # url = db_storage.get_deep_item([f"{self.project}_over_data", label, chip_id, "url_path"])
             # file_info = await self.get_url_file_info_async(url)
@@ -8021,12 +8082,12 @@ class OverviewTableGroup:
             # --- 核心修改：调用 utils.py ---
             is_valid, _, _, _ = await validate_svn_url(chip_text, config, [self.project])
             icon_val = "saved_search" if is_valid else "search_off"
-            await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "icon"], icon_val)
+            await overview_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "icon"], icon_val)
         else:
-            await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "icon"], None)
+            await overview_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "icon"], None)
 
-        await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "enabled"], True)
-        await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "bg_color"], "bg-light-blue-1")
+        await overview_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "enabled"], True)
+        await overview_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "bg_color"], "bg-light-blue-1")
 
     def show_chip_history(self, chip_data, config):
         self.history_dialog.clear()

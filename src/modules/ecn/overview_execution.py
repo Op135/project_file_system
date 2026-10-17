@@ -2,6 +2,7 @@
 import copy
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 
 from nicegui import (
     app,
@@ -9,6 +10,7 @@ from nicegui import (
 
 from ... import (
     db_storage,
+    overview_storage,
 )
 from ...ecn_management_config import (
     ECN_EXECUTION_RESULT_FAILED,
@@ -22,11 +24,11 @@ from ...overview_operation import (
     append_overview_timestamp,
     get_automatic_overview_reason,
 )
-from .repository import (
-    save_ecn_deep_item,
-)
+from .editing import get_pending_overview_anchor_source
 
 logger = logging.getLogger(__name__)
+
+OverviewProgressCallback = Callable[[str, dict, str], Awaitable[None]]
 
 
 def build_overview_activation_state(req_max_ver: object) -> tuple[str, dict[str, bool]]:
@@ -45,6 +47,7 @@ def deactivate_overview_chip_for_ecn(
     operation_time: str,
     scheme_author: str,
     reason: str,
+    source_operation_id: str = "",
 ) -> dict:
     """生成 ECN 失活后的旧 Chip；保留录入节点并记录方案提供人的本次操作。"""
     scheme_author = str(scheme_author or "").strip()
@@ -55,23 +58,60 @@ def deactivate_overview_chip_for_ecn(
     result["enabled"] = False
     result["bg_color"] = "bg-grey-5"
     result["icon"] = "block"
-    append_overview_timestamp(
+    history_key = append_overview_timestamp(
         result,
         creator=scheme_author,
         reason=reason,
         operation_time=operation_time,
         source_id=ecn_id,
     )
+    if source_operation_id:
+        result["timestamp"][history_key]["source_operation_id"] = source_operation_id
     return result
 
 
-async def execute_ecn_overview_schemes(ecn_data: dict, operation_time: str) -> dict:
+def _has_ecn_source_marker(chip: object, ecn_id: str, source_operation_id: str) -> bool:
+    """判断确定性重试是否已经把当前 ECN 操作写入概述记录。"""
+    if not isinstance(chip, dict):
+        return False
+    history = chip.get("timestamp", {})
+    return bool(
+        isinstance(history, dict)
+        and any(
+            isinstance(entry, dict)
+            and str(entry.get("source_id") or "") == ecn_id
+            and str(entry.get("source_operation_id") or "") == source_operation_id
+            for entry in history.values()
+        )
+    )
+
+
+async def execute_ecn_overview_schemes(
+    ecn_data: dict,
+    operation_time: str,
+    *,
+    progress_callback: OverviewProgressCallback | None = None,
+) -> dict:
     """逐条、逐项目执行系统内资料方案并返回可持久化的结果清单。"""
     execution_info = ecn_data.setdefault("execution_info", {})
     stored_results = execution_info.setdefault("overview_results", {})
     results = copy.deepcopy(stored_results) if isinstance(stored_results, dict) else {}
     ecn_id = str(ecn_data.get("ecn_id") or "")
     change_items = [item for item in ecn_data.get("change_items", []) if isinstance(item, dict)]
+    # 待新增表格子项只能在其基准列方案成功后执行；保持其它方案原有顺序。
+    change_items.sort(
+        key=lambda item: int(
+            any(
+                isinstance(state, dict)
+                and bool(get_pending_overview_anchor_source(state.get("anchor_row_id")))
+                for state in (
+                    item.get("project_states", {}).values()
+                    if isinstance(item.get("project_states"), dict)
+                    else []
+                )
+            )
+        )
+    )
 
     def deterministic_uuid(item_id: str, project: str, purpose: str) -> str:
         return str(uuid.uuid5(uuid.NAMESPACE_URL, f"ecn:{ecn_id}:{item_id}:{project}:{purpose}"))
@@ -152,11 +192,17 @@ async def execute_ecn_overview_schemes(ecn_data: dict, operation_time: str) -> d
         if not isinstance(project_states, dict) or not project_states:
             results[item_id] = {
                 "status": ECN_EXECUTION_RESULT_FAILED,
-                "message": "方案没有可执行的项目配置",
+                "message": "方案未关联目标项目，不能执行",
                 "projects": project_results,
                 "time": operation_time,
             }
             item["execute_status"] = ECN_EXECUTION_RESULT_FAILED
+            if progress_callback is not None:
+                await progress_callback(
+                    item_id,
+                    copy.deepcopy(results[item_id]),
+                    ECN_EXECUTION_RESULT_FAILED,
+                )
             continue
 
         for project, project_state in project_states.items():
@@ -175,88 +221,121 @@ async def execute_ecn_overview_schemes(ecn_data: dict, operation_time: str) -> d
                 anchor_row_id = project_state.get("anchor_row_id")
                 project_new_data = get_ecn_overview_project_new_data(item.get("new_data", {}), project_state)
                 label = item["label"]
+                if action not in {
+                    ECN_OVERVIEW_ACTION_DEACTIVATE,
+                    ECN_OVERVIEW_ACTION_UPDATE,
+                    ECN_OVERVIEW_ACTION_ADD,
+                }:
+                    raise ValueError(f"不支持的执行动作：{action or '未配置'}")
 
-                if action == ECN_OVERVIEW_ACTION_DEACTIVATE:
-                    if not chip_id:
-                        raise ValueError("未记录需要失效的原数据")
-                    path = [f"{project}_over_data", label, chip_id]
-                    old_chip = db_storage.get_deep_item(path)
-                    if not old_chip:
-                        raise ValueError("需要失效的原数据不存在")
-                    scheme_author = str(item.get("author") or "").strip()
-                    if not scheme_author:
-                        raise ValueError("方案未记录实际提供人，无法执行")
-                    req_max_ver, _ = build_overview_activation_state(
-                        app.storage.general.get("project_req_max_ver", {}).get(project, "0.0")
-                    )
-                    await save_ecn_deep_item(
-                        path,
-                        deactivate_overview_chip_for_ecn(
+                operation_state = {"applied": False, "error": ""}
+                source_operation_id = f"{ecn_id}:{item_id}:{project}:{action}"
+                scheme_author = str(item.get("author") or "").strip()
+                if not scheme_author:
+                    raise ValueError("方案未记录实际提供人，无法执行")
+
+                def apply_to_latest_label(current_label: object):
+                    label_data = copy.deepcopy(current_label) if isinstance(current_label, dict) else {}
+                    if action in {ECN_OVERVIEW_ACTION_DEACTIVATE, ECN_OVERVIEW_ACTION_UPDATE}:
+                        if not chip_id:
+                            operation_state["error"] = (
+                                "未记录需要失效的原数据"
+                                if action == ECN_OVERVIEW_ACTION_DEACTIVATE
+                                else "未记录需要更换的原数据"
+                            )
+                            return db_storage.ATOMIC_NO_UPDATE
+                        old_chip = label_data.get(str(chip_id))
+                        if not isinstance(old_chip, dict):
+                            operation_state["error"] = (
+                                "需要失效的原数据不存在"
+                                if action == ECN_OVERVIEW_ACTION_DEACTIVATE
+                                else "需要更换的原数据不存在"
+                            )
+                            return db_storage.ATOMIC_NO_UPDATE
+                    else:
+                        old_chip = None
+
+                    if action == ECN_OVERVIEW_ACTION_DEACTIVATE:
+                        assert isinstance(old_chip, dict)
+                        if _has_ecn_source_marker(old_chip, ecn_id, source_operation_id):
+                            operation_state["applied"] = True
+                            return db_storage.ATOMIC_NO_UPDATE
+                        req_max_ver, _ = build_overview_activation_state(
+                            app.storage.general.get("project_req_max_ver", {}).get(project, "0.0")
+                        )
+                        label_data[str(chip_id)] = deactivate_overview_chip_for_ecn(
                             old_chip,
                             req_max_ver,
                             ecn_id,
                             operation_time,
                             scheme_author,
                             get_automatic_overview_reason("ecn_deactivate"),
-                        ),
-                    )
-                elif action == ECN_OVERVIEW_ACTION_UPDATE:
-                    if not chip_id:
-                        raise ValueError("未记录需要更换的原数据")
-                    path = [f"{project}_over_data", label, chip_id]
-                    old_chip = db_storage.get_deep_item(path)
-                    if not old_chip:
-                        raise ValueError("需要更换的原数据不存在")
-                    new_chip, req_max_ver = create_new_chip_template(
-                        item,
-                        project,
-                        project_new_data,
-                        get_automatic_overview_reason("ecn_replace_new"),
-                    )
-                    new_chip["row_id"] = old_chip.get("row_id")
-                    new_chip["select_activ_dic"] = copy.deepcopy(old_chip.get("select_activ_dic", {}))
-                    new_chip["select_activ_dic"][req_max_ver] = True
-                    new_chip["timestamp"][operation_time]["select_activ_dic"] = copy.deepcopy(
-                        new_chip["select_activ_dic"]
-                    )
-                    await save_ecn_deep_item(
-                        path,
-                        deactivate_overview_chip_for_ecn(
-                            old_chip,
-                            req_max_ver,
-                            ecn_id,
-                            operation_time,
-                            str(item.get("author") or "").strip(),
-                            get_automatic_overview_reason("ecn_replace_old"),
-                        ),
-                    )
-                    await save_ecn_deep_item(
-                        [f"{project}_over_data", label, new_chip["id"]],
-                        new_chip,
-                    )
-                elif action == ECN_OVERVIEW_ACTION_ADD:
-                    new_chip, _ = create_new_chip_template(
-                        item,
-                        project,
-                        project_new_data,
-                        get_automatic_overview_reason("ecn_add"),
-                    )
-                    if label == item.get("first_col_label", ""):
-                        new_chip["row_id"] = generated_row_ids[(item_id, project)]
-                    elif anchor_row_id and str(anchor_row_id).startswith("PENDING_NEW_"):
-                        source_item_id = str(anchor_row_id).replace("PENDING_NEW_", "", 1)
-                        new_chip["row_id"] = generated_row_ids.get(
-                            (source_item_id, project),
-                            deterministic_uuid(source_item_id, project, "row"),
+                            source_operation_id,
                         )
                     else:
-                        new_chip["row_id"] = anchor_row_id
-                    await save_ecn_deep_item(
-                        [f"{project}_over_data", label, new_chip["id"]],
-                        new_chip,
-                    )
-                else:
-                    raise ValueError(f"不支持的执行动作：{action or '未配置'}")
+                        new_chip, req_max_ver = create_new_chip_template(
+                            item,
+                            project,
+                            project_new_data,
+                            get_automatic_overview_reason(
+                                "ecn_add" if action == ECN_OVERVIEW_ACTION_ADD else "ecn_replace_new"
+                            ),
+                        )
+                        existing_new = label_data.get(str(new_chip["id"]))
+                        if existing_new is not None:
+                            if _has_ecn_source_marker(existing_new, ecn_id, source_operation_id):
+                                operation_state["applied"] = True
+                                return db_storage.ATOMIC_NO_UPDATE
+                            operation_state["error"] = "目标位置已存在其它概述数据"
+                            return db_storage.ATOMIC_NO_UPDATE
+
+                        if action == ECN_OVERVIEW_ACTION_UPDATE:
+                            assert isinstance(old_chip, dict)
+                            new_chip["row_id"] = old_chip.get("row_id")
+                            new_chip["select_activ_dic"] = copy.deepcopy(old_chip.get("select_activ_dic", {}))
+                            new_chip["select_activ_dic"][req_max_ver] = True
+                            new_chip["timestamp"][operation_time]["select_activ_dic"] = copy.deepcopy(
+                                new_chip["select_activ_dic"]
+                            )
+                            new_chip["timestamp"][operation_time]["source_operation_id"] = source_operation_id
+                            label_data[str(chip_id)] = deactivate_overview_chip_for_ecn(
+                                old_chip,
+                                req_max_ver,
+                                ecn_id,
+                                operation_time,
+                                scheme_author,
+                                get_automatic_overview_reason("ecn_replace_old"),
+                                source_operation_id,
+                            )
+                        elif label == item.get("first_col_label", ""):
+                            new_chip["row_id"] = generated_row_ids[(item_id, project)]
+                        elif anchor_row_id and str(anchor_row_id).startswith("PENDING_NEW_"):
+                            source_item_id = get_pending_overview_anchor_source(anchor_row_id)
+                            source_project_result = results.get(source_item_id, {}).get("projects", {}).get(project, {})
+                            if (
+                                (source_item_id, project) not in generated_row_ids
+                                or not isinstance(source_project_result, dict)
+                                or source_project_result.get("status") != ECN_EXECUTION_RESULT_SUCCESS
+                            ):
+                                operation_state["error"] = "关联的新增基准行尚未成功执行"
+                                return db_storage.ATOMIC_NO_UPDATE
+                            new_chip["row_id"] = generated_row_ids[(source_item_id, project)]
+                        else:
+                            new_chip["row_id"] = anchor_row_id
+                        new_chip["timestamp"][operation_time]["source_operation_id"] = source_operation_id
+                        label_data[str(new_chip["id"])] = new_chip
+
+                    operation_state["applied"] = True
+                    return label_data
+
+                saved = await overview_storage.atomic_deep_update(
+                    [f"{project}_over_data", str(label)],
+                    apply_to_latest_label,
+                    allow_ecn=True,
+                    storage=db_storage,
+                )
+                if not saved or operation_state["error"] or not operation_state["applied"]:
+                    raise ValueError(operation_state["error"] or "概述资料原子保存失败")
 
                 project_results[project] = {
                     "status": ECN_EXECUTION_RESULT_SUCCESS,
@@ -270,6 +349,42 @@ async def execute_ecn_overview_schemes(ecn_data: dict, operation_time: str) -> d
                     "message": str(exc),
                     "time": operation_time,
                 }
+
+            if progress_callback is not None:
+                pending_projects = [
+                    value
+                    for value in project_states
+                    if project_results.get(str(value), {}).get("status")
+                    not in {ECN_EXECUTION_RESULT_SUCCESS, ECN_EXECUTION_RESULT_FAILED}
+                ]
+                failed_projects_now = [
+                    value
+                    for value in project_states
+                    if project_results.get(str(value), {}).get("status") == ECN_EXECUTION_RESULT_FAILED
+                ]
+                checkpoint_status = (
+                    ECN_EXECUTION_RESULT_FAILED
+                    if failed_projects_now
+                    else "running"
+                    if pending_projects
+                    else ECN_EXECUTION_RESULT_SUCCESS
+                )
+                await progress_callback(
+                    item_id,
+                    {
+                        "status": checkpoint_status,
+                        "message": (
+                            "执行中"
+                            if pending_projects
+                            else "全部项目执行成功"
+                            if not failed_projects_now
+                            else "执行失败项目：" + "、".join(map(str, failed_projects_now))
+                        ),
+                        "projects": copy.deepcopy(project_results),
+                        "time": operation_time,
+                    },
+                    checkpoint_status,
+                )
 
         failed_projects = [
             project

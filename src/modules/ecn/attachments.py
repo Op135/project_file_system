@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import logging
 import re
 import shutil
 import uuid
@@ -35,6 +36,9 @@ from ...ecn_management_config import (
 )
 from .editing import ECNConflict, ECNResult
 from .repository import mutate_record
+
+
+logger = logging.getLogger(__name__)
 
 
 def attachment_root() -> Path:
@@ -271,6 +275,48 @@ def cleanup_staged(attachments: list[dict]) -> None:
         pending = str(attachment.get("pending_path") or "")
         if pending.startswith("_pending/"):
             _safe_path(pending).unlink(missing_ok=True)
+
+
+def collect_unique_published_attachments(value: object) -> list[dict]:
+    """收集使用 UUID 独立文件名归档的附件；不接纳无法证明独占性的旧路径。"""
+    collected: list[dict] = []
+    seen_paths: set[str] = set()
+
+    def visit(current: object) -> None:
+        if isinstance(current, dict):
+            file_id = str(current.get("id") or "")
+            relative = str(current.get("relative_path") or "")
+            if (
+                re.fullmatch(r"[0-9a-f]{32}", file_id)
+                and relative
+                and Path(relative).name.startswith(file_id)
+                and relative not in seen_paths
+            ):
+                seen_paths.add(relative)
+                collected.append(copy.deepcopy(current))
+                return
+            for child in current.values():
+                visit(child)
+        elif isinstance(current, list):
+            for child in current:
+                visit(child)
+
+    visit(value)
+    return collected
+
+
+async def cleanup_published_attachments(value: object) -> int:
+    """业务删除提交后清理独占附件；失败只记录，避免反向伪造已提交业务数据。"""
+    removed = 0
+    for attachment in collect_unique_published_attachments(value):
+        try:
+            path = resolve_attachment(attachment)
+            existed = path.is_file()
+            await asyncio.to_thread(path.unlink, missing_ok=True)
+            removed += int(existed)
+        except (ECNConflict, OSError):
+            logger.exception("ECN已删除业务的附件文件清理失败：%s", attachment.get("relative_path"))
+    return removed
 
 
 def resolve_staged_attachment(attachment: dict) -> Path:

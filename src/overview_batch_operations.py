@@ -12,6 +12,7 @@ from typing import Iterable, Mapping, Optional
 from nicegui import app
 
 from . import db_storage
+from . import overview_storage
 from .overview_change_workflow_config import OVERVIEW_CHANGE_WORKFLOW_CONFIG
 from .overview_operation import append_overview_timestamp, get_automatic_overview_reason
 from .project_overview_access import (
@@ -421,7 +422,7 @@ async def insert_overview_chip(project: str, label: str, chip: dict) -> tuple[bo
         inserted["value"] = True
         return current
 
-    success = await db_storage.atomic_deep_update([f"{project}_over_data", label], insert)
+    success = await overview_storage.atomic_deep_update([f"{project}_over_data", label], insert)
     if not success:
         return False, "数据库写入失败"
     if not inserted["value"]:
@@ -466,9 +467,10 @@ async def update_overview_chip_state(
         outcome["chip"] = copy.deepcopy(chip)
         return chip
 
-    success = await db_storage.atomic_deep_update([f"{project}_over_data", label, chip_id], update)
+    success = await overview_storage.atomic_deep_update([f"{project}_over_data", label, chip_id], update)
     if not success:
-        return False, "数据库写入失败", None
+        lock_message = overview_storage.take_ecn_lock_message()
+        return False, lock_message or "数据库写入失败", None
     updated_chip = outcome["chip"]
     if not isinstance(updated_chip, dict):
         return False, "概述条目已不存在", None
@@ -627,7 +629,9 @@ async def apply_related_overview_impacts(
                     return chip
                 return db_storage.ATOMIC_NO_UPDATE
 
-            await db_storage.atomic_deep_update([f"{project}_over_data", related_label, chip_id], mark_pending)
+            await overview_storage.checked_atomic_deep_update(
+                [f"{project}_over_data", related_label, chip_id], mark_pending
+            )
             if not pending_result["eligible"]:
                 continue
 

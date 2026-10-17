@@ -28,7 +28,8 @@
 | --- | --- |
 | `main.py` | 应用启动、数据库初始化、后台任务和页面装配 |
 | `system_lifecycle.py` | 管理端重启/关闭前备份校验、优雅退出与跨热重载进程重启协调 |
-| `db_storage.py` | 通用业务 JSON/实体的异步 SQLite 存储 |
+| `db_storage.py` | 通用业务 JSON/实体的异步 SQLite 存储；只提供缓存、连接和事务原语，不引用具体业务状态或规则 |
+| `overview_storage.py` | 项目概述的业务写入口；在通用事务上组合 ECN 占用等跨模块门禁 |
 | `identity_store.py` | 用户、组织、岗位、权限、流程和具体待办的同步 SQLite 数据层 |
 | `user_service.py` | 数据库用户、组织、权限和审批服务门面 |
 | `legacy_compatibility.py` | 旧身份、角色授权、通知和审批路由实际命中的统一限频日志 |
@@ -53,6 +54,8 @@
 照度/辐照度转强度分布工具位于 `src/tools/intensity_distribution.py`，复用像素统计工具的文件读取、中心定位和 `N×N` 块平均合并；工具页与权限目录分别负责入口和 `tools.intensity_distribution.use` 授权。
 
 更详细的权限迁移状态、每个业务页面职责和历史兼容边界见 `PROJECT_CONTEXT.md`。
+
+通用基础设施不得反向依赖具体业务模块：`db_storage.py` 等通用层不能识别 ECN 状态、权限或业务异常。需要把业务校验与数据库写入原子组合时，由所属业务服务或专用存储适配层调用通用事务接口，并在同一连接内读取最新关联数据。
 
 根目录 `run_local_debug.py` 是本地专用启动入口，固定绑定回环地址并加载上述调试模块；服务器仍使用 `src/main.py`。
 

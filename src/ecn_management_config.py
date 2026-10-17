@@ -1373,7 +1373,7 @@ def merge_ecn_impact_audit_log(review_info: Any, incoming_events: Any) -> int:
 
 
 def get_ecn_scheme_coverage(ecn_data: Any) -> dict[str, set[str]]:
-    """汇总 ECN 要求、资料和物料三类方案关联覆盖情况。"""
+    """汇总 ECN 项目、要求、资料和物料四类方案关联覆盖情况。"""
     if not isinstance(ecn_data, dict):
         ecn_data = {}
     basic_info = ecn_data.get("basic_info", {})
@@ -1383,6 +1383,7 @@ def get_ecn_scheme_coverage(ecn_data: Any) -> dict[str, set[str]]:
     if not isinstance(review_info, dict):
         review_info = {}
 
+    required_projects = set(get_ecn_scheme_target_projects(ecn_data))
     required_requirements = set()
     requirements = basic_info.get("requirements", [])
     if isinstance(requirements, list):
@@ -1408,6 +1409,7 @@ def get_ecn_scheme_coverage(ecn_data: Any) -> dict[str, set[str]]:
         if selected
     }
 
+    provided_projects = set()
     provided_requirements = set()
     provided_docs = set()
     provided_materials = set()
@@ -1427,9 +1429,16 @@ def get_ecn_scheme_coverage(ecn_data: Any) -> dict[str, set[str]]:
                 or (requires_disposition and not is_ecn_material_disposition_measure_final(disposition_measure))
             ):
                 incomplete_material_schemes.add(f"方案 #{scheme_index:02d}")
+        linked_projects = item.get("projects", [])
         linked_requirements = item.get("req_idxs", [])
         linked_docs = item.get("linked_docs", [])
         linked_materials = item.get("linked_materials", [])
+        if isinstance(linked_projects, list):
+            provided_projects.update(
+                str(project).strip()
+                for project in linked_projects
+                if str(project or "").strip()
+            )
         if isinstance(linked_requirements, list):
             provided_requirements.update(
                 str(requirement_idx).strip()
@@ -1442,12 +1451,15 @@ def get_ecn_scheme_coverage(ecn_data: Any) -> dict[str, set[str]]:
             provided_materials.update(linked_materials)
 
     return {
+        "required_projects": required_projects,
         "required_requirements": required_requirements,
         "required_docs": required_docs,
         "required_materials": required_materials,
+        "provided_projects": provided_projects,
         "provided_requirements": provided_requirements,
         "provided_docs": provided_docs,
         "provided_materials": provided_materials,
+        "missing_projects": required_projects - provided_projects,
         "missing_requirements": required_requirements - provided_requirements,
         "missing_docs": required_docs - provided_docs,
         "missing_materials": required_materials - provided_materials,
@@ -1474,6 +1486,7 @@ def is_ecn_scheme_ready_for_review(ecn_data: Any) -> bool:
     return not any(
         coverage[key]
         for key in [
+            "missing_projects",
             "missing_requirements",
             "missing_docs",
             "missing_materials",
@@ -1484,6 +1497,7 @@ def is_ecn_scheme_ready_for_review(ecn_data: Any) -> bool:
 
 
 _ECN_SCHEME_SNAPSHOT_EXCLUDED_FIELDS = {
+    "association_change_notice",
     "rejection_history",
     "review_status",
     "execute_status",

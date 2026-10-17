@@ -64,6 +64,7 @@ from ...ecn_management_config import (
 )
 from .actions import (
     edit_scheme,
+    retain_scheme_after_association_change,
     set_participant_status,
     set_trial_production_decision,
     update_material_codes,
@@ -149,9 +150,11 @@ def build_scheme_panel(
                             coverage_container.clear()
                             with coverage_container:
                                 coverage = get_ecn_scheme_coverage(local_data)
+                                req_projects = coverage["required_projects"]
                                 req_requirements = coverage["required_requirements"]
                                 req_docs = coverage["required_docs"]
                                 req_mats = coverage["required_materials"]
+                                missing_projects = coverage["missing_projects"]
                                 missing_requirements = coverage["missing_requirements"]
                                 missing_docs = coverage["missing_docs"]
                                 missing_mats = coverage["missing_materials"]
@@ -181,6 +184,15 @@ def build_scheme_panel(
                                         ui.label("变更要求及ECN影响项方案覆盖率自检:").classes(
                                             "text-[10px] font-bold text-gray-500 mb-1"
                                         )
+
+                                        if missing_projects:
+                                            ui.label(
+                                                "✖ 未关联变更项目: " + ", ".join(sorted(missing_projects))
+                                            ).classes("text-xs text-red-600 font-bold")
+                                        elif req_projects:
+                                            ui.label("✔ 所有变更项目均有方案关联").classes(
+                                                "text-xs text-green-600 font-bold"
+                                            )
 
                                         if missing_requirements:
                                             ui.label(
@@ -420,6 +432,20 @@ def build_scheme_panel(
                         apply_scheme_result(result.record)
                         return True
 
+                    async def retain_affected_scheme(item: dict) -> None:
+                        result = await retain_scheme_after_association_change(
+                            local_data["ecn_id"],
+                            copy.deepcopy(local_data),
+                            str(item.get("item_id") or ""),
+                            current_user,
+                            current_role,
+                        )
+                        if not result.ok or result.record is None:
+                            ui.notify(result.message, type="warning")
+                            return
+                        apply_scheme_result(result.record)
+                        ui.notify("已确认保留该方案，请完成本人方案的最终确认。", type="positive")
+
                     async def handle_save_material_codes(item: dict, codes: dict[str, str]) -> bool:
                         result = await update_material_codes(
                             local_data["ecn_id"],
@@ -512,6 +538,8 @@ def build_scheme_panel(
                                         "text-cyan-600",
                                         True,
                                     )
+                                if isinstance(item.get("association_change_notice"), dict):
+                                    return "影响变更待复核", "rule", "text-orange-700", False
 
                                 participant_status = participants.get(item.get("author"))
                                 status_info = ECN_PARTICIPANT_STATUS_CONFIG.get(
@@ -550,6 +578,30 @@ def build_scheme_panel(
                                     )
                                     return f"{item.get('role') or '概述参数'} · {title}"
                                 return item.get("change_type") or "资料变更"
+
+                            def association_change_notice_text(item: dict) -> str:
+                                notice = item.get("association_change_notice", {})
+                                if not isinstance(notice, dict):
+                                    return ""
+                                removed = notice.get("removed", {})
+                                if not isinstance(removed, dict):
+                                    removed = {}
+                                labels = {
+                                    "projects": "项目",
+                                    "req_idxs": "变更要求",
+                                    "linked_docs": "资料",
+                                    "linked_materials": "物料",
+                                }
+                                parts = []
+                                for field, label in labels.items():
+                                    values = removed.get(field, [])
+                                    if isinstance(values, list) and values:
+                                        parts.append(f"{label}：{'、'.join(map(str, values))}")
+                                detail = "；".join(parts) or "原关联项"
+                                return (
+                                    f"影响范围已删除（{detail}），失效关联已自动移除。"
+                                    "请核对后选择确认保留、编辑或删除本方案。"
+                                )
 
                             async def update_validation_requirement(item: dict, required: bool) -> None:
                                 report = get_ecn_validation_report(item)
@@ -1798,6 +1850,23 @@ def build_scheme_panel(
                                                         )
                                             else:
                                                 ui.icon("more_horiz").classes("text-slate-300")
+                                    notice_text = association_change_notice_text(item)
+                                    if notice_text:
+                                        with ui.row().classes(
+                                            "w-full items-center justify-between gap-3 px-4 py-2 "
+                                            "bg-orange-50 border-b border-orange-200"
+                                        ):
+                                            with ui.row().classes("items-center gap-2 min-w-0"):
+                                                ui.icon("warning_amber", color="orange-8", size="xs")
+                                                ui.label(notice_text).classes(
+                                                    "text-xs font-semibold text-orange-900 break-all"
+                                                )
+                                            if item.get("author") == current_user and is_scheming_phase:
+                                                ui.button(
+                                                    "确认保留",
+                                                    icon="check",
+                                                    on_click=lambda _, i=item: retain_affected_scheme(i),
+                                                ).props("outline dense color=orange-8 no-caps").classes("shrink-0")
 
                             # 控制折叠栏顺序
                             for group_type in [

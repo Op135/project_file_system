@@ -14,6 +14,7 @@ from pathlib import Path
 from nicegui import app, ui
 
 from .. import db_storage
+from .. import overview_storage
 from ..components import FileThumbnail, OverviewReasonSelector
 from ..config import (
     BASE_DIR,
@@ -1059,21 +1060,35 @@ def information_page():
             return
 
         # --- 执行修改 ---
+        copied_target: Path | None = None
+        overview_saved = False
         try:
-            # 移动物理文件
-            if req_data.get("temp_file_path"):
+            # 先复制并保留暂存源；概述事务失败时可安全回收副本并重试。
+            temp_file_path = req_data.get("temp_file_path")
+            if isinstance(temp_file_path, str) and temp_file_path:
                 import shutil
 
-                shutil.move(req_data["temp_file_path"], Path(config["upload_path"]) / new_val)
+                target_path = Path(str(config["upload_path"])) / str(new_val)
+                shutil.copy2(temp_file_path, target_path)
+                copied_target = target_path
 
             # 更新数据库
             base_path = [f"{project}_over_data", req_data["label"], req_data["chip_id"]]
             if req_data["action"] == "modify":
-                await db_storage.set_deep_item(base_path + ["content"], new_val)
-                if req_data["chip_type"] == "test":
-                    await db_storage.set_deep_item(base_path + ["test_select_data"], req_data["new_test_data"])
+                def apply_approved_change(chip):
+                    if not isinstance(chip, dict):
+                        return db_storage.ATOMIC_NO_UPDATE
+                    chip["content"] = new_val
+                    if req_data["chip_type"] == "test":
+                        chip["test_select_data"] = copy.deepcopy(req_data["new_test_data"])
+                    return chip
+
+                await overview_storage.checked_atomic_deep_update(base_path, apply_approved_change)
             elif req_data["action"] == "delete":
-                await db_storage.del_deep_item(base_path)
+                await overview_storage.del_deep_item(base_path)
+            overview_saved = True
+            if isinstance(temp_file_path, str) and temp_file_path:
+                Path(temp_file_path).unlink(missing_ok=True)
 
             # 核心：触发即时刷新
             from ..components import OverviewVersionManager
@@ -1084,6 +1099,8 @@ def information_page():
             await handle_archive(req_id, "approved")
             ui.notify("审批通过并已同步刷新")
         except Exception as e:
+            if copied_target is not None and not overview_saved:
+                copied_target.unlink(missing_ok=True)
             ui.notify(f"错误: {e}", type="negative")
 
     # 3. 归档逻辑 (清理 app.storage.general，写入数据库持久化)

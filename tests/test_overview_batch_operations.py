@@ -190,7 +190,7 @@ class OverviewBatchOperationTests(unittest.TestCase):
 
         with (
             patch("src.overview_batch_operations.db_storage.get_deep_item", new=fake_get_deep_item),
-            patch("src.overview_batch_operations.db_storage.atomic_deep_update", new=fake_atomic),
+            patch("src.overview_batch_operations.overview_storage.atomic_deep_update", new=fake_atomic),
         ):
             changed_labels = asyncio.run(
                 cascade_promote_table_row(
@@ -315,7 +315,7 @@ class OverviewBatchOperationTests(unittest.TestCase):
             return True
 
         candidate = {"id": "new", "type": "text", "content": "相同内容"}
-        with patch("src.overview_batch_operations.db_storage.atomic_deep_update", new=fake_atomic):
+        with patch("src.overview_batch_operations.overview_storage.atomic_deep_update", new=fake_atomic):
             inserted, message = asyncio.run(insert_overview_chip("P1", "label", candidate))
         self.assertFalse(inserted)
         self.assertIn("已存在", message)
@@ -334,7 +334,7 @@ class OverviewBatchOperationTests(unittest.TestCase):
             return True
 
         candidate = {"id": "new", "type": "text", "content": "相同内容", "row_id": "row-2"}
-        with patch("src.overview_batch_operations.db_storage.atomic_deep_update", new=fake_atomic):
+        with patch("src.overview_batch_operations.overview_storage.atomic_deep_update", new=fake_atomic):
             inserted, _ = asyncio.run(insert_overview_chip("P1", "label", candidate))
         self.assertTrue(inserted)
         self.assertIn("new", stored)
@@ -356,7 +356,7 @@ class OverviewBatchOperationTests(unittest.TestCase):
                 stored = result
             return True
 
-        with patch("src.overview_batch_operations.db_storage.atomic_deep_update", new=fake_atomic):
+        with patch("src.overview_batch_operations.overview_storage.atomic_deep_update", new=fake_atomic):
             changed, _, updated = asyncio.run(
                 update_overview_chip_state("P1", "label", "chip-1", "2.0", None, "张三")
             )
@@ -384,7 +384,7 @@ class OverviewBatchOperationTests(unittest.TestCase):
             self.assertIs(result, db_storage.ATOMIC_NO_UPDATE)
             return True
 
-        with patch("src.overview_batch_operations.db_storage.atomic_deep_update", new=fake_atomic):
+        with patch("src.overview_batch_operations.overview_storage.atomic_deep_update", new=fake_atomic):
             changed, message, updated = asyncio.run(
                 update_overview_chip_state(
                     "P1",
@@ -432,6 +432,7 @@ class OverviewBatchOperationTests(unittest.TestCase):
         with (
             patch("src.overview_batch_operations.db_storage.get_item", new=fake_get_item),
             patch("src.overview_batch_operations.db_storage.atomic_deep_update", new=fake_atomic),
+            patch("src.overview_batch_operations.overview_storage.atomic_deep_update", new=fake_atomic),
         ):
             changed_labels = asyncio.run(
                 apply_related_overview_impacts(

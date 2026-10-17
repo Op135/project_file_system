@@ -25,6 +25,7 @@ from nicegui.client import Client
 from nicegui.events import KeyEventArguments
 
 from . import db_storage
+from . import overview_storage
 
 # import config
 from .config import (
@@ -1678,7 +1679,7 @@ async def set_overview_active_state(
         return overview_data
 
     # 2. 执行原子更新
-    success = await db_storage.atomic_deep_update([f"{project_name}_over_data"], process_active_state)
+    success = await overview_storage.atomic_deep_update([f"{project_name}_over_data"], process_active_state)
 
     # 3. 释放锁后，再根据记录的状态安全地触发前端 UI 通知
     if ui_warning_needed:
@@ -1712,7 +1713,7 @@ async def restore_overview_active_state(
             return db_storage.ATOMIC_NO_UPDATE
         return copy.deepcopy(before_data or {})
 
-    success = await db_storage.atomic_deep_update(
+    success = await overview_storage.atomic_deep_update(
         [f"{project_name}_over_data"],
         restore_if_unchanged,
     )
@@ -1791,7 +1792,9 @@ async def copy_overview_data(project_name, version, target_project_name) -> None
         return SOURCE_OVERVIEW_DATA
 
     # 3. 原子化地更新目标项目
-    await db_storage.atomic_deep_update([f"{target_project_name}_over_data"], init_target_data)
+    await overview_storage.checked_atomic_deep_update(
+        [f"{target_project_name}_over_data"], init_target_data
+    )
 
 
 # 请确保头部已经引入了 update_overview_charge_pending_dic 函数

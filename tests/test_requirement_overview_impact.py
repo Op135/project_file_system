@@ -43,7 +43,15 @@ def test_checked_in_requirement_overview_impact_config_is_valid():
     }
     assert set(loaded["node_impacts"]["212"]) == software_labels
     assert set(loaded["node_impacts"]["213"]) == software_labels
-    assert loaded["node_impacts"]["221"] == []
+    assert set(loaded["node_impacts"]["221"]) == {
+        "ui_testing",
+        "optical_testing",
+        "drive_output_testing",
+        "craft_key_requirements",
+        "electronic_testing",
+        "mechanical_testing",
+        "software_testing",
+    }
 
 
 def test_load_and_resolve_selective_impact_config():
@@ -361,7 +369,7 @@ def test_selective_active_state_marks_only_affected_labels_pending_and_carries_o
             written["value"] = result
         return True
 
-    with patch.object(utils.db_storage, "atomic_deep_update", new=fake_atomic_update):
+    with patch.object(utils.overview_storage, "atomic_deep_update", new=fake_atomic_update):
         success, changed_labels = asyncio.run(
             utils.set_overview_active_state(
                 "P1",
@@ -398,7 +406,7 @@ def test_overview_state_compensation_uses_compare_and_restore():
             stored["value"] = result
         return True
 
-    with patch.object(utils.db_storage, "atomic_deep_update", new=fake_atomic_update):
+    with patch.object(utils.overview_storage, "atomic_deep_update", new=fake_atomic_update):
         assert asyncio.run(utils.restore_overview_active_state("P1", before, expected)) is True
         assert stored["value"] == before
 

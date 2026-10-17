@@ -25,6 +25,7 @@ from nicegui.events import (
 )
 
 from .. import db_storage  # 导入我们创建的模块
+from .. import overview_storage
 from ..access_control import can
 from ..components import (
     ButtonUploader,
@@ -2944,7 +2945,7 @@ async def requirement_page(
                             # 不知失败，要清掉可能生成的需求文件与概述复制内容
                             if os.path.exists(copy_file_path):
                                 os.remove(copy_file_path)
-                            await db_storage.set_item(f"{target_project_name}_over_data", {})
+                            await overview_storage.set_item(f"{target_project_name}_over_data", {})
                             # 如果属于新创建临时项目，失败则删除占位的临时项目号
                             if new_temp_project_bool:
                                 app.storage.general["temp_project_name"].remove(target_project_name)
@@ -4902,28 +4903,42 @@ async def requirement_page(
                         id_str = str(state["chip_id"])
                         base_path = [f"{project_name}_over_data", label_str, id_str]
 
-                        # 1. 更新基础字段
-                        await db_storage.set_deep_item(base_path + ["content"], new_content)
-
-                        # 2. 如果是 Test 类型，收集并保存 test_select_data
+                        # 在一个事务内同时更新内容、测试字段和历史，避免 ECN 建锁时留下半写入数据。
+                        new_test_data = {}
                         if state["current_chip_data"].get("type") == "test":
-                            new_test_data = {}
                             for key, input_elem in test_inputs.items():
                                 if input_elem:
                                     new_test_data[key] = input_elem.value
 
-                            final_test_data = state["current_chip_data"].get("test_select_data", {}).copy()
-                            final_test_data.update(new_test_data)
+                        edit_conflict = {"message": ""}
 
-                            await db_storage.set_deep_item(base_path + ["test_select_data"], final_test_data)
+                        def apply_edit(fresh_chip):
+                            if not isinstance(fresh_chip, dict):
+                                edit_conflict["message"] = "概述条目已不存在，请刷新后重试。"
+                                return db_storage.ATOMIC_NO_UPDATE
+                            opened_chip = state["current_chip_data"]
+                            if not isinstance(opened_chip, dict):
+                                edit_conflict["message"] = "概述编辑快照无效，请刷新后重新编辑。"
+                                return db_storage.ATOMIC_NO_UPDATE
+                            if fresh_chip.get("content") != opened_chip.get("content"):
+                                edit_conflict["message"] = "概述内容已被其他人员修改，请刷新后重新编辑。"
+                                return db_storage.ATOMIC_NO_UPDATE
+                            fresh_chip["content"] = new_content
+                            if fresh_chip.get("type") == "test":
+                                final_test_data = copy.deepcopy(fresh_chip.get("test_select_data", {}))
+                                final_test_data.update(new_test_data)
+                                fresh_chip["test_select_data"] = final_test_data
+                            append_overview_timestamp(
+                                fresh_chip,
+                                creator=app.storage.user.get("current_user", "匿名用户"),
+                                reason=reason,
+                            )
+                            return fresh_chip
 
-                        fresh_chip = db_storage.get_deep_item(base_path, {})
-                        append_overview_timestamp(
-                            fresh_chip,
-                            creator=app.storage.user.get("current_user", "匿名用户"),
-                            reason=reason,
-                        )
-                        await db_storage.set_deep_item(base_path, fresh_chip)
+                        saved = await overview_storage.atomic_deep_update(base_path, apply_edit)
+                        if edit_conflict["message"]:
+                            raise overview_storage.OverviewWriteError(edit_conflict["message"])
+                        overview_storage.require_write_success(saved)
 
                         ui.notify("修改已保存！", type="positive")
 
@@ -4961,7 +4976,7 @@ async def requirement_page(
             return db_storage.ATOMIC_NO_UPDATE if current_data is not None else {}
 
         # 将检查与初始化的动作合并为一个原子操作
-        await db_storage.atomic_deep_update([f"{project_name}_over_data"], init_if_missing)
+        await overview_storage.checked_atomic_deep_update([f"{project_name}_over_data"], init_if_missing)
 
         # 只在正式概述页做一次性自愈：同一项目同一最高已审版本不重复扫描概述数据。
         if not temp_bool:

@@ -270,7 +270,7 @@ class OverviewCorrectionTests(unittest.TestCase):
 
         with (
             patch("src.overview_corrections.app", fake_app),
-            patch("src.overview_corrections.db_storage.atomic_deep_update", new=fake_atomic),
+            patch("src.overview_corrections.overview_storage.atomic_deep_update", new=fake_atomic),
             patch("src.components.OverviewVersionManager.bump"),
         ):
             result = asyncio.run(execute_correction_request(request))
@@ -342,7 +342,7 @@ class OverviewCorrectionTests(unittest.TestCase):
 
         with (
             patch("src.overview_corrections.app", fake_app),
-            patch("src.overview_corrections.db_storage.atomic_deep_update", new=fake_atomic),
+            patch("src.overview_corrections.overview_storage.atomic_deep_update", new=fake_atomic),
             patch("src.components.OverviewVersionManager.bump"),
         ):
             result = asyncio.run(execute_correction_request(request))
@@ -393,7 +393,7 @@ class OverviewCorrectionTests(unittest.TestCase):
 
         with (
             patch("src.overview_corrections.app", fake_app),
-            patch("src.overview_corrections.db_storage.atomic_deep_update", new=fake_atomic),
+            patch("src.overview_corrections.overview_storage.atomic_deep_update", new=fake_atomic),
         ):
             result = asyncio.run(execute_correction_request(request))
 
@@ -461,7 +461,7 @@ class OverviewCorrectionTests(unittest.TestCase):
 
         with (
             patch("src.overview_corrections.app", fake_app),
-            patch("src.overview_corrections.db_storage.atomic_deep_update", new=fake_atomic),
+            patch("src.overview_corrections.overview_storage.atomic_deep_update", new=fake_atomic),
             patch("src.components.OverviewVersionManager.bump"),
         ):
             result = asyncio.run(execute_correction_request(request))

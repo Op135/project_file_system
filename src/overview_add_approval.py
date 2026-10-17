@@ -16,6 +16,7 @@ from typing import Any
 from nicegui import app
 
 from . import db_storage
+from . import overview_storage
 from .approval_workflow import (
     advance_approval_sequence,
     create_approval_sequence_assignments,
@@ -193,9 +194,10 @@ async def save_or_submit_overview_addition(
 ) -> OverviewAddSaveResult:
     """普通概述直接保存；关键概述只保存审批候选快照。"""
     if not requires_overview_add_approval(config):
-        saved = await db_storage.set_deep_item(
+        saved = await overview_storage.set_deep_item(
             [f"{project}_over_data", label, str(chip.get("id") or "")],
             copy.deepcopy(chip),
+            raise_on_failure=False,
         )
         return OverviewAddSaveResult(
             "saved" if saved else "error",

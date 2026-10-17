@@ -105,9 +105,10 @@ async def delete_record(ecn_id: str, *, username: str, user_service, storage=Non
     storage = storage or db_storage
     deleted = False
     message = ""
+    deleted_record: dict | None = None
 
     async def apply(current, connection):
-        nonlocal deleted, message
+        nonlocal deleted, deleted_record, message
         try:
             actor = user_service.get_user(username) if user_service is not None else None
             actor_role = get_active_ecn_actor_role(
@@ -124,6 +125,7 @@ async def delete_record(ecn_id: str, *, username: str, user_service, storage=Non
             if not isinstance(current, dict) or ecn_id not in current:
                 raise ECNConflict("单据已不存在，请刷新列表。")
             updated = copy.deepcopy(current)
+            deleted_record = copy.deepcopy(updated[ecn_id])
             updated.pop(ecn_id)
             await connection.execute(
                 "UPDATE work_assignments SET status='superseded', updated_at=? "
@@ -139,5 +141,9 @@ async def delete_record(ecn_id: str, *, username: str, user_service, storage=Non
     success = await storage.atomic_deep_update_transaction([ECN_DATA_KEY], apply)
     if success and deleted:
         await storage.set_item(ECN_VERSION_KEY, time.time())
+        if deleted_record is not None:
+            from .attachments import cleanup_published_attachments
+
+            await cleanup_published_attachments(deleted_record)
         return True, ""
     return False, message or "删除失败，请重试。"

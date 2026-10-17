@@ -331,7 +331,9 @@ def open_overview_change_dialog(ecn_data, current_user, on_save_callback, edit_i
             with ui.column().classes("w-full gap-2"):
                 # === 区域 1：对应关联卡片 (仅保留资料关联) ===
                 with ui.card().classes("w-full p-3 bg-gray-50 border border-gray-200 shadow-sm gap-2"):
-                    ui.label("对应关联 (必填)").classes("text-xs font-bold text-indigo-700")
+                    ui.label(
+                        "关联范围（目标项目必选；要求、资料可选，提交评审前须整体覆盖全部影响项）"
+                    ).classes("text-xs font-bold text-indigo-700")
                     render_association_checkboxes(
                         "目标项目（必选）",
                         target_projects,
@@ -1034,6 +1036,8 @@ def open_overview_change_dialog(ecn_data, current_user, on_save_callback, edit_i
         async def save_item():
             if not sel_state["projects"]:
                 return ui.notify("请至少选择一个目标项目", type="warning")
+            if not sel_state["role"] or not sel_state["label"]:
+                return ui.notify("请选择技术维度和具体参数", type="warning")
             if not sel_state["has_enabled_bool"]:
                 return ui.notify("缺少第一列的基准数据，请先为基准列添加方案！", type="warning")
             requires_new_content = ecn_overview_requires_new_content(sel_state["project_states"])
@@ -1185,7 +1189,9 @@ def open_text_change_dialog(
         ui.label(f"修改{dialog_title}" if is_edit else f"添加{dialog_title}").classes("text-lg font-bold text-blue-900")
 
         with ui.card().classes("w-full p-3 bg-gray-50 border border-gray-200 shadow-sm gap-2 mt-2"):
-            ui.label("对应关联 (必填)").classes("text-xs font-bold text-indigo-700")
+            ui.label(
+                "关联范围（目标项目必选；要求、资料、物料可选，提交评审前须整体覆盖全部影响项）"
+            ).classes("text-xs font-bold text-indigo-700")
             render_association_checkboxes(
                 "目标项目（必选）",
                 target_projects,

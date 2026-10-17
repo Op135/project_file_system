@@ -140,6 +140,14 @@ def get_current_approval_display(workflow: dict) -> tuple[list[str], list[str]]:
     return pending, approved
 
 
+def detail_requires_reopen(current_workflow: dict, fresh_workflow: dict) -> bool:
+    """状态或阶段变化会改变整页可见控件，旧详情必须关闭后重建。"""
+    return (
+        fresh_workflow.get("current_state") != current_workflow.get("current_state")
+        or fresh_workflow.get("current_phase") != current_workflow.get("current_phase")
+    )
+
+
 async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, refresh_list):
     access_snapshot = build_ecn_access_snapshot()
     if not can_view_ecn(current_role, current_user, access_snapshot=access_snapshot):
@@ -204,7 +212,7 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
         del proj_dict_non["其它"]
 
     if is_new:
-        if not proj_dict_mass and not proj_dict_non:
+        if not proj_dict_mass:
             return ui.notify("当前没有可供变更的转产项目。", type="warning")
         ecn_data = generate_initial_ecn_data(
             current_user,
@@ -334,7 +342,13 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                 return
             expected = copy.deepcopy(local_data)
             result = await save_review(
-                ecn_id, expected, copy.deepcopy(review_baseline), submitted, current_user, current_role
+                ecn_id,
+                expected,
+                copy.deepcopy(review_baseline),
+                submitted,
+                current_user,
+                current_role,
+                project_summary=app.storage.general.get("project_summary", {}),
             )
             if result.ok and result.record is not None:
                 # 只承认这次提交的值；await 期间继续输入的内容仍保留为下一次增量。
@@ -1491,6 +1505,7 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                     note=note,
                     rejected_ids=rejected_item_ids,
                     project_sales=app.storage.general.get("project_sale", {}),
+                    project_summary=app.storage.general.get("project_summary", {}),
                 )
                 if result.ok and result.record is not None:
                     ui.notify(f"操作成功：{result.record['ecn_id']}", type="positive")
@@ -1522,6 +1537,7 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
 
                 # 1. 同步工作流状态
                 fresh_wf = fresh.get("workflow", {})
+                state_or_phase_changed = detail_requires_reopen(wf, fresh_wf)
                 if fresh_wf.get("trial_production") != wf.get("trial_production"):
                     wf["trial_production"] = copy.deepcopy(fresh_wf.get("trial_production"))
                     local_data["approval_log"] = copy.deepcopy(fresh.get("approval_log", []))
@@ -1559,6 +1575,11 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                         root_dialog.close()
                         refresh_list()
                         ui.notify("ECN等级已由其他页面调整，请重新打开详情。", type="info")
+                        return
+                    if state_or_phase_changed:
+                        root_dialog.close()
+                        refresh_list()
+                        ui.notify("ECN流程阶段已变化，请重新打开详情继续操作。", type="info")
                         return
                     current_identity_still_pending = current_user in get_ecn_pending_approval_roles(wf)
                     if was_current_role_pending and not current_identity_still_pending:
@@ -1635,14 +1656,7 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                     if not can_update_controls_only:
                         await restore_execution_scroll_state(execution_container.client, scroll_state)
 
-        if wf["current_state"] in [
-            ECNState.ECR_REVIEWING,
-            ECNState.ECN_SCHEMING,
-            ECNState.ECN_REVIEWING,
-            ECNState.MATERIAL_CODE_PENDING,
-            ECNState.ECN_EXECUTING,
-            ECNState.CLOSED,
-        ] and not is_new:
+        if not is_new:
             sync_timer = ui.timer(3.0, sync_schemes)
             root_dialog.on("close", sync_timer.cancel)
 

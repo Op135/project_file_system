@@ -133,10 +133,12 @@ class ECNAttachmentTests(unittest.IsolatedAsyncioTestCase):
     async def test_scheme_attachment_is_bound_to_author_and_item(self):
         record = get_ecn_template()
         record["ecn_id"] = "ECN26091603"
+        record["target_projects"] = ["P1"]
         record["workflow"].update(current_state=ECNState.ECN_SCHEMING, current_phase="ECN_SCHEME_PHASE")
         item = {
             "item_id": "item-a", "author": "owner", "scheme_category": "ordinary_document",
             "type": "text_desc", "old_content": "旧", "new_content": "新", "attachments": [],
+            "projects": ["P1"], "req_idxs": [], "linked_docs": [], "linked_materials": [],
         }
         record["change_items"] = [item]
         await self.storage.set_item("ecn_management_data", {record["ecn_id"]: record})
@@ -160,6 +162,83 @@ class ECNAttachmentTests(unittest.IsolatedAsyncioTestCase):
             "owner", "测试岗位", user_service=self.service, storage=self.storage,
         )
         self.assertFalse(result.ok)
+
+    async def test_deleting_scheme_removes_its_uuid_named_attachment(self):
+        record = get_ecn_template()
+        record["ecn_id"] = "ECN26091604"
+        record["workflow"].update(current_state=ECNState.ECN_SCHEMING, current_phase="ECN_SCHEME_PHASE")
+        file_id = "b" * 32
+        relative = f"owner/{record['ecn_id']}/scheme_item-a/{file_id}.pdf"
+        metadata = {
+            "id": file_id,
+            "name": "测试报告.pdf",
+            "uploaded_by": "owner",
+            "relative_path": relative,
+        }
+        path = self.files / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"scheme-file")
+        item = {
+            "item_id": "item-a",
+            "author": "owner",
+            "scheme_category": "ordinary_document",
+            "type": "text_desc",
+            "old_content": "旧",
+            "new_content": "新",
+            "attachments": [metadata],
+        }
+        record["change_items"] = [item]
+        await self.storage.set_item("ecn_management_data", {record["ecn_id"]: record})
+
+        result = await actions.edit_scheme(
+            record["ecn_id"],
+            copy.deepcopy(record),
+            None,
+            copy.deepcopy(item),
+            "owner",
+            "测试岗位",
+            delete=True,
+            user_service=self.service,
+            storage=self.storage,
+        )
+
+        self.assertTrue(result.ok, result.message)
+        self.assertFalse(path.exists())
+
+    async def test_deleting_record_removes_all_uuid_named_attachments(self):
+        record = get_ecn_template()
+        record["ecn_id"] = "ECN26091605"
+        record["basic_info"]["applicant"] = "owner"
+        paths = []
+        metadata = []
+        for index, file_id in enumerate(("c" * 32, "d" * 32), start=1):
+            relative = f"owner/{record['ecn_id']}/ecr/{file_id}.pdf"
+            path = self.files / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(f"file-{index}".encode())
+            paths.append(path)
+            metadata.append(
+                {
+                    "id": file_id,
+                    "name": f"附件{index}.pdf",
+                    "uploaded_by": "owner",
+                    "relative_path": relative,
+                }
+            )
+        record["basic_info"]["attachments"] = [metadata[0]]
+        record["execution_info"] = {"attachments": {"ordinary|item-1|": [metadata[1]]}}
+        await self.storage.set_item("ecn_management_data", {record["ecn_id"]: record})
+
+        with patch("src.ecn_access.can_delete_ecn", return_value=True):
+            deleted, message = await repository.delete_record(
+                record["ecn_id"],
+                username="owner",
+                user_service=self.service,
+                storage=self.storage,
+            )
+
+        self.assertTrue(deleted, message)
+        self.assertTrue(all(not path.exists() for path in paths))
 
 
 class ECNAttachmentPreviewTests(unittest.TestCase):

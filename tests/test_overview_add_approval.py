@@ -63,7 +63,7 @@ class OverviewAddApprovalConfigTests(unittest.TestCase):
 class OverviewAddApprovalLifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def test_ordinary_item_is_saved_immediately(self):
         set_item = AsyncMock(return_value=True)
-        with patch("src.overview_add_approval.db_storage.set_deep_item", new=set_item):
+        with patch("src.overview_add_approval.overview_storage.set_deep_item", new=set_item):
             result = await save_or_submit_overview_addition(
                 project="P1",
                 label="ordinary",
@@ -90,7 +90,7 @@ class OverviewAddApprovalLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 return_value={"status": "matched", "assignment": assignment},
             ),
             patch("src.overview_add_approval._insert_request", new=insert_request),
-            patch("src.overview_add_approval.db_storage.set_deep_item", new=set_item),
+            patch("src.overview_add_approval.overview_storage.set_deep_item", new=set_item),
         ):
             result = await save_or_submit_overview_addition(
                 project="P1",

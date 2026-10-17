@@ -17,6 +17,7 @@ from typing import Any
 from nicegui import app
 
 from . import db_storage
+from . import overview_storage
 from .config import BASE_DIR, OVERVIEW_EXEMPTION_CHECK_LIST, PROJECT_STATE_LIST
 from .notification_recipients import resolve_permission_wecom_recipients
 from .overview_conversion_review import (
@@ -399,7 +400,7 @@ async def transition_project_state(
             changed_labels: set[str] = set()
             origins: dict[str, str] = {}
             try:
-                changed = await db_storage.atomic_deep_update(
+                changed = await overview_storage.atomic_deep_update(
                     [f"{project_name}_over_data"],
                     _build_conversion_mutator(
                         project_name,

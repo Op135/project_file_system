@@ -14,6 +14,7 @@ from typing import Iterable, Optional
 from nicegui import app
 
 from . import db_storage
+from . import overview_storage
 from .config import OVER_UPLOADS_FILE_TYPE
 from .overview_batch_operations import validate_overview_content
 from .overview_change_workflow_config import OVERVIEW_CHANGE_WORKFLOW_CONFIG
@@ -479,7 +480,7 @@ async def execute_correction_request(request: dict) -> dict:
         except Exception as exc:
             return {"ok": False, "message": f"暂存文件复制到正式目录失败：{exc}"}
 
-    success = await db_storage.atomic_deep_update([f"{project}_over_data"], apply_correction)
+    success = await overview_storage.atomic_deep_update([f"{project}_over_data"], apply_correction)
     if not success or not correction_applied:
         if copied_new_target and target_path is not None:
             try:

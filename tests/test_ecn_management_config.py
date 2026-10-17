@@ -474,6 +474,30 @@ def test_every_change_requirement_must_be_linked_by_at_least_one_scheme():
     assert is_ecn_scheme_ready_for_review(record) is True
 
 
+def test_every_project_requires_a_scheme_but_each_scheme_may_skip_other_associations():
+    record = _ecn_record(
+        impact_selected=True,
+        impact_handlers=["工程师A"],
+        participants={"工程师A": ECN_PARTICIPANT_STATUS_CONFIRMED},
+    )
+    record["target_projects"] = ["P1", "P2"]
+    record["basic_info"]["requirements"] = [{"idx": 1, "content": "同步变更"}]
+    record["change_items"] = [
+        {"projects": ["P1"], "req_idxs": [1]},
+    ]
+
+    coverage = get_ecn_scheme_coverage(record)
+    assert coverage["missing_projects"] == {"P2"}
+    assert is_ecn_scheme_ready_for_review(record) is False
+
+    # P2 的方案可以只关联项目；要求已经由 P1 方案完成总体覆盖。
+    record["change_items"].append(
+        {"projects": ["P2"], "req_idxs": [], "linked_docs": [], "linked_materials": []}
+    )
+    assert get_ecn_scheme_coverage(record)["missing_projects"] == set()
+    assert is_ecn_scheme_ready_for_review(record) is True
+
+
 def test_rejecting_selected_items_only_reopens_their_authors():
     record = _ecn_record(
         state=ECNState.ECN_REVIEWING,

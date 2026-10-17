@@ -2,6 +2,7 @@
 
 import asyncio
 import copy
+import json
 import uuid
 from datetime import (
     datetime,
@@ -28,6 +29,7 @@ from ...ecn_access import (
     get_active_ecn_actor_role,
 )
 from ...ecn_management_config import (
+    ECN_ALLOWED_PROJECT_STATES,
     ECN_LEVEL_LABELS,
     ECN_LEVEL_SIMPLE,
     ECN_REQUIRE_REJECTED_ITEM_SELECTION,
@@ -61,6 +63,7 @@ from .approval_transaction import (
     ApprovalTransaction,
 )
 from .editing import (
+    acknowledge_scheme_association_change,
     ECNConflict,
     confirm_participant,
     delete_scheme,
@@ -68,6 +71,8 @@ from .editing import (
     require_current_context,
     save_scheme,
     update_review,
+    validate_scheme_associations,
+    validate_overview_scheme_dependencies,
 )
 from .models import (
     append_ecn_approval_log_once,
@@ -77,8 +82,14 @@ from .repository import (
     mutate_record,
 )
 from ...issue_workflow_utils import schedule_background_task
+from .overview_locks import collect_ecn_overview_locks
 from ...workflow_notifications import send_workflow_completion_cc
-from .attachments import cleanup_staged, publish_pending, validate_scheme_attachments
+from .attachments import (
+    cleanup_published_attachments,
+    cleanup_staged,
+    publish_pending,
+    validate_scheme_attachments,
+)
 from .scheme_notifications import send_scheme_sales_completion_notifications
 
 
@@ -94,11 +105,96 @@ def require_active_actor_role(user: str, role: str, service) -> str:
     return actor_role
 
 
-async def save_review(ecn_id, expected, baseline, submitted, user, role, *, user_service=None, storage=None):
+def validate_impact_projects(record: dict, project_summary: dict | None) -> None:
+    """按最新项目库校验扩大影响项目仍存在且仍属于对应状态分组。"""
+    if project_summary is None:
+        return
+    review = record.get("review_info", {})
+    review = review if isinstance(review, dict) else {}
+    invalid: list[str] = []
+    for field, expect_mass in (
+        ("expanded_projects_mass", True),
+        ("expanded_projects_non_mass", False),
+    ):
+        projects = review.get(field, [])
+        if not isinstance(projects, list):
+            raise ECNConflict("扩大影响项目数据无效，请刷新后重新选择。")
+        for project in projects:
+            project_name = str(project or "").strip()
+            summary = project_summary.get(project_name)
+            is_mass = isinstance(summary, dict) and summary.get("state") in ECN_ALLOWED_PROJECT_STATES
+            if not isinstance(summary, dict) or is_mass is not expect_mass:
+                invalid.append(project_name or "（空项目）")
+    if invalid:
+        raise ECNConflict(
+            "以下扩大影响项目已从项目库移除或状态分组已变化，请重新选择："
+            + "、".join(dict.fromkeys(invalid))
+        )
+
+
+async def validate_overview_scheme_target_lock(
+    connection,
+    ecn_id: str,
+    item: dict,
+) -> None:
+    """在保存方案的同一事务中确认目标概述未被其它 ECN 占用且快照未变化。"""
+    if item.get("type") != "overview_update":
+        return
+    async with connection.execute(
+        f"SELECT value FROM {db_storage.TABLE_NAME} WHERE key = ?",
+        ("ecn_management_data",),
+    ) as cursor:
+        ecn_row = await cursor.fetchone()
+    all_records = json.loads(ecn_row[0]) if ecn_row else {}
+    locks = collect_ecn_overview_locks(all_records)
+    item_id = str(item.get("item_id") or "").strip()
+    label = str(item.get("label") or "").strip()
+    project_states = item.get("project_states", {})
+    if not isinstance(project_states, dict):
+        return
+    overview_cache: dict[str, dict] = {}
+    for project, state in project_states.items():
+        if not isinstance(state, dict) or state.get("action") not in {"update", "deactivate"}:
+            continue
+        project_name = str(project or "").strip()
+        chip_id = str(state.get("chip_id") or "").strip()
+        owner = locks.get((project_name, label, chip_id))
+        if owner and (owner.get("ecn_id"), owner.get("item_id")) != (ecn_id, item_id):
+            raise ECNConflict(f"{project_name} 的目标概述已被 {owner.get('ecn_id')} 占用，请改选其它数据。")
+        top_key = f"{project_name}_over_data"
+        if top_key not in overview_cache:
+            async with connection.execute(
+                f"SELECT value FROM {db_storage.TABLE_NAME} WHERE key = ?",
+                (top_key,),
+            ) as cursor:
+                overview_row = await cursor.fetchone()
+            overview_cache[top_key] = json.loads(overview_row[0]) if overview_row else {}
+        label_data = overview_cache[top_key].get(label, {})
+        latest_chip = label_data.get(chip_id) if isinstance(label_data, dict) else None
+        if not isinstance(latest_chip, dict):
+            raise ECNConflict(f"{project_name} 的目标概述已不存在，请重新选择。")
+        if latest_chip != state.get("old_data"):
+            raise ECNConflict(f"{project_name} 的目标概述已变化，请重新打开方案后选择。")
+
+
+async def save_review(
+    ecn_id,
+    expected,
+    baseline,
+    submitted,
+    user,
+    role,
+    *,
+    user_service=None,
+    project_summary=None,
+    storage=None,
+):
     async def operation(current, connection):
         actor_role = require_active_actor_role(user, role, user_service)
         require_permission(can_edit_ecn_impact, actor_role, user, user_service)
-        return update_review(current, expected, baseline, submitted, user)
+        updated = update_review(current, expected, baseline, submitted, user)
+        validate_impact_projects(updated, project_summary)
+        return updated
 
     return await mutate_record(ecn_id, operation, storage=storage)
 
@@ -110,9 +206,14 @@ async def edit_scheme(ecn_id, expected, item, original, user, role, *, delete=Fa
         if delete:
             return delete_scheme(current, expected, original, user)
         validate_scheme_attachments(current, item, user)
-        return save_scheme(current, expected, item, original, user)
+        updated = save_scheme(current, expected, item, original, user)
+        await validate_overview_scheme_target_lock(connection, ecn_id, item)
+        return updated
 
-    return await mutate_record(ecn_id, operation, storage=storage)
+    result = await mutate_record(ecn_id, operation, storage=storage)
+    if delete and result.ok:
+        await cleanup_published_attachments(original)
+    return result
 
 
 async def set_participant_status(ecn_id, expected, user, role, status, *, user_service=None, storage=None):
@@ -120,6 +221,36 @@ async def set_participant_status(ecn_id, expected, user, role, status, *, user_s
         actor_role = require_active_actor_role(user, role, user_service)
         require_permission(can_edit_ecn_scheme, actor_role, user, user_service)
         return confirm_participant(current, expected, user, status)
+
+    return await mutate_record(ecn_id, operation, storage=storage)
+
+
+async def retain_scheme_after_association_change(
+    ecn_id,
+    expected,
+    item_id,
+    user,
+    role,
+    *,
+    user_service=None,
+    storage=None,
+):
+    """确认保留因影响范围删减而被标记的方案。"""
+    async def operation(current, connection):
+        del connection
+        actor_role = require_active_actor_role(user, role, user_service)
+        require_permission(can_edit_ecn_scheme, actor_role, user, user_service)
+        updated = acknowledge_scheme_association_change(current, expected, item_id, user)
+        append_ecn_approval_log_once(
+            updated.setdefault("approval_log", []),
+            {
+                "user": user,
+                "role": actor_role,
+                "action": f"确认保留受影响方案（{item_id}）",
+                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            },
+        )
+        return updated
 
     return await mutate_record(ecn_id, operation, storage=storage)
 
@@ -151,7 +282,7 @@ async def set_trial_production_decision(ecn_id, expected, required, user, role, 
     return await mutate_record(ecn_id, operation, storage=storage)
 
 
-def validate_request(record):
+def validate_request(record, project_summary: dict | None = None):
     basic = record["basic_info"]
     checks = [
         (basic.get("nature"), "请选择变更性质"),
@@ -163,6 +294,18 @@ def validate_request(record):
     for valid, message in checks:
         if not valid:
             raise ECNConflict(message)
+    if project_summary is not None:
+        invalid_projects = [
+            str(project)
+            for project in record.get("target_projects", [])
+            if not isinstance(project_summary.get(str(project)), dict)
+            or project_summary[str(project)].get("state") not in ECN_ALLOWED_PROJECT_STATES
+        ]
+        if invalid_projects:
+            raise ECNConflict(
+                "以下变更对象当前已不处于允许发起ECR的项目状态，请移除后重新提交："
+                + "、".join(invalid_projects)
+            )
     if basic.get("reasons", {}).get("其他") and not str(basic.get("other_reason_desc") or "").strip():
         raise ECNConflict("请填写其他说明")
     requirement_date = str(basic.get("requirement_date") or "").strip()
@@ -175,14 +318,20 @@ def validate_request(record):
             raise ECNConflict("需求日期格式无效，请通过日历重新选择。")
 
 
-def validate_scheme_review(record):
+def validate_scheme_review(record, project_summary: dict | None = None):
+    validate_impact_projects(record, project_summary)
     decision = record.get("workflow", {}).get("trial_production")
     if not isinstance(decision, dict) or not isinstance(decision.get("required"), bool):
         raise ECNConflict("请先在方案右上角判定是否需要试产，再发起方案评审。")
+    for item in record.get("change_items", []):
+        if isinstance(item, dict):
+            validate_scheme_associations(record, item)
+    validate_overview_scheme_dependencies(record)
     if not is_ecn_scheme_ready_for_review(record):
         coverage = get_ecn_scheme_coverage(record)
         missing = []
         for key, title in (
+            ("missing_projects", "遗漏变更项目"),
             ("missing_requirements", "遗漏变更要求"),
             ("missing_docs", "遗漏资料"),
             ("missing_materials", "遗漏物料"),
@@ -308,7 +457,19 @@ async def update_material_codes(
     return await mutate_record(ecn_id, operation, storage=storage)
 
 
-def transition(current, expected, baseline, action, user, role, note, rejected_ids, service, project_sales):
+def transition(
+    current,
+    expected,
+    baseline,
+    action,
+    user,
+    role,
+    note,
+    rejected_ids,
+    service,
+    project_sales,
+    project_summary=None,
+):
     """纯单据更新与延迟待办命令；调用方负责统一事务提交。"""
     require_current_context(current, expected)
     note = str(note or "").strip()
@@ -347,14 +508,14 @@ def transition(current, expected, baseline, action, user, role, note, rejected_i
     elif action in {"submit_ecr", "initiate_scheme_review"}:
         is_ecr = action == "submit_ecr"
         if is_ecr:
-            validate_request(current)
+            validate_request(current, project_summary)
             basic = current["basic_info"]
             basic["title"] = (
                 f"{','.join(current['target_projects'][:2])}等 - {'/'.join(k for k, v in basic['reasons'].items() if v)}变更"
             )
         else:
             require_permission(can_submit_ecn_scheme_review, role, user, service)
-            validate_scheme_review(current)
+            validate_scheme_review(current, project_summary)
         workflow["approval_round"] = str(uuid.uuid4())
         if is_ecr:
             result = start_ecr_approval(
@@ -466,6 +627,7 @@ async def execute_action(
     rejected_ids=None,
     user_service=None,
     project_sales=None,
+    project_summary=None,
     storage=None,
 ):
     service = user_service or getattr(app.state, "user_service", None)
@@ -519,6 +681,7 @@ async def execute_action(
             list(rejected_ids or []),
             proxy or service,
             project_sales or {},
+            project_summary,
         )
         if is_new and staged_ecr_attachments:
             basic = updated["basic_info"]

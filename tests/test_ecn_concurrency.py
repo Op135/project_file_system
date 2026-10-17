@@ -27,9 +27,14 @@ from src.modules.ecn import validation_reports
 from src.modules.ecn import execution_review
 from src.modules.ecn.approval_transaction import ApprovalTransaction
 from src.modules.ecn.approval_reassignment import reassign_ecn_approval_reviewer
-from src.modules.ecn.editing import ECNConflict, merge_fields, sync_review_snapshot
+from src.modules.ecn.editing import (
+    ECNConflict,
+    merge_fields,
+    sync_review_snapshot,
+    validate_overview_scheme_dependencies,
+)
 from src.modules.ecn.models import get_ecn_template
-from src.modules.ecn.detail import get_current_approval_display
+from src.modules.ecn.detail import detail_requires_reopen, get_current_approval_display
 from src.modules.ecn.repository import delete_record
 from src.user_service import UserService
 from tests.test_error_management_concurrency import load_isolated_db_storage
@@ -65,6 +70,22 @@ def record(state=ECNState.ECN_SCHEMING):
 
 
 class ECNConcurrencyTests(unittest.IsolatedAsyncioTestCase):
+    def test_detail_reopens_when_state_or_phase_changes(self):
+        current = {"current_state": ECNState.DRAFT, "current_phase": "ECR_PHASE"}
+        self.assertFalse(detail_requires_reopen(current, copy.deepcopy(current)))
+        self.assertTrue(
+            detail_requires_reopen(
+                current,
+                {"current_state": ECNState.ECR_REVIEWING, "current_phase": "ECR_PHASE"},
+            )
+        )
+        self.assertTrue(
+            detail_requires_reopen(
+                current,
+                {"current_state": ECNState.DRAFT, "current_phase": "ECN_SCHEME_PHASE"},
+            )
+        )
+
     def test_current_approval_display_reads_approved_users_from_assignment_node(self):
         workflow = {
             "current_phase": "ECR_PHASE",
@@ -96,6 +117,96 @@ class ECNConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaisesRegex(ECNConflict, "需求日期格式无效"):
                     actions.validate_request(value)
 
+    def test_request_rechecks_latest_target_project_states(self):
+        value = record(ECNState.DRAFT)
+        actions.validate_request(value, {"P1": {"state": "试产"}})
+
+        with self.assertRaisesRegex(ECNConflict, "不处于允许发起ECR"):
+            actions.validate_request(value, {"P1": {"state": "研发"}})
+        with self.assertRaisesRegex(ECNConflict, "不处于允许发起ECR"):
+            actions.validate_request(value, {})
+
+    def test_expanded_projects_are_rechecked_against_latest_project_catalog(self):
+        value = record()
+        value["review_info"]["expanded_projects_mass"] = ["P2"]
+        value["review_info"]["expanded_projects_non_mass"] = ["P3"]
+        summary = {"P2": {"state": "量产"}, "P3": {"state": "研发"}}
+        actions.validate_impact_projects(value, summary)
+
+        with self.assertRaisesRegex(ECNConflict, "项目库移除或状态分组已变化"):
+            actions.validate_impact_projects(value, {"P2": {"state": "研发"}})
+
+    def test_every_scheme_requires_at_least_one_project(self):
+        value = record()
+        value["change_items"][0]["projects"] = []
+
+        with self.assertRaisesRegex(ECNConflict, "至少关联一个目标项目"):
+            actions.validate_scheme_review(value)
+
+    def test_pending_table_anchor_requires_live_first_column_add_scheme(self):
+        value = record()
+        value["change_items"] = [
+            {
+                "item_id": "child",
+                "author": "张三",
+                "type": "overview_update",
+                "scheme_category": "overview_document",
+                "projects": ["P1"],
+                "req_idxs": ["1"],
+                "linked_docs": [],
+                "linked_materials": [],
+                "label": "子参数",
+                "first_col_label": "基准参数",
+                "project_states": {
+                    "P1": {"action": "add", "anchor_row_id": "PENDING_NEW_base"}
+                },
+            },
+            {
+                "item_id": "base",
+                "author": "张三",
+                "type": "overview_update",
+                "scheme_category": "overview_document",
+                "projects": ["P1"],
+                "req_idxs": [],
+                "linked_docs": [],
+                "linked_materials": [],
+                "label": "基准参数",
+                "first_col_label": "基准参数",
+                "project_states": {"P1": {"action": "add"}},
+            },
+        ]
+        validate_overview_scheme_dependencies(value)
+        value["change_items"].pop()
+        with self.assertRaisesRegex(ECNConflict, "新增基准行已失效"):
+            validate_overview_scheme_dependencies(value)
+
+    async def test_zero_project_scheme_cannot_be_retained_after_scope_removal(self):
+        value = record()
+        value["review_info"]["expanded_projects_mass"] = ["P2"]
+        value["change_items"][0]["projects"] = ["P2"]
+        await self.store(value)
+        removed = copy.deepcopy(value["review_info"])
+        removed["expanded_projects_mass"] = []
+        with patch.object(actions, "can_edit_ecn_impact", return_value=True):
+            saved = await actions.save_review(
+                value["ecn_id"], value, value["review_info"], removed, "张三", "研发", storage=self.left
+            )
+        self.assertTrue(saved.ok, saved.message)
+        assert saved.record is not None
+        self.assertEqual(saved.record["change_items"][0]["projects"], [])
+        with patch.object(actions, "can_edit_ecn_scheme", return_value=True):
+            retained = await actions.retain_scheme_after_association_change(
+                value["ecn_id"],
+                saved.record,
+                "S1",
+                "张三",
+                "研发",
+                user_service=self.service,
+                storage=self.left,
+            )
+        self.assertFalse(retained.ok)
+        self.assertIn("至少关联一个目标项目", retained.message)
+
     async def test_trial_decision_permission_conflict_and_phase(self):
         value = record()
         value["workflow"]["trial_production"] = {}
@@ -123,6 +234,22 @@ class ECNConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                 value["ecn_id"], saved.record, False, "张三", "研发", user_service=self.service, storage=self.left,
             )
             self.assertFalse(locked.ok)
+
+    async def test_submit_rejects_project_that_left_allowed_state(self):
+        value = record(ECNState.DRAFT)
+        value["workflow"]["current_phase"] = "ECR_PHASE"
+        await self.store(value)
+
+        with patch.object(actions, "can_create_ecn_request", return_value=True):
+            result = await self.action(
+                value,
+                "submit_ecr",
+                project_summary={"P1": {"state": "研发"}},
+            )
+
+        self.assertFalse(result.ok)
+        self.assertIn("不处于允许发起ECR", result.message)
+        self.assertEqual((await self.fresh())["workflow"]["current_state"], ECNState.DRAFT)
 
     async def test_review_rejects_missing_trial_decision_but_accepts_explicit_false(self):
         value = record()
@@ -553,6 +680,169 @@ class ECNConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(stale.ok)
         self.assertFalse(deleted.ok)
         self.assertEqual((await self.fresh())["change_items"][0]["new_content"], "第一次修改")
+
+    async def test_scheme_save_rejects_association_outside_latest_scope(self):
+        value = record()
+        await self.store(value)
+        original = value["change_items"][0]
+        stale = copy.deepcopy(original)
+        stale["projects"] = ["P1", "P2"]
+
+        with patch.object(actions, "can_edit_ecn_scheme", return_value=True):
+            result = await actions.edit_scheme(
+                value["ecn_id"],
+                value,
+                stale,
+                original,
+                "张三",
+                "研发",
+                storage=self.left,
+            )
+
+        self.assertFalse(result.ok)
+        self.assertIn("移除失效关联", result.message)
+        self.assertEqual((await self.fresh())["change_items"][0]["projects"], ["P1"])
+
+    async def test_overview_scheme_save_rechecks_latest_target_snapshot(self):
+        value = record()
+        value["change_items"] = []
+        value["workflow"]["scheme_participants"] = {}
+        current_chip = {"id": "chip-1", "content": "当前内容", "enabled": True}
+        await self.left.set_item("P1_over_data", {"参数A": {"chip-1": current_chip}})
+        await self.store(value)
+        item = {
+            "item_id": "S2",
+            "author": "张三",
+            "type": "overview_update",
+            "scheme_category": "overview_document",
+            "role": "研发",
+            "label": "参数A",
+            "first_col_label": "参数A",
+            "projects": ["P1"],
+            "req_idxs": [1],
+            "linked_docs": [],
+            "linked_materials": [],
+            "project_states": {
+                "P1": {"action": "update", "chip_id": "chip-1", "old_data": {"content": "过期内容"}}
+            },
+        }
+
+        with patch.object(actions, "can_edit_ecn_scheme", return_value=True):
+            stale = await actions.edit_scheme(
+                value["ecn_id"], value, item, None, "张三", "研发", storage=self.left
+            )
+            item["project_states"]["P1"]["old_data"] = current_chip
+            saved = await actions.edit_scheme(
+                value["ecn_id"], value, item, None, "张三", "研发", storage=self.left
+            )
+
+        self.assertFalse(stale.ok)
+        self.assertIn("目标概述已变化", stale.message)
+        self.assertTrue(saved.ok, saved.message)
+
+    async def test_overview_projects_and_project_states_must_match(self):
+        value = record()
+        value["change_items"][0].update(
+            type="overview_update",
+            scheme_category="overview_document",
+            role="研发",
+            label="参数A",
+            first_col_label="参数A",
+            project_states={},
+        )
+
+        with self.assertRaisesRegex(ECNConflict, "目标项目与逐项目配置不一致"):
+            actions.validate_scheme_review(value)
+
+    async def test_removed_association_requires_author_review_but_new_scope_only_blocks_review(self):
+        value = record()
+        value["review_info"]["expanded_projects_mass"] = ["P2"]
+        value["change_items"][0]["projects"] = ["P1", "P2"]
+        await self.store(value)
+
+        removed = copy.deepcopy(value["review_info"])
+        removed["expanded_projects_mass"] = []
+        with patch.object(actions, "can_edit_ecn_impact", return_value=True):
+            result = await actions.save_review(
+                value["ecn_id"],
+                value,
+                value["review_info"],
+                removed,
+                "张三",
+                "研发",
+                storage=self.left,
+            )
+
+        self.assertTrue(result.ok, result.message)
+        assert result.record is not None
+        affected = result.record["change_items"][0]
+        self.assertEqual(affected["projects"], ["P1"])
+        self.assertEqual(
+            affected["association_change_notice"]["removed"]["projects"],
+            ["P2"],
+        )
+        self.assertEqual(
+            result.record["workflow"]["scheme_participants"]["张三"],
+            ECN_PARTICIPANT_STATUS_EDITING,
+        )
+
+        with patch.object(actions, "can_edit_ecn_scheme", return_value=True):
+            blocked = await actions.set_participant_status(
+                value["ecn_id"],
+                result.record,
+                "张三",
+                "研发",
+                ECN_PARTICIPANT_STATUS_CONFIRMED,
+                user_service=self.service,
+                storage=self.left,
+            )
+            retained = await actions.retain_scheme_after_association_change(
+                value["ecn_id"],
+                result.record,
+                "S1",
+                "张三",
+                "研发",
+                user_service=self.service,
+                storage=self.left,
+            )
+        self.assertFalse(blocked.ok)
+        self.assertIn("确认保留、修改或删除", blocked.message)
+        self.assertTrue(retained.ok, retained.message)
+        assert retained.record is not None
+        self.assertNotIn("association_change_notice", retained.record["change_items"][0])
+
+        with patch.object(actions, "can_edit_ecn_scheme", return_value=True):
+            confirmed = await actions.set_participant_status(
+                value["ecn_id"],
+                retained.record,
+                "张三",
+                "研发",
+                ECN_PARTICIPANT_STATUS_CONFIRMED,
+                user_service=self.service,
+                storage=self.left,
+            )
+        self.assertTrue(confirmed.ok, confirmed.message)
+        assert confirmed.record is not None
+
+        added = copy.deepcopy(confirmed.record["review_info"])
+        added["involved_docs"]["光学件图纸"] = True
+        with patch.object(actions, "can_edit_ecn_impact", return_value=True):
+            added_result = await actions.save_review(
+                value["ecn_id"],
+                confirmed.record,
+                confirmed.record["review_info"],
+                added,
+                "张三",
+                "研发",
+                storage=self.left,
+            )
+        self.assertTrue(added_result.ok, added_result.message)
+        assert added_result.record is not None
+        self.assertEqual(
+            added_result.record["workflow"]["scheme_participants"]["张三"],
+            ECN_PARTICIPANT_STATUS_CONFIRMED,
+        )
+        self.assertFalse(actions.is_ecn_scheme_ready_for_review(added_result.record))
 
     async def test_user_without_own_scheme_cannot_confirm_participation(self):
         value = record()

@@ -87,6 +87,8 @@ def get_ecn_list_progress_summary(ecn_data: Any) -> str:
 
     coverage = get_ecn_scheme_coverage(ecn_data)
     missing_labels = []
+    if coverage["missing_projects"]:
+        missing_labels.append("项目")
     if coverage["missing_requirements"]:
         missing_labels.append("变更要求")
     if coverage["missing_docs"]:
