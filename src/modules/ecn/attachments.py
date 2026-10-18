@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from ... import db_storage
+from ...overview_file_storage import copy_named_file
 from ...ecn_access import (
     can_confirm_ecn_material_spec,
     can_create_ecn_request,
@@ -247,7 +248,7 @@ async def stage_upload(uploaded_file: Any, username: str) -> dict:
     }
 
 
-def publish_pending(attachment: dict, ecn_id: str, username: str, scope: str) -> tuple[dict, Path]:
+def publish_pending(attachment: dict, ecn_id: str, username: str, scope: str, *, overview_source: Path | None = None, expected_digest: str | None = None) -> tuple[dict, Path]:
     pending = _safe_path(str(attachment.get("pending_path") or ""))
     file_id = str(attachment.get("id") or "")
     if not re.fullmatch(r"[0-9a-f]{32}", file_id) or pending.name != file_id or not pending.is_file() or pending.parent != _safe_path("_pending"):
@@ -258,13 +259,17 @@ def publish_pending(attachment: dict, ecn_id: str, username: str, scope: str) ->
     )
     target = _safe_path(relative)
     target.parent.mkdir(parents=True, exist_ok=True)
-    if target.exists():
-        raise ECNConflict("附件归档编号已存在，请重新上传")
-    try:
-        shutil.copyfile(pending, target)
-    except Exception:
-        target.unlink(missing_ok=True)
-        raise
+    if scope.startswith("overview_"):
+        # 概述归档失败后保留文件，重试沿用原编号、核对内容，不再回收文件。
+        copy_named_file(overview_source if overview_source is not None else pending, target, expected_digest=expected_digest)
+    else:
+        if target.exists():
+            raise ECNConflict("附件归档编号已存在，请重新上传")
+        try:
+            shutil.copyfile(pending, target)
+        except Exception:
+            target.unlink(missing_ok=True)
+            raise
     published = {key: value for key, value in attachment.items() if key != "pending_path"}
     published["relative_path"] = relative
     return published, target
@@ -309,6 +314,9 @@ async def cleanup_published_attachments(value: object) -> int:
     """业务删除提交后清理独占附件；失败只记录，避免反向伪造已提交业务数据。"""
     removed = 0
     for attachment in collect_unique_published_attachments(value):
+        # 系统内资料/概述的归档文件保留原路径，只解除业务引用。
+        if Path(str(attachment.get("relative_path") or "")).parent.name.startswith("overview_"):
+            continue
         try:
             path = resolve_attachment(attachment)
             existed = path.is_file()
@@ -424,10 +432,12 @@ async def attach_existing(
     try:
         result = await mutate_record(ecn_id, operation)
     except Exception:
-        target.unlink(missing_ok=True)
+        if scope != "overview":
+            target.unlink(missing_ok=True)
         raise
     if not result.ok:
-        target.unlink(missing_ok=True)
+        if scope != "overview":
+            target.unlink(missing_ok=True)
     else:
         cleanup_staged([staged])
     return result
@@ -469,7 +479,7 @@ async def remove_existing(
         return record
 
     result = await mutate_record(ecn_id, operation)
-    if result.ok and removed is not None:
+    if result.ok and removed is not None and scope != "overview":
         try:
             await asyncio.to_thread(resolve_attachment(removed).unlink, missing_ok=True)
         except OSError:

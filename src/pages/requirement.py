@@ -63,15 +63,12 @@ from ..overview_batch_operations import (
     build_new_overview_chip,
     build_project_category_map,
     build_project_model_range_options,
-    cascade_deactivate_table_row,
-    cascade_promote_table_row,
     collect_editable_overview_configs,
     create_batch_overview_request,
     filter_batch_projects,
     find_projects_without_row_anchors,
     insert_overview_chip,
     is_table_child_state_allowed,
-    overview_state_rank,
     update_overview_chip_state,
     validate_overview_content,
 )
@@ -3823,7 +3820,7 @@ async def requirement_page(
                     return False, "选择“其它”时必须填写对应特殊要求。"
             return True, ""
 
-        async def prepare_media_file(config):
+        async def prepare_media_file(config, projects):
             file_data = state["file_data"]
             if not file_data:
                 return False, "请先选择文件。", None
@@ -3843,12 +3840,18 @@ async def requirement_page(
             upload_path = Path(upload_path_value)
             if not upload_path.is_dir():
                 return False, f"上传目录不存在：{upload_path}", None
-            target_path = upload_path / filename
-            if not target_path.exists():
-                try:
-                    target_path.write_bytes(file_data["content"])
-                except Exception as ex:
-                    return False, f"文件保存失败：{ex}", None
+            from ..overview_file_choice import choose_overview_file
+            from ..overview_file_storage import save_named_bytes, validate_file_selection
+            try:
+                selection = await choose_overview_file(upload_path, filename, hashlib.sha256(file_data["content"]).hexdigest(), list(projects))
+                if selection is None:
+                    return False, "已取消文件选择，未添加任何项目", None
+                filename = selection["name"]
+                target_path = validate_file_selection(selection, upload_path)
+                if selection["mode"] == "new":
+                    save_named_bytes(file_data["content"], target_path)
+            except Exception as ex:
+                return False, f"文件保存失败：{ex}", None
             return (
                 True,
                 "",
@@ -3856,6 +3859,8 @@ async def requirement_page(
                     "content": filename,
                     "file_type": file_type,
                     "url_path": f"{FILES_URL_DIR}/{filename}",
+                    "local_file_path": str(target_path),
+                    "file_selection": selection,
                 },
             )
 
@@ -4015,12 +4020,22 @@ async def requirement_page(
                             ui.notify(f"上传目录不存在：{upload_path}", type="warning")
                             return
                         staging_dir = BATCH_OVERVIEW_STAGING_DIR / request_id
+                        from ..overview_file_choice import choose_overview_file
+                        from ..overview_file_storage import validate_file_selection
+                        selection = await choose_overview_file(upload_path, filename, hashlib.sha256(file_data["content"]).hexdigest(), list(selected_projects))
+                        if selection is None:
+                            return
+                        filename = selection["name"]
+                        target = validate_file_selection(selection, upload_path)
+                        chosen_content = target.read_bytes() if selection["mode"] == "existing" else file_data["content"]
+                        if hashlib.sha256(chosen_content).hexdigest() != selection["sha256"]:
+                            raise ValueError("文件在选择期间已变化，请重新提交")
                         staging_dir.mkdir(parents=True, exist_ok=True)
                         staging_path = staging_dir / filename
-                        staging_path.write_bytes(file_data["content"])
+                        staging_path.write_bytes(chosen_content)
                         staged_file_path = str(staging_path)
                         content = filename
-                        extra_data.update({"file_type": file_type, "url_path": f"{FILES_URL_DIR}/{filename}"})
+                        extra_data.update({"file_type": file_type, "url_path": f"{FILES_URL_DIR}/{filename}", "file_selection": selection})
                     elif not validate_overview_content(content, config):
                         ui.notify("概述内容为空或不符合该项填写格式。", type="warning")
                         return
@@ -4220,7 +4235,7 @@ async def requirement_page(
                         re.search(pattern, content) for pattern in NONE_REGULAR
                     )
                     if ptype in {"file", "image", "video"} and not media_as_text:
-                        valid, message, media = await prepare_media_file(config)
+                        valid, message, media = await prepare_media_file(config, selected_projects)
                         if not valid or media is None:
                             ui.notify(message, type="warning")
                             return
@@ -4313,7 +4328,6 @@ async def requirement_page(
                         return
                     target_state = {"active": True, "pending": None, "inactive": False}[state["target_state"]]
                     group_configs = over_config.get(config["role"], {}).get(config["group_name"], [])
-                    group_labels = [item.get("label") for item in group_configs]
                     for encoded_target in state["chip_targets"]:
                         try:
                             project, chip_id = json.loads(encoded_target)
@@ -4328,10 +4342,6 @@ async def requirement_page(
                                 skipped.append(f"{project}：概述条目已不存在")
                                 continue
                             row_id = current_chip.get("row_id")
-                            previous_state = current_chip.get("select_activ_dic", {}).get(
-                                req_max_ver,
-                                current_chip.get("enabled"),
-                            )
                             if (
                                 config.get("is_table_group")
                                 and config["label"] != config.get("first_col_label")
@@ -4359,6 +4369,7 @@ async def requirement_page(
                                 if not valid:
                                     failed.append(f"{project}：{message}")
                                     continue
+                            row_changes: set[tuple[str, str]] = set()
                             changed, message, updated_chip = await update_overview_chip_state(
                                 project,
                                 config["label"],
@@ -4367,11 +4378,16 @@ async def requirement_page(
                                 target_state,
                                 creator,
                                 reason,
+                                group_configs=group_configs if config.get("is_table_group") else None,
+                                changed_targets=row_changes,
                             )
                             if not changed or updated_chip is None:
                                 skipped.append(f"{project}：{message}")
                                 continue
                             await archive_related_record(project, config["label"], chip_id, creator)
+                            for changed_label, changed_id in row_changes - {(config["label"], chip_id)}:
+                                if target_state is False:
+                                    await archive_related_record(project, changed_label, changed_id, creator)
                             successes.append(
                                 {
                                     "project": project,
@@ -4383,33 +4399,7 @@ async def requirement_page(
                                 }
                             )
                             changed_pairs.add((project, config["label"]))
-                            if (
-                                config.get("is_table_group")
-                                and config["label"] == config.get("first_col_label")
-                                and row_id
-                            ):
-                                if target_state is False:
-                                    cascaded_labels = await cascade_deactivate_table_row(
-                                        project,
-                                        group_labels,
-                                        config["label"],
-                                        row_id,
-                                        req_max_ver,
-                                        creator,
-                                    )
-                                elif overview_state_rank(target_state) > overview_state_rank(previous_state):
-                                    cascaded_labels = await cascade_promote_table_row(
-                                        project,
-                                        group_configs,
-                                        config["label"],
-                                        row_id,
-                                        req_max_ver,
-                                        target_state,
-                                        creator,
-                                    )
-                                else:
-                                    cascaded_labels = set()
-                                changed_pairs.update((project, label) for label in cascaded_labels)
+                            changed_pairs.update((project, label) for label, _ in row_changes)
                         except Exception as ex:
                             logger.error("批量修改概述状态单条处理失败", exc_info=True)
                             failed.append(f"状态修改失败：{ex}")

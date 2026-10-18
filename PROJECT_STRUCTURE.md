@@ -30,6 +30,10 @@
 | `system_lifecycle.py` | 管理端重启/关闭前备份校验、优雅退出与跨热重载进程重启协调 |
 | `db_storage.py` | 通用业务 JSON/实体的异步 SQLite 存储；只提供缓存、连接和事务原语，不引用具体业务状态或规则 |
 | `overview_storage.py` | 项目概述的业务写入口；在通用事务上组合 ECN 占用等跨模块门禁 |
+| `overview_batch_operations.py` | 概述批量维护与审批；提供首列和同行状态联动的原子写入入口，单条/批量页面共用 |
+| `overview_corrections.py` | 普通概述原记录纠错；保留原名保存、实际附件路径及内容校验，正式文件不随失败回收 |
+| `overview_file_storage.py` | 概述文件按既有目标名安全发布；防止并发覆盖，只清理未发布临时文件，不提供正式文件删除功能 |
+| `overview_file_choice.py` | 批量概述与 ECN 系统内资料的正式目录同名选择弹窗：已有文件、改名上传或取消 |
 | `identity_store.py` | 用户、组织、岗位、权限、流程和具体待办的同步 SQLite 数据层 |
 | `user_service.py` | 数据库用户、组织、权限和审批服务门面 |
 | `legacy_compatibility.py` | 旧身份、角色授权、通知和审批路由实际命中的统一限频日志 |

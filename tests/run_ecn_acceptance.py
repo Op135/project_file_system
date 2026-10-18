@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 
-def build_suite() -> unittest.TestSuite:
+def build_suite(*, cross_module: bool = False) -> unittest.TestSuite:
     directory = Path(__file__).parent
     names = sorted({
         "tests." + path.stem
@@ -19,6 +19,14 @@ def build_suite() -> unittest.TestSuite:
         "tests.test_workflow_notifications", "tests.test_wecom_cards",
         "tests.test_requirement_overview_impact", "tests.test_project_state_transition",
     ]
+    if cross_module:
+        for pattern in (
+            "test_requirement*.py", "test_information*.py", "test_error_management*.py",
+            "test_sample_issue_collection.py", "test_sample_order_dashboard.py", "test_project*.py",
+            "test_utils*.py", "test_design_knowledge_workflow.py", "test_issue_workflow_utils.py",
+        ):
+            names.extend("tests." + path.stem for path in directory.glob(pattern))
+    names = sorted(set(names))
     suite = unittest.TestSuite()
     for name in names:
         module = importlib.import_module(name)
@@ -32,7 +40,7 @@ def build_suite() -> unittest.TestSuite:
 
 
 if __name__ == "__main__":
-    suite = build_suite()
+    suite = build_suite(cross_module="--cross-module" in sys.argv)
     if "--list" not in sys.argv:
         result = unittest.TextTestRunner(verbosity=1).run(suite)
         raise SystemExit(not result.wasSuccessful())

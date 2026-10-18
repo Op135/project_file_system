@@ -2,6 +2,7 @@
 import asyncio
 import copy
 import uuid
+from pathlib import Path
 
 from nicegui import (
     app,
@@ -53,7 +54,7 @@ from .attachment_preview import (
     issue_staged_attachment_preview_url,
 )
 from .attachment_ui import open_ecn_attachment_file, open_staged_ecn_attachment_file
-from .attachments import cleanup_staged, publish_pending, stage_upload
+from .attachments import cleanup_staged, publish_pending, stage_upload, resolve_staged_attachment
 
 
 def open_material_code_dialog(item: dict, on_save_callback) -> None:
@@ -1113,6 +1114,28 @@ def open_overview_change_dialog(ecn_data, current_user, on_save_callback, edit_i
             }
             if has_traceability:
                 payload["traceability_levels"] = copy.deepcopy(sel_state["traceability_levels"])
+            if requires_new_content and sel_state["processing_type"] in {"file", "image", "video"}:
+                from ...overview_file_choice import choose_overview_file
+                from ...overview_file_storage import file_digest
+                upload = payload["new_data"].get("overview_upload")
+                if isinstance(upload, dict) and upload.get("pending_path"):
+                    upload_state["busy"] = True
+                    try:
+                        config = app.storage.general.get("over_config_data_flat", {}).get(sel_state["label"], {})
+                        root = str(config.get("upload_path") or "")
+                        if not root:
+                            raise ValueError("该概述未配置正式上传目录")
+                        digest = await asyncio.to_thread(file_digest, resolve_staged_attachment(upload))
+                        selection = await choose_overview_file(Path(root), str(upload["name"]), digest, list(payload["projects"]))
+                        if selection is None or upload_state["closed"]:
+                            return
+                        payload["new_data"]["file_selection"] = selection
+                        payload["new_data"]["content"] = selection["name"]
+                    except (ValueError, OSError) as exc:
+                        ui.notify(str(exc), type="warning")
+                        return
+                    finally:
+                        upload_state["busy"] = False
             if await on_save_callback(payload, is_edit, expected_item):
                 dialog.close()
 

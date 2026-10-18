@@ -5,7 +5,6 @@ import json
 import hashlib
 import logging
 import uuid
-from pathlib import Path
 from collections.abc import Awaitable, Callable
 
 from nicegui import (
@@ -259,7 +258,6 @@ async def execute_ecn_overview_schemes(
                     raise ValueError(f"不支持的执行动作：{action or '未配置'}")
 
                 operation_state = {"applied": False, "error": ""}
-                installed_file: Path | None = None
                 source_operation_id = f"{ecn_id}:{item_id}:{project}:{action}"
                 scheme_author = str(item.get("author") or "").strip()
                 if not scheme_author:
@@ -387,7 +385,6 @@ async def execute_ecn_overview_schemes(
                     return label_data
 
                 async def apply_to_latest_project(current_project):
-                    nonlocal installed_file
                     project_data = copy.deepcopy(current_project) if isinstance(current_project, dict) else {}
                     first_label = str(item.get("first_col_label") or "")
                     if (
@@ -408,7 +405,7 @@ async def execute_ecn_overview_schemes(
                         return db_storage.ATOMIC_NO_UPDATE
                     if action != ECN_OVERVIEW_ACTION_DEACTIVATE and item.get("config_processing_type") in {"file", "image", "video"}:
                         config = app.storage.general.get("over_config_data_flat", {}).get(str(label), {})
-                        published, installed_file = await asyncio.to_thread(publish_overview_upload, item, project, ecn_id, config)
+                        published, _ = await asyncio.to_thread(publish_overview_upload, item, project, ecn_id, config)
                         label_data[deterministic_uuid(item_id, project, "chip")].update(published)
                     # 文件发布后的最终元数据也必须进入指纹；旧节点失活与新节点一起校验。
                     if action in {ECN_OVERVIEW_ACTION_UPDATE, ECN_OVERVIEW_ACTION_DEACTIVATE}:
@@ -426,8 +423,7 @@ async def execute_ecn_overview_schemes(
                     storage=db_storage,
                 )
                 if not saved or operation_state["error"] or not operation_state["applied"]:
-                    if installed_file is not None:
-                        await asyncio.to_thread(installed_file.unlink, missing_ok=True)
+                    # 正式文件不回收；相同执行的重试继续使用既有 UUID5 路径。
                     raise ValueError(operation_state["error"] or "概述资料原子保存失败")
 
                 project_results[project] = {

@@ -10,7 +10,8 @@ from unittest.mock import patch
 from fastapi import HTTPException
 
 from src.ecn_management_config import ECNState, ECN_EXECUTION_STAGE_OVERVIEW_RUNNING
-from src.modules.ecn import actions, attachment_preview, attachments, repository, overview_execution
+from src.modules.ecn import actions, attachment_preview, attachments, repository, overview_execution, overview_files
+from src.overview_file_storage import file_digest, make_file_selection
 from src.modules.ecn.models import get_ecn_template
 from src.user_service import UserService
 from tests.test_error_management_concurrency import load_isolated_db_storage
@@ -31,6 +32,12 @@ class ECNAttachmentTests(unittest.IsolatedAsyncioTestCase):
         self.temp = tempfile.TemporaryDirectory()
         root = Path(self.temp.name)
         self.files = root / "files"
+        self.formal = root / "formal"
+        self.formal.mkdir()
+        self.file_config = {"upload_path": str(self.formal)}
+        self.overview_app_patch = patch.object(overview_files, "app", SimpleNamespace(storage=SimpleNamespace(general={"over_config_data_flat": {"file-param": self.file_config}})))
+        self.overview_app_patch.start()
+        self.addCleanup(self.overview_app_patch.stop)
         self.storage = load_isolated_db_storage("attachment_db", root / "ecn.db")
         await self.storage.init_db()
         self.db_patch = patch.object(repository, "db_storage", self.storage)
@@ -61,10 +68,10 @@ class ECNAttachmentTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_overview_upload_is_isolated_and_execution_never_overwrites_same_name(self):
         formal_dir = Path(self.temp.name) / "formal"
-        formal_dir.mkdir()
         original_file = formal_dir / Uploaded.name
         original_file.write_bytes(b"approved-original")
         staged = await attachments.stage_upload(Uploaded(), "owner")
+        selection = make_file_selection(formal_dir, "测试报告-新版.pdf", "new", file_digest(attachments.resolve_staged_attachment(staged)))
         value = get_ecn_template()
         value["ecn_id"] = "ECN26101799"
         value["workflow"].update(current_state=ECNState.ECN_SCHEMING, current_phase="ECN_SCHEME_PHASE")
@@ -73,7 +80,7 @@ class ECNAttachmentTests(unittest.IsolatedAsyncioTestCase):
             "item_id": "upload-scheme", "type": "overview_update", "scheme_category": "overview_document",
             "author": "owner", "role": "研发", "label": "file-param", "first_col_label": "file-param",
             "config_processing_type": "file", "projects": ["P1"], "req_idxs": [], "linked_docs": [], "linked_materials": [],
-            "project_states": {"P1": {"action": "add"}}, "new_data": {"content": Uploaded.name, "overview_upload": staged},
+            "project_states": {"P1": {"action": "add"}}, "new_data": {"content": selection["name"], "overview_upload": staged, "file_selection": selection},
         }
         await self.storage.set_item("ecn_management_data", {value["ecn_id"]: value})
         saved = await actions.edit_scheme(value["ecn_id"], value, item, None, "owner", "测试岗位", user_service=self.service, storage=self.storage)
@@ -90,20 +97,39 @@ class ECNAttachmentTests(unittest.IsolatedAsyncioTestCase):
         }))
         retry = copy.deepcopy(value)
         with patch.object(overview_execution, "db_storage", self.storage), patch.object(overview_execution, "app", fake_app):
+            real_update = overview_execution.overview_storage.atomic_deep_update
+
+            async def rollback_after_publish(path, updater, **kwargs):
+                async def fail(data):
+                    await updater(data)
+                    raise OSError("模拟文件发布后概述事务失败")
+                return await real_update(path, fail, **kwargs)
+
+            with patch.object(overview_execution.overview_storage, "atomic_deep_update", new=rollback_after_publish):
+                failed = await overview_execution.execute_ecn_overview_schemes(copy.deepcopy(value), "2026-10-17 11:59:00")
+            self.assertEqual(failed["upload-scheme"]["status"], "failed")
+            self.assertEqual(await self.storage.get_fresh_item("P1_over_data", {}), {})
+            retained = [path for path in formal_dir.iterdir() if path != original_file]
+            self.assertEqual(len(retained), 1)
+            self.assertEqual(retained[0].read_bytes(), b"test-pdf-content")
             results = await overview_execution.execute_ecn_overview_schemes(value, "2026-10-17 12:00:00")
             repeated = await overview_execution.execute_ecn_overview_schemes(retry, "2026-10-17 12:01:00")
         self.assertEqual(results["upload-scheme"]["status"], "success")
         self.assertEqual(repeated["upload-scheme"]["status"], "success")
         stored = await self.storage.get_fresh_item("P1_over_data", {})
         chip = next(iter(stored["file-param"].values()))
-        self.assertEqual(chip["content"], Uploaded.name)
+        self.assertEqual(chip["content"], "测试报告-新版.pdf")
         final_path = Path(chip["local_file_path"])
         self.assertNotEqual(final_path, original_file)
+        self.assertEqual(final_path, retained[0])
+        self.assertEqual(final_path.name, "测试报告-新版.pdf")
         self.assertEqual(final_path.read_bytes(), b"test-pdf-content")
         self.assertEqual(original_file.read_bytes(), b"approved-original")
         self.assertEqual(len(list(formal_dir.iterdir())), 2)
         await attachments.cleanup_published_attachments(saved.record)
         self.assertTrue(final_path.is_file())
+        archive = saved.record["change_items"][0]["new_data"]["overview_upload"]
+        self.assertTrue(attachments.resolve_attachment(archive).is_file())
 
     async def test_running_ecn_cannot_be_deleted(self):
         value = get_ecn_template()
@@ -116,8 +142,9 @@ class ECNAttachmentTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("正在执行", message)
         self.assertIn(value["ecn_id"], await self.storage.get_fresh_item("ecn_management_data", {}))
 
-    async def test_rejected_overview_save_removes_archive_and_keeps_staging_for_retry(self):
+    async def test_rejected_overview_save_retains_archive_and_retries_same_path(self):
         staged = await attachments.stage_upload(Uploaded(), "owner")
+        selection = make_file_selection(self.formal, Uploaded.name, "new", file_digest(attachments.resolve_staged_attachment(staged)))
         value = get_ecn_template()
         value["ecn_id"] = "ECN26101797"
         value["workflow"].update(current_state=ECNState.ECN_SCHEMING, current_phase="ECN_SCHEME_PHASE")
@@ -126,7 +153,7 @@ class ECNAttachmentTests(unittest.IsolatedAsyncioTestCase):
             "item_id": "upload-scheme", "type": "overview_update", "scheme_category": "overview_document",
             "author": "owner", "label": "file-param", "first_col_label": "file-param",
             "config_processing_type": "file", "projects": ["P1"], "req_idxs": [], "linked_docs": [], "linked_materials": [],
-            "project_states": {"P1": {"action": "add"}}, "new_data": {"content": Uploaded.name, "overview_upload": staged},
+            "project_states": {"P1": {"action": "add"}}, "new_data": {"content": Uploaded.name, "overview_upload": staged, "file_selection": selection},
         }
         changed = copy.deepcopy(value)
         changed["workflow"]["current_state"] = ECNState.ECN_REVIEWING
@@ -134,8 +161,15 @@ class ECNAttachmentTests(unittest.IsolatedAsyncioTestCase):
         saved = await actions.edit_scheme(value["ecn_id"], value, item, None, "owner", "测试岗位", user_service=self.service, storage=self.storage)
         self.assertFalse(saved.ok)
         self.assertTrue(attachments.resolve_staged_attachment(staged).is_file())
-        self.assertEqual([file for file in self.files.rglob("*") if file.is_file()], [attachments.resolve_staged_attachment(staged)])
-        attachments.cleanup_staged([staged])
+        archived_files = [file for file in self.files.rglob("*") if file.is_file() and file != attachments.resolve_staged_attachment(staged)]
+        self.assertEqual(len(archived_files), 1)
+        archive_path = archived_files[0]
+        self.assertEqual(archive_path.read_bytes(), b"test-pdf-content")
+        await self.storage.set_item("ecn_management_data", {value["ecn_id"]: value})
+        retried = await actions.edit_scheme(value["ecn_id"], value, item, None, "owner", "测试岗位", user_service=self.service, storage=self.storage)
+        self.assertTrue(retried.ok, retried.message)
+        assert retried.record is not None
+        self.assertEqual(attachments.resolve_attachment(retried.record["change_items"][0]["new_data"]["overview_upload"]), archive_path)
         self.assertFalse(attachments.resolve_staged_attachment(staged).exists())
 
     async def test_new_ecr_attachment_moves_under_assignee_and_allocated_number(self):

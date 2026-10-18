@@ -45,10 +45,9 @@ from .config import (
 )
 from .custom_ui import custom_upload
 from .overview_batch_operations import (
-    cascade_promote_table_row,
+    atomic_update_overview_with_row,
     get_table_child_state_violations,
     is_table_child_state_allowed,
-    overview_state_rank,
     validate_overview_content,
 )
 from .overview_corrections import (
@@ -650,6 +649,9 @@ async def _save_overview_activation_atomically(
     creator: str,
     reason: str,
     active_icon: Optional[str],
+    *,
+    group_configs: Optional[list[dict]] = None,
+    changed_targets: Optional[set[tuple[str, str]]] = None,
 ) -> Optional[bool]:
     """一次提交版本状态、视觉状态和历史，避免 ECN 建锁时只写入其中一部分。"""
     conflict = {"message": ""}
@@ -684,9 +686,8 @@ async def _save_overview_activation_atomically(
         chip["timestamp"][history_key]["select_activ_dic"] = copy.deepcopy(new_states)
         return chip
 
-    success = await overview_storage.atomic_deep_update(
-        [f"{project}_over_data", label, chip_id],
-        update,
+    success = await atomic_update_overview_with_row(
+        project, label, chip_id, update, group_configs, creator, changed_targets,
     )
     if conflict["message"]:
         raise overview_storage.OverviewWriteError(conflict["message"])
@@ -3695,10 +3696,8 @@ class InteractiveButton:
         else:
             try:
                 file_content = await e.file.read()
-                # file_content_object = io.BytesIO(file_content)
-                with open(filepath, "wb") as f:
-                    # f.write(file_content_object.read())
-                    f.write(file_content)
+                from .overview_file_storage import save_named_bytes
+                save_named_bytes(file_content, Path(filepath))
             except Exception as ex:
                 logger.error("上传处理失败", exc_info=True)
                 ui.notify(
@@ -5458,7 +5457,8 @@ class OverviewTableGroup:
         applied_chips = 0
         skipped_states = 0
         blocked_states = 0
-        cascade_requests = []
+        failed_rows = []
+        changed_targets: set[tuple[str, str]] = set()
         impact_operations = []
 
         for chip_id, version_decisions in decisions_by_chip.items():
@@ -5486,8 +5486,6 @@ class OverviewTableGroup:
                 select_activ_dic[version] = state
                 chip_applied_states += 1
                 applied_versions.add(version)
-                if label == first_col_label and chip_data.get("row_id"):
-                    cascade_requests.append((chip_data["row_id"], version, state))
 
             if not chip_applied_states:
                 continue
@@ -5505,38 +5503,30 @@ class OverviewTableGroup:
                 if latest_state is True
                 else None
             )
-            await _save_overview_activation_atomically(
-                self.project,
-                label,
-                chip_id,
-                copy.deepcopy(chip_data.get("select_activ_dic", {})),
-                select_activ_dic,
-                str(creator),
-                reason,
-                active_icon,
-            )
-            await _archive_pending_record(self.project, label, chip_id, creator)
+            row_changes: set[tuple[str, str]] = set()
+            try:
+                await _save_overview_activation_atomically(
+                    self.project, label, chip_id,
+                    copy.deepcopy(chip_data.get("select_activ_dic", {})),
+                    select_activ_dic, str(creator), reason, active_icon,
+                    group_configs=self.configs, changed_targets=row_changes,
+                )
+            except overview_storage.OverviewWriteError as exc:
+                failed_rows.append(f"{chip_texts[chip_id]}：{exc}")
+                continue
+            changed_targets.update(row_changes)
+            deactivating = any(state is False and chip_data.get("select_activ_dic", {}).get(version) is not False
+                               for version, state in select_activ_dic.items())
+            for changed_label, changed_id in row_changes:
+                if (changed_label, changed_id) == (label, chip_id) or deactivating:
+                    await _archive_pending_record(self.project, changed_label, changed_id, creator)
             applied_states += chip_applied_states
             applied_chips += 1
             impact_operations.append((chip_texts[chip_id], latest_state))
 
         if applied_chips:
-            OverviewVersionManager.bump(self.project, label)
-            for row_id, version, state in set(cascade_requests):
-                if state is False:
-                    await self._cascade_deactivate_row(row_id, version, creator)
-                elif state is True:
-                    promoted_labels = await cascade_promote_table_row(
-                        self.project,
-                        self.configs,
-                        first_col_label,
-                        row_id,
-                        version,
-                        state,
-                        creator,
-                    )
-                    for promoted_label in promoted_labels:
-                        OverviewVersionManager.bump(self.project, promoted_label)
+            for changed_label in {target[0] for target in changed_targets}:
+                OverviewVersionManager.bump(self.project, changed_label)
             self._update_local_pending(label)
             await self._update_display()
 
@@ -5545,7 +5535,9 @@ class OverviewTableGroup:
             message += f"{skipped_states} 项因状态已被他人更新而跳过。"
         if blocked_states:
             message += f"{blocked_states} 项的目标状态等级高于同行首列状态，已阻止修改；这些项继续保持待定。"
-        ui.notify(message, type="positive" if applied_chips else "warning", position="bottom", timeout=4000)
+        if failed_rows:
+            message += "以下行未修改：" + "；".join(failed_rows)
+        ui.notify(message, type="positive" if applied_chips and not failed_rows else "warning", position="bottom", timeout=4000)
 
         if impact_operations and config.get("impact_list", []):
             self._show_column_bulk_related_chip_select_dialog(impact_operations, config)
@@ -6636,7 +6628,7 @@ class OverviewTableGroup:
                     btn.enable()  # 3. 最终防线：无论成功、失败验证不通过还是报错，都恢复按钮状态
 
     async def _handle_file_upload(self, e):
-        """处理文件/图片/视频上传事件（已修复同名防覆盖与查重漏洞）"""
+        """保留原名上传与同名选择；正式文件不覆盖、不随业务失败删除。"""
         config = self.current_config
         original_filename = e.file.name
         file_type = e.file.content_type
@@ -6708,20 +6700,16 @@ class OverviewTableGroup:
         # 获取或生成二维表格行基准 ID
         row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
 
-        # 3. 物理层防覆盖：检查服务器磁盘是否已有同名文件
         if os.path.exists(filepath):
             if hasattr(self, "spinner"):
                 self.spinner.set_visibility(False)
-            # 触发防覆盖询问弹窗
             self._select_file_show(original_filename, file_type, url_path, config, row_id)
             return
 
-        # 4. 安全写入新文件
         try:
             file_content = await e.file.read()
-            with open(filepath, "wb") as f:
-                # f.write(io.BytesIO(file_content).read())
-                f.write(file_content)
+            from .overview_file_storage import save_named_bytes
+            save_named_bytes(file_content, Path(filepath))
         except Exception as ex:
             logger.error("上传处理失败", exc_info=True)
             ui.notify(
@@ -7974,6 +7962,7 @@ class OverviewTableGroup:
                     if target_state is True
                     else None
                 )
+                row_changes: set[tuple[str, str]] = set()
                 chip_state = await _save_overview_activation_atomically(
                     self.project,
                     label,
@@ -7983,49 +7972,16 @@ class OverviewTableGroup:
                     str(creator),
                     reason,
                     active_icon,
+                    group_configs=self.configs,
+                    changed_targets=row_changes,
                 )
-                # 数据写入完毕后，推高全局版本号
-                OverviewVersionManager.bump(self.project, config["label"])
-
-                time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-                def process_close_record(chip_record_dic):
-                    if not chip_record_dic or "open" not in chip_record_dic:
-                        return chip_record_dic
-
-                    # 提取并修改 open 记录
-                    open_dic = chip_record_dic.pop("open")  # 从字典中弹出（删除 "open" 键）
-                    open_dic["close_time"] = time_str
-                    open_dic["close_related_user"] = creator
-
-                    # 存入归档键
-                    chip_record_dic[time_str] = open_dic
-                    return chip_record_dic
-
-                # 在父层级执行原子更新，同时完成删除和新增
-                await db_storage.atomic_deep_update(
-                    [f"{self.project}_over_related_record", label, chip_id], process_close_record
-                )
-
-                if label == first_col_label and row_id:
-                    for version, target_state in new_select_activ_dic.items():
-                        old_state = OLD_CHIP_SELECT_DIC.get(version)
-                        if target_state is old_state:
-                            continue
-                        if target_state is False:
-                            await self._cascade_deactivate_row(row_id, str(version), creator)
-                        elif overview_state_rank(target_state) > overview_state_rank(old_state):
-                            promoted_labels = await cascade_promote_table_row(
-                                self.project,
-                                self.configs,
-                                first_col_label,
-                                row_id,
-                                str(version),
-                                target_state,
-                                creator,
-                            )
-                            for promoted_label in promoted_labels:
-                                OverviewVersionManager.bump(self.project, promoted_label)
+                deactivating = any(state is False and OLD_CHIP_SELECT_DIC.get(version) is not False
+                                   for version, state in new_select_activ_dic.items())
+                for changed_label, changed_id in row_changes:
+                    if (changed_label, changed_id) == (label, chip_id) or deactivating:
+                        await _archive_pending_record(self.project, changed_label, changed_id, str(creator))
+                for changed_label in {target[0] for target in row_changes}:
+                    OverviewVersionManager.bump(self.project, changed_label)
                 # 级联修改完成后一次性刷新，避免先显示首列、随后才显示同行的短暂不一致。
                 await self._update_display()
                 self.cancel_checkbox_change(chip_id)
@@ -8046,6 +8002,8 @@ class OverviewTableGroup:
                 # multi_line=True,
                 close_button="✖",
             )
+
+            ui_spinner.set_visibility(False)
 
     async def _update_chip_block_parameter(self, chip_id, config):
         label = config["label"]

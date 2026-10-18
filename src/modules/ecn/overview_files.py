@@ -1,25 +1,21 @@
-"""系统内资料上传的隔离归档与正式执行发布；不覆盖共享目录中的同名文件。"""
+"""系统内资料：UUID 隔离送审，按已确认的原文件名执行，绝不覆盖正式文件。"""
 
 from __future__ import annotations
 
 import copy
-import hashlib
 import mimetypes
-import re
-import shutil
-import uuid
 from pathlib import Path
 
+from nicegui import app
+
+from ...overview_file_storage import copy_named_file, file_digest, validate_file_selection
 from .attachments import publish_pending, resolve_attachment
 from .editing import ECNConflict
 
 
 def prepare_overview_upload(item: dict, original: dict | None, ecn_id: str, user: str) -> tuple[dict, Path | None]:
-    """仅归档本次上传，正式概述目录在获批执行前保持不变。"""
     updated = copy.deepcopy(item)
-    if item.get("type") != "overview_update":
-        return updated, None
-    needs_file = item.get("config_processing_type") in {"file", "image", "video"} and any(
+    needs_file = item.get("type") == "overview_update" and item.get("config_processing_type") in {"file", "image", "video"} and any(
         isinstance(state, dict) and state.get("action") in {"add", "update"}
         for state in item.get("project_states", {}).values()
     )
@@ -27,58 +23,60 @@ def prepare_overview_upload(item: dict, original: dict | None, ecn_id: str, user
         return updated, None
     new_data = updated.setdefault("new_data", {})
     attachment = new_data.get("overview_upload")
-    if not isinstance(attachment, dict):
-        raise ECNConflict("请先上传本方案的新文件。")
+    selection = new_data.get("file_selection")
+    if not isinstance(attachment, dict) or not isinstance(selection, dict):
+        raise ECNConflict("请先上传文件并完成正式目录同名检查。")
+    config = app.storage.general.get("over_config_data_flat", {}).get(str(item.get("label") or ""), {})
+    root = str(config.get("upload_path") or "")
+    if not root:
+        raise ECNConflict("概述参数未配置正式上传目录。")
+    target = validate_file_selection(selection, Path(root))
+    if Path(str(attachment.get("name") or "")).suffix.lower() != target.suffix.lower():
+        raise ECNConflict("不能改变送审文件的扩展名。")
     installed: Path | None = None
     if attachment.get("pending_path"):
         if attachment.get("uploaded_by") != user:
             raise ECNConflict("系统内资料上传人不匹配。")
-        attachment, installed = publish_pending(attachment, ecn_id, user, f"overview_{item['item_id']}")
+        source = target if selection["mode"] == "existing" else None
+        attachment, installed = publish_pending(
+            attachment, ecn_id, user, f"overview_{item['item_id']}",
+            overview_source=source, expected_digest=selection["sha256"],
+        )
         new_data["overview_upload"] = attachment
     else:
-        original_upload = (original or {}).get("new_data", {}).get("overview_upload")
-        if attachment != original_upload:
-            raise ECNConflict("系统内资料文件已变化，请重新上传。")
+        original_data = (original or {}).get("new_data", {})
+        if attachment != original_data.get("overview_upload") or selection != original_data.get("file_selection"):
+            raise ECNConflict("送审文件选择已变化，请重新上传并确认。")
     path = resolve_attachment(attachment)
-    if not path.is_file():
-        raise ECNConflict("方案上传文件已不存在，请重新上传。")
+    if not path.is_file() or file_digest(path) != selection["sha256"]:
+        raise ECNConflict("送审文件内容已变化，请重新上传。")
     new_data.update(
-        content=str(attachment["name"]), local_file_path=str(path),
+        content=selection["name"], local_file_path=str(path),
         url_path=f"/files/ecn-review/{attachment['id']}",
-        file_type=str(attachment.get("file_type") or mimetypes.guess_type(str(attachment["name"]))[0] or "application/octet-stream"),
+        file_type=str(mimetypes.guess_type(selection["name"])[0] or attachment.get("file_type") or "application/octet-stream"),
     )
     return updated, installed
 
 
 def publish_overview_upload(item: dict, project: str, ecn_id: str, config: dict) -> tuple[dict, Path | None]:
-    """执行时独占创建正式文件；幂等重试仅接受字节相同的已有文件。"""
-    attachment = item.get("new_data", {}).get("overview_upload")
-    if not isinstance(attachment, dict):
-        raise ECNConflict("方案未保存有效的上传文件。")
-    source = resolve_attachment(attachment)
-    if not source.is_file():
-        raise ECNConflict("方案上传文件已不存在，不能执行。")
-    root = str(config.get("upload_path") or "").strip()
+    """只执行已确认的文件名、来源和内容；目录或文件发生变化时拒绝执行。"""
+    new_data = item.get("new_data", {})
+    attachment = new_data.get("overview_upload")
+    selection = new_data.get("file_selection")
+    if not isinstance(attachment, dict) or not isinstance(selection, dict):
+        raise ECNConflict("方案未保存完整的文件选择，请重新编辑方案。")
+    root = str(config.get("upload_path") or "")
     if not root:
         raise ECNConflict("概述参数未配置正式上传目录。")
-    file_id = uuid.uuid5(uuid.NAMESPACE_URL, f"ecn-file:{ecn_id}:{item['item_id']}:{project}:{attachment['id']}").hex
-    suffix = re.sub(r"[^A-Za-z0-9.]", "", Path(str(attachment["name"])).suffix)[:16]
-    target = Path(root) / f"{file_id}{suffix}"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    created = False
-    try:
-        with source.open("rb") as incoming:
-            with target.open("xb") as output:
-                created = True
-                shutil.copyfileobj(incoming, output)
-    except FileExistsError:
-        with source.open("rb") as incoming, target.open("rb") as existing:
-            if hashlib.file_digest(incoming, "sha256").digest() != hashlib.file_digest(existing, "sha256").digest():
-                raise ECNConflict("正式文件已存在且内容不一致，已拒绝覆盖。")
-    except Exception:
-        if created:
-            target.unlink(missing_ok=True)
-        raise
+    target = validate_file_selection(selection, Path(root))
+    source = resolve_attachment(attachment)
+    if not source.is_file() or file_digest(source) != selection["sha256"]:
+        raise ECNConflict("送审文件已变化，不能执行。")
+    existed = target.exists()
+    if selection["mode"] == "new":
+        copy_named_file(source, target, expected_digest=selection["sha256"])
+    # 已有文件模式只引用，绝不从归档恢复被删除的正式文件。
     return {
-        "local_file_path": str(target), "url_path": f"/files/ecn-overview/{file_id}{suffix}",
-    }, target if created else None
+        "local_file_path": str(target), "url_path": f"/files/{selection['name']}",
+        "content": selection["name"],
+    }, None if existed else target

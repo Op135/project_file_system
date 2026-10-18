@@ -1397,6 +1397,10 @@ def build_scheme_panel(
                                 new_data = item.get("new_data", {})
                                 project_states = item.get("project_states", {})
                                 new_content = str(new_data.get("content") or "（未填写）")
+                                file_selection = new_data.get("file_selection")
+                                if isinstance(file_selection, dict):
+                                    source_text = "使用服务器已有文件" if file_selection.get("mode") == "existing" else "保存本次上传文件"
+                                    ui.label(f"{source_text} · 正式文件名：{file_selection.get('name', '')}").classes("text-xs text-blue-800 break-all")
                                 if project_states:
                                     with ui.column().classes("w-full gap-0 self-stretch"):
                                         for project, project_state in project_states.items():

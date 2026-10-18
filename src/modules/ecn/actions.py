@@ -226,7 +226,6 @@ async def save_review(
 
 
 async def edit_scheme(ecn_id, expected, item, original, user, role, *, delete=False, user_service=None, storage=None):
-    published_paths: list[Path] = []
     pending_upload = item.get("new_data", {}).get("overview_upload") if isinstance(item, dict) else None
 
     async def operation(current, connection):
@@ -235,23 +234,14 @@ async def edit_scheme(ecn_id, expected, item, original, user, role, *, delete=Fa
         if delete:
             return delete_scheme(current, expected, original, user)
         validate_scheme_attachments(current, item, user)
-        prepared, installed = await asyncio.to_thread(prepare_overview_upload, item, original, ecn_id, user)
-        if installed is not None:
-            published_paths.append(installed)
+        prepared, _ = await asyncio.to_thread(prepare_overview_upload, item, original, ecn_id, user)
         updated = save_scheme(current, expected, prepared, original, user)
         await validate_overview_scheme_target_lock(connection, ecn_id, prepared)
         return updated
 
-    try:
-        result = await mutate_record(ecn_id, operation, storage=storage)
-    except Exception:
-        for path in published_paths:
-            path.unlink(missing_ok=True)
-        raise
-    if not result.ok:
-        for path in published_paths:
-            path.unlink(missing_ok=True)
-    elif isinstance(pending_upload, dict) and pending_upload.get("pending_path"):
+    # 系统内资料已归档文件永久保留，保存失败只放弃引用；暂存留给重试。
+    result = await mutate_record(ecn_id, operation, storage=storage)
+    if result.ok and isinstance(pending_upload, dict) and pending_upload.get("pending_path"):
         cleanup_staged([pending_upload])
     if result.ok and not delete and isinstance(original, dict):
         previous_upload = original.get("new_data", {}).get("overview_upload")

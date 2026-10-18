@@ -17,6 +17,7 @@ from nicegui import app
 
 from . import db_storage
 from . import overview_storage
+from .overview_file_storage import copy_named_file
 from .approval_workflow import (
     advance_approval_sequence,
     create_approval_sequence_assignments,
@@ -221,7 +222,8 @@ async def save_or_submit_overview_addition(
             staging_dir = OVERVIEW_ADD_STAGING_DIR / request_id
             staging_dir.mkdir(parents=True, exist_ok=False)
             staged_path = staging_dir / source_path.name
-            shutil.move(str(source_path), str(staged_path))
+            # 上传源可能已由其他概述引用，送审只能复制暂存，不能搬走正式文件。
+            shutil.copyfile(source_path, staged_path)
             staged_file_path = str(staged_path)
             final_file_path = str(source_path)
 
@@ -418,7 +420,6 @@ async def _execute_approved_add(request: dict[str, Any]) -> tuple[bool, str]:
 
     staged_path = _safe_staging_path(payload.get("staged_file_path"))
     final_path_text = str(payload.get("final_file_path") or "").strip()
-    installed_file: Path | None = None
     if staged_path is not None:
         if not staged_path.is_file() or not final_path_text:
             return False, "待审批上传文件已不存在"
@@ -429,25 +430,16 @@ async def _execute_approved_add(request: dict[str, Any]) -> tuple[bool, str]:
         final_path = Path(final_path_text).resolve()
         if final_path != expected_final_path:
             return False, "待审批上传文件的正式保存路径无效"
-        if final_path.exists():
-            return False, "审批期间正式目录出现同名文件，已拒绝覆盖"
-        final_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(staged_path), str(final_path))
-        installed_file = final_path
+        copy_named_file(staged_path, final_path)
 
     try:
         inserted, message = await insert_overview_chip(project, label, chip)
     except Exception as exc:
-        if installed_file is not None and staged_path is not None and installed_file.is_file():
-            staged_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(installed_file), str(staged_path))
         return False, f"概述写入失败：{exc}"
     if not inserted:
-        if installed_file is not None and staged_path is not None and installed_file.is_file():
-            staged_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(installed_file), str(staged_path))
         return False, message
     if staged_path is not None:
+        staged_path.unlink(missing_ok=True)
         try:
             staged_path.parent.rmdir()
         except OSError:
@@ -660,7 +652,7 @@ async def resubmit_overview_add_request(
             staging_dir.mkdir(parents=True, exist_ok=True)
             new_staged_path = staging_dir / f"replacement-{uuid.uuid4().hex}-{source_path.name}"
             try:
-                shutil.move(str(source_path), str(new_staged_path))
+                shutil.copyfile(source_path, new_staged_path)
             except OSError as exc:
                 _supersede_current_assignment(service, request_id, assignment)
                 return OverviewAddSaveResult("error", f"重新暂存送审文件失败：{exc}", request_id)

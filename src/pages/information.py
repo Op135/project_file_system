@@ -18,6 +18,7 @@ from .. import overview_storage
 from ..components import FileThumbnail, OverviewReasonSelector
 from ..config import (
     BASE_DIR,
+    FILES_URL_DIR,
     IMG_DIR,
     OVER_DIR,
     PRESET_AVATARS,
@@ -230,7 +231,11 @@ def _get_correction_media_preview(
         upload_path_value = str(config.get("upload_path") or "").strip()
         if not upload_path_value:
             return None
-        local_path = Path(upload_path_value) / filename
+        stored_path = str(snapshot.get("local_file_path") or "")
+        before_path = str((payload.get("before_snapshot") or {}).get("local_file_path") or "")
+        # 待审 after 快照可能仍带着原文件路径，不能误把原文件当成纠错结果。
+        use_stored_path = bool(stored_path) and (side == "before" or stored_path != before_path)
+        local_path = Path(stored_path) if use_stored_path else Path(upload_path_value) / filename
         audit_token = str(payload.get("original_file_sha256") or "") if side == "before" else ""
 
     if not local_path.is_file():
@@ -1061,16 +1066,15 @@ def information_page():
 
         # --- 执行修改 ---
         copied_target: Path | None = None
-        overview_saved = False
         try:
-            # 先复制并保留暂存源；概述事务失败时可安全回收副本并重试。
+            # 保持原名保存；事务失败不删除可能已被其他概述引用的正式文件。
             temp_file_path = req_data.get("temp_file_path")
-            if isinstance(temp_file_path, str) and temp_file_path:
-                import shutil
+            if req_data["action"] == "modify" and req_data["chip_type"] in {"file", "image", "video"}:
+                from ..overview_corrections import file_sha256, publish_correction_media
 
-                target_path = Path(str(config["upload_path"])) / str(new_val)
-                shutil.copy2(temp_file_path, target_path)
-                copied_target = target_path
+                upload_root = Path(str(config["upload_path"]))
+                source = Path(temp_file_path) if isinstance(temp_file_path, str) and temp_file_path else upload_root / Path(str(new_val)).name
+                copied_target = await publish_correction_media({}, source, upload_root, str(new_val), file_sha256(source))
 
             # 更新数据库
             base_path = [f"{project}_over_data", req_data["label"], req_data["chip_id"]]
@@ -1079,6 +1083,10 @@ def information_page():
                     if not isinstance(chip, dict):
                         return db_storage.ATOMIC_NO_UPDATE
                     chip["content"] = new_val
+                    if copied_target is not None:
+                        # 旧版入口同样不能保留 ECN 生成的旧文件指针。
+                        chip["local_file_path"] = str(copied_target)
+                        chip["url_path"] = f"{FILES_URL_DIR}/{Path(str(new_val)).name}"
                     if req_data["chip_type"] == "test":
                         chip["test_select_data"] = copy.deepcopy(req_data["new_test_data"])
                     return chip
@@ -1086,9 +1094,10 @@ def information_page():
                 await overview_storage.checked_atomic_deep_update(base_path, apply_approved_change)
             elif req_data["action"] == "delete":
                 await overview_storage.del_deep_item(base_path)
-            overview_saved = True
             if isinstance(temp_file_path, str) and temp_file_path:
-                Path(temp_file_path).unlink(missing_ok=True)
+                # 旧申请的路径来源不一定是暂存；仅清理可验证的纠错暂存目录。
+                from ..overview_corrections import cleanup_correction_staged_files
+                cleanup_correction_staged_files([temp_file_path])
 
             # 核心：触发即时刷新
             from ..components import OverviewVersionManager
@@ -1099,8 +1108,6 @@ def information_page():
             await handle_archive(req_id, "approved")
             ui.notify("审批通过并已同步刷新")
         except Exception as e:
-            if copied_target is not None and not overview_saved:
-                copied_target.unlink(missing_ok=True)
             ui.notify(f"错误: {e}", type="negative")
 
     # 3. 归档逻辑 (清理 app.storage.general，写入数据库持久化)
@@ -1963,6 +1970,16 @@ def information_page():
                         if is_staged_media:
                             content_input.disable()
                             content_input.tooltip("已上传文件名不能在审批单中修改；可撤回后重新发起。")
+                            selection = (payload.get("extra_data") or {}).get("file_selection")
+                            if isinstance(selection, dict):
+                                source_text = "使用服务器已有文件" if selection.get("mode") == "existing" else "保存本次上传文件"
+                                ui.label(f"文件来源：{source_text}").classes("text-sm text-blue-800")
+                                ui.label(f"正式目录：{selection.get('directory', '')}").classes("text-xs break-all")
+                            snapshot_file = Path(str(payload["staged_file_path"])).resolve()
+                            if snapshot_file.is_relative_to(BATCH_OVERVIEW_STAGING_DIR.resolve()) and snapshot_file.is_file():
+                                def download_snapshot():
+                                    ui.download(snapshot_file, str(payload.get("content") or snapshot_file.name))
+                                ui.button("查看/下载送审文件", on_click=download_snapshot).props("flat")
                         if not editable:
                             content_input.disable()
                         config = payload.get("config") or {}

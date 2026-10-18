@@ -4,8 +4,6 @@
 import copy
 import hashlib
 import json
-import re
-import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +13,7 @@ from nicegui import app
 
 from . import db_storage
 from . import overview_storage
+from .overview_file_storage import copy_named_file
 from .config import OVER_UPLOADS_FILE_TYPE
 from .overview_batch_operations import validate_overview_content
 from .overview_change_workflow_config import OVERVIEW_CHANGE_WORKFLOW_CONFIG
@@ -288,6 +287,32 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def correction_media_path(snapshot: dict, config: dict) -> Path:
+    """实际文件路径优先于展示文件名，兼容 ECN 独立归档与普通上传。"""
+    local_path = str(snapshot.get("local_file_path") or "").strip()
+    return Path(local_path) if local_path else Path(str(config.get("upload_path") or "")) / Path(
+        str(snapshot.get("content") or "")
+    ).name
+
+
+async def _validate_saved_media_request(request: dict) -> None:
+    """保留已删除或已变更申请的旧窗口防护。"""
+    request_id = str(request.get("id") or "")
+    if request_id:
+        records = await db_storage.get_fresh_item(OVERVIEW_CORRECTION_REQUESTS_KEY, {})
+        current = records.get(request_id) if isinstance(records, dict) else None
+        if not isinstance(current, dict) or any(
+            current.get(key) != request.get(key) for key in ("project", "label", "chip_id", "action", "payload")
+        ):
+            raise ValueError("纠错申请已被修改或删除，请刷新后重试。")
+
+
+async def publish_correction_media(request: dict, source: Path, directory: Path, filename: str, digest: str) -> Path:
+    """保留原文件名；已存在的同名文件只接受相同内容，正式文件不回收。"""
+    await _validate_saved_media_request(request)
+    return copy_named_file(source, directory / Path(filename).name, expected_digest=digest)
+
+
 def build_media_file_audit(before: dict, config: dict, staged_path_value: str) -> tuple[bool, str, dict]:
     """记录送审时的新旧文件指纹，确保审批执行的正是申请人提交的文件。"""
     upload_path_value = str(config.get("upload_path") or "").strip()
@@ -297,7 +322,7 @@ def build_media_file_audit(before: dict, config: dict, staged_path_value: str) -
     if not upload_path.is_dir():
         return False, f"正式上传目录不存在：{upload_path}", {}
 
-    original_path = upload_path / Path(str(before.get("content") or "")).name
+    original_path = correction_media_path(before, config)
     staged_ok, staged_path = validate_staged_path(staged_path_value)
     if staged_path_value and (not staged_ok or staged_path is None):
         return False, "纠错暂存文件不存在或路径无效", {}
@@ -400,9 +425,7 @@ async def execute_correction_request(request: dict) -> dict:
             media_ok, media_message, staged_path, target_path = _prepare_media_target(payload, config)
             if not media_ok:
                 return {"ok": False, "message": media_message}
-            original_path = Path(str(config.get("upload_path") or "")) / Path(
-                str(before.get("content") or "")
-            ).name
+            original_path = correction_media_path(before, config)
             original_hash = file_sha256(original_path) if original_path.is_file() else ""
             expected_original_hash = str(payload.get("original_file_sha256") or "")
             if expected_original_hash and original_hash != expected_original_hash:
@@ -420,6 +443,8 @@ async def execute_correction_request(request: dict) -> dict:
             if chip_type == "video" and "video" not in uploaded_file_type:
                 return {"ok": False, "message": "纠错文件不是有效视频类型"}
             after["url_path"] = str(payload.get("target_url_path") or after.get("url_path") or "")
+            if target_path is not None:
+                after["local_file_path"] = str(target_path)
             if payload.get("uploaded_file_type"):
                 after["file_type"] = payload["uploaded_file_type"]
             new_file_source = staged_path or target_path
@@ -466,27 +491,26 @@ async def execute_correction_request(request: dict) -> dict:
             for metadata_key in ("url_path", "file_type", "warehouse", "test_select_data"):
                 if metadata_key in after:
                     corrected[metadata_key] = copy.deepcopy(after[metadata_key])
+            if chip_type in {"file", "image", "video"}:
+                corrected["local_file_path"] = after["local_file_path"]
             overview_data.setdefault(label, {})[chip_id] = corrected
             actual_after = copy.deepcopy(corrected)
             changed_labels.add(label)
         correction_applied = True
         return overview_data
 
-    copied_new_target = False
-    if staged_path is not None and target_path is not None and not target_path.exists():
+    if action == "correct" and chip_type in {"file", "image", "video"} and target_path is not None:
         try:
-            shutil.copy2(staged_path, target_path)
-            copied_new_target = True
+            source = staged_path or target_path
+            digest = str((file_change or {}).get("after_sha256") or "")
+            target_path = await publish_correction_media(request, source, target_path.parent, after["content"], digest)
+            after["local_file_path"] = str(target_path)
         except Exception as exc:
-            return {"ok": False, "message": f"暂存文件复制到正式目录失败：{exc}"}
+            return {"ok": False, "message": f"纠错文件保存失败：{exc}"}
 
     success = await overview_storage.atomic_deep_update([f"{project}_over_data"], apply_correction)
     if not success or not correction_applied:
-        if copied_new_target and target_path is not None:
-            try:
-                target_path.unlink(missing_ok=True)
-            except OSError:
-                pass
+        # 正式文件可能被其他概述引用，业务失败只放弃本次引用。
         return {"ok": False, "message": "原概述已在审批期间发生变化，请驳回后重新申请"}
     if staged_path is not None:
         cleanup_correction_staged_files([str(staged_path)])
@@ -515,6 +539,12 @@ async def archive_correction_request(request_id: str, request: dict, status: str
     archive.update(copy.deepcopy(extra or {}))
     archive["status"] = status
     archive["updated_at"] = correction_now()
+    result = archive.get("result") or {}
+    actual_after = result.get("after_snapshot")
+    if status == "approved" and isinstance(actual_after, dict) and actual_after.get("type") in {"file", "image", "video"}:
+        # 归档预览使用实际正式文件，不再依赖已清理的暂存文件。
+        archive.setdefault("payload", {})["after_snapshot"] = copy.deepcopy(actual_after)
+        archive["payload"]["staged_file_path"] = ""
 
     def append(archives):
         archives = archives or {}

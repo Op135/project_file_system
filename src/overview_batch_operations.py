@@ -3,11 +3,10 @@
 
 import copy
 import re
-import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, Mapping, Optional
+from typing import Callable, Iterable, Mapping, Optional
 
 from nicegui import app
 
@@ -430,6 +429,78 @@ async def insert_overview_chip(project: str, label: str, chip: dict) -> tuple[bo
     return True, "已新增"
 
 
+async def atomic_update_overview_with_row(
+    project: str,
+    label: str,
+    chip_id: str,
+    updater: Callable,
+    group_configs: Optional[list[dict]] = None,
+    creator: str = "",
+    changed_targets: Optional[set[tuple[str, str]]] = None,
+) -> bool:
+    """把首列和同行联动纳入同一次概述事务；被占用时整行均不写入。"""
+    if not group_configs:
+        return await overview_storage.atomic_deep_update([f"{project}_over_data", label, chip_id], updater)
+    first_label = str(group_configs[0].get("label") or "")
+    excluded = get_table_state_follow_excluded_labels(group_configs)
+    changed: set[tuple[str, str]] = set()
+    conflict = {"message": ""}
+
+    def update_project(data):
+        data = data or {}
+        current = data.get(label, {}).get(chip_id)
+        previous = copy.deepcopy(current or {})
+        updated = updater(current)
+        if updated is db_storage.ATOMIC_NO_UPDATE:
+            return db_storage.ATOMIC_NO_UPDATE
+        data.setdefault(label, {})[chip_id] = updated
+        changed.add((label, chip_id))
+        row_id = updated.get("row_id")
+        old_states = previous.get("select_activ_dic", {})
+        decisions = {version: state for version, state in updated.get("select_activ_dic", {}).items()
+                     if version not in old_states or state is not old_states[version]}
+        if label != first_label:
+            # 事务内复核首列，不能只依赖页面读取时的旧状态。
+            for version, state in decisions.items():
+                references = [chip.get("select_activ_dic", {}).get(version, chip.get("enabled"))
+                              for chip in data.get(first_label, {}).values() if chip.get("row_id") == row_id]
+                if not references or overview_state_rank(state) > max(map(overview_state_rank, references)):
+                    conflict["message"] = "目标状态等级不能高于同行首列概述状态，请刷新后重试。"
+                    return db_storage.ATOMIC_NO_UPDATE
+            return data
+        if not row_id:
+            return data
+        for version, state in decisions.items():
+            inactive = state is False
+            if not inactive and overview_state_rank(state) <= overview_state_rank(old_states.get(version)):
+                continue
+            reason = get_automatic_overview_reason("row_cascade_inactive" if inactive else "row_cascade_promoted")
+            for config in group_configs:
+                child_label = str(config.get("label") or "")
+                if not child_label or child_label == label or (not inactive and child_label in excluded):
+                    continue
+                for child_id, child in data.get(child_label, {}).items():
+                    if child.get("row_id") != row_id:
+                        continue
+                    states = child.setdefault("select_activ_dic", {})
+                    if states.get(version, child.get("enabled")) is state:
+                        continue
+                    states[version] = state
+                    if version == max(states, key=_overview_version_sort_key):
+                        icon, enabled, color = get_chip_state_visuals(child.get("type", "text"), state)
+                        child.update(icon=icon, enabled=enabled, bg_color=color)
+                    append_overview_timestamp(child, creator=creator, reason=reason)
+                    changed.add((child_label, str(child_id)))
+        return data
+
+    success = await overview_storage.atomic_deep_update([f"{project}_over_data"], update_project)
+    if conflict["message"]:
+        raise overview_storage.OverviewWriteError(conflict["message"])
+    if success and changed_targets is not None:
+        changed_targets.update(changed)
+    return success
+
+
 async def update_overview_chip_state(
     project: str,
     label: str,
@@ -439,6 +510,9 @@ async def update_overview_chip_state(
     creator: str,
     reason: str = "状态确认",
     expected_state: object = _OVERVIEW_STATE_EXPECTATION_UNSET,
+    *,
+    group_configs: Optional[list[dict]] = None,
+    changed_targets: Optional[set[tuple[str, str]]] = None,
 ) -> tuple[bool, str, Optional[dict]]:
     """原子更新一个 chip 指定版本的激活状态，可选校验提交瞬间的原状态。"""
     outcome: dict[str, object] = {"changed": False, "chip": None}
@@ -467,7 +541,9 @@ async def update_overview_chip_state(
         outcome["chip"] = copy.deepcopy(chip)
         return chip
 
-    success = await overview_storage.atomic_deep_update([f"{project}_over_data", label, chip_id], update)
+    success = await atomic_update_overview_with_row(
+        project, label, chip_id, update, group_configs, creator, changed_targets,
+    )
     if not success:
         lock_message = overview_storage.take_ecn_lock_message()
         return False, lock_message or "数据库写入失败", None
@@ -690,6 +766,8 @@ def _publish_batch_overview_changes(changed_pairs: set[tuple[str, str]], fallbac
 
 
 def _install_staged_media(payload: dict, config: dict) -> tuple[bool, str]:
+    from .overview_file_storage import copy_named_file, file_digest, make_file_selection, validate_file_selection
+
     staged_path_value = str(payload.get("staged_file_path") or "").strip()
     if not staged_path_value:
         return True, ""
@@ -702,22 +780,23 @@ def _install_staged_media(payload: dict, config: dict) -> tuple[bool, str]:
     upload_path = Path(upload_path_value)
     if not upload_path.is_dir():
         return False, f"正式上传目录不存在：{upload_path}"
-    target_path = upload_path / Path(str(payload.get("content") or staged_path.name)).name
-    if target_path.exists():
-        staged_path.unlink(missing_ok=True)
-        try:
-            staged_path.parent.rmdir()
-        except OSError:
-            pass
-        return True, ""
     if not staged_path.is_file():
         return False, "申请暂存文件已不存在"
     try:
-        shutil.move(str(staged_path), str(target_path))
-        try:
-            staged_path.parent.rmdir()
-        except OSError:
-            pass
+        name = str(payload.get("content") or staged_path.name)
+        selection = (payload.get("extra_data") or {}).get("file_selection")
+        if not isinstance(selection, dict):
+            # 原有待审批申请不改名；遇到不同内容的同名文件必须重新确认，不能静默复用。
+            selection = make_file_selection(upload_path, name, "new", file_digest(staged_path))
+        if selection.get("name") != name:
+            raise ValueError("文件名与送审选择不一致")
+        target_path = validate_file_selection(selection, upload_path)
+        if file_digest(staged_path) != selection["sha256"]:
+            raise ValueError("送审暂存文件内容已变化")
+        if selection["mode"] == "new":
+            copy_named_file(staged_path, target_path, expected_digest=selection["sha256"])
+        payload.setdefault("extra_data", {})["local_file_path"] = str(target_path)
+        # 保留送审快照供审批记录预览和失败项目重试，不删除正式文件。
     except Exception as exc:
         return False, f"暂存文件转入正式目录失败：{exc}"
     return True, ""
@@ -883,10 +962,6 @@ async def execute_batch_overview_request(request: dict) -> dict:
                     skipped.append(f"{project}：概述条目已不存在")
                     continue
                 row_id = current_chip.get("row_id")
-                previous_state = current_chip.get("select_activ_dic", {}).get(
-                    req_max_ver,
-                    current_chip.get("enabled"),
-                )
                 if (
                     config.get("is_table_group")
                     and label != config.get("first_col_label")
@@ -910,6 +985,7 @@ async def execute_batch_overview_request(request: dict) -> dict:
                     if not valid:
                         failed.append(f"{project}：{message}")
                         continue
+                row_changes: set[tuple[str, str]] = set()
                 changed, message, updated_chip = await update_overview_chip_state(
                     project,
                     label,
@@ -918,11 +994,16 @@ async def execute_batch_overview_request(request: dict) -> dict:
                     target_state,
                     submitter,
                     str(payload.get("reason") or payload.get("notes") or "状态确认"),
+                    group_configs=group_configs if config.get("is_table_group") else None,
+                    changed_targets=row_changes,
                 )
                 if not changed or updated_chip is None:
                     skipped.append(f"{project}：{message}")
                     continue
                 await archive_related_record(project, label, chip_id, submitter)
+                for changed_label, changed_id in row_changes - {(label, chip_id)}:
+                    if target_state is False:
+                        await archive_related_record(project, changed_label, changed_id, submitter)
                 successes.append(
                     {
                         "project": project,
@@ -934,29 +1015,7 @@ async def execute_batch_overview_request(request: dict) -> dict:
                     }
                 )
                 changed_pairs.add((project, label))
-                if config.get("is_table_group") and label == config.get("first_col_label") and row_id:
-                    if target_state is False:
-                        cascaded = await cascade_deactivate_table_row(
-                            project,
-                            group_labels,
-                            label,
-                            row_id,
-                            req_max_ver,
-                            submitter,
-                        )
-                    elif overview_state_rank(target_state) > overview_state_rank(previous_state):
-                        cascaded = await cascade_promote_table_row(
-                            project,
-                            group_configs,
-                            label,
-                            row_id,
-                            req_max_ver,
-                            target_state,
-                            submitter,
-                        )
-                    else:
-                        cascaded = set()
-                    changed_pairs.update((project, changed_label) for changed_label in cascaded)
+                changed_pairs.update((project, changed_label) for changed_label, _ in row_changes)
             except Exception as exc:
                 failed.append(f"{project}：{exc}")
 
