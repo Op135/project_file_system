@@ -28,6 +28,7 @@
 | --- | --- |
 | `main.py` | 应用启动、数据库初始化、后台任务和页面装配 |
 | `system_lifecycle.py` | 管理端重启/关闭前备份校验、优雅退出与跨热重载进程重启协调 |
+| `storage_safety.py` | NiceGUI 通用 JSON 存储的跨进程启动锁、原子写入、陈旧覆盖拒绝及异常缩水校验；保护尚未迁移到 SQLite 的全局业务键 |
 | `db_storage.py` | 通用业务 JSON/实体的异步 SQLite 存储；只提供缓存、连接和事务原语，不引用具体业务状态或规则 |
 | `overview_storage.py` | 项目概述的业务写入口；在通用事务上组合 ECN 占用等跨模块门禁 |
 | `overview_batch_operations.py` | 概述批量维护与审批；提供首列和同行状态联动的原子写入入口，单条/批量页面共用 |

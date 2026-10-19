@@ -152,7 +152,9 @@ class ConfigService:
             with open(f"{self.base_dir}/config_service.json", "w", encoding="utf-8") as f:
                 json.dump(self._cache, f, ensure_ascii=False, indent=4)
 
-            app.storage.general["config_service_custom_labels"] = {}  # 重置定制标签缓存
+            # 先在普通字典中完整构建，再一次性替换全局缓存。直接逐层修改 ObservableDict 会让
+            # 每个标签都触发一次完整 storage-general.json 持久化，显著拖慢应用启动。
+            custom_labels: dict[str, dict[str, str]] = {}
             for num, data in processed.items():
                 options_list = data["options"]
                 # 该需求配置项存在输出标签配置
@@ -163,9 +165,8 @@ class ConfigService:
                             node_id = data["node_id"]
                             option_id = op_dic["option_id"]
                             option_label = op_dic["option_label"]
-                            if node_id not in app.storage.general["config_service_custom_labels"]:
-                                app.storage.general["config_service_custom_labels"][node_id] = {}
-                            app.storage.general["config_service_custom_labels"][node_id][option_id] = option_label
+                            custom_labels.setdefault(node_id, {})[option_id] = option_label
+            app.storage.general["config_service_custom_labels"] = custom_labels
 
             # 检查临时配置文件是否存在，存在则删除
             if os.path.exists(f"{self.base_dir}/config_service_temp.json"):

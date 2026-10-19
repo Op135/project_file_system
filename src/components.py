@@ -32,6 +32,7 @@ from nicegui.events import GenericEventArguments, MouseEventArguments, ValueChan
 
 from . import db_storage  # 导入我们创建的模块
 from . import overview_storage
+from .storage_safety import atomic_write_bytes, read_general_storage_snapshot, validated_storage_bytes
 from .config import (
     FILES_URL_DIR,
     IMG_DIR,
@@ -1254,17 +1255,26 @@ class StorageBackupManager:
         self._backup_sqlite_force(trigger_type, timestamp)
 
     def _backup_json_file(self, trigger_type: str, timestamp: str) -> bool:
-        """内部辅助：复制 JSON 文件"""
+        """校验并原子保存 JSON 快照，拒绝备份空壳或半写文件。"""
         if not self.json_file.exists():
-            return True  # 文件不存在则跳过
+            logger.error("[%s] JSON 备份失败：源文件不存在：%s", trigger_type, self.json_file)
+            return False
 
         try:
-            # 备份文件名格式为 原文件名_触发类型_时间戳.json
+            # 读取过程持有与运行时写入相同的跨进程锁，并与最近可信备份比较异常缩水。
+            snapshot_bytes = validated_storage_bytes(self.json_file, self.backup_dir_path)
             target_name = f"{self.json_file.stem}_{trigger_type}_{timestamp}{self.json_file.suffix}"
             target_path = self.backup_dir_path / target_name
-            # 不仅仅是复制文件内容，还保留了文件的元数据（如创建时间、最后修改时间），这对于数据恢复时的判断非常重要
-            shutil.copy2(self.json_file, target_path)
-            logger.info(f"[{trigger_type}] JSON 备份成功: {target_name}")
+            if target_path.exists():
+                precise_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                target_name = f"{self.json_file.stem}_{trigger_type}_{precise_timestamp}{self.json_file.suffix}"
+                target_path = self.backup_dir_path / target_name
+            atomic_write_bytes(target_path, snapshot_bytes)
+            verified = read_general_storage_snapshot(target_path)
+            source_digest = hashlib.sha256(snapshot_bytes).hexdigest()
+            if verified.sha256 != source_digest:
+                raise RuntimeError("JSON 备份写入后的 SHA-256 与源快照不一致")
+            logger.info("[%s] JSON 备份成功且完整性检查通过: %s", trigger_type, target_name)
             return True
         except Exception:
             logger.error(f"[{trigger_type}] JSON 备份失败", exc_info=True)

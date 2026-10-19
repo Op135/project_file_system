@@ -6,8 +6,9 @@ import sys
 import warnings
 from logging.handlers import RotatingFileHandler
 
-from nicegui import app, ui
 from starlette.responses import Response
+
+from .nicegui_bootstrap import app, ui
 
 # 关键：导入所有页面。这将自动注册所有 @ui.page 路由
 # 导入您已有的服务和新创建的模块
@@ -409,53 +410,36 @@ app.on_startup(master_startup)
 # 为了能在系统关闭时顺利执行备份，需将这里外部注册关闭数据库移到init_backup_service函数内部最后
 # app.on_shutdown(db_storage.close_db)
 
-# 存储服务器层级 概述数据 的变量初始化
-# app.storage.general.setdefault("overview_data", {})
-# 存储服务器层级 项目需求最高版本号 的变量初始化
-app.storage.general.setdefault("project_req_max_ver", {})
-# 存储服务器层级 项目简介 的变量初始化
-app.storage.general.setdefault("project_summary", {})
-# 存储服务器层级 项目简介与概述数据动态更新配置 的变量初始化
-app.storage.general.setdefault("project_table_update_config", {})
-# 存储服务器层级 各项目各工程角色概述数据负责人 的变量初始化
-app.storage.general.setdefault("overview_role", {})
-# 存储服务器层级 各项目各工程角色概述数据负责人是否需要核对概述的记录信息
-app.storage.general.setdefault("overview_charge_pending", {})
-# 存储服务器层级 各项目负责销售 的变量初始化
-app.storage.general.setdefault("project_sale", {})
-# 储存服务器层级 等待审核的项目需求即待审版本
-app.storage.general.setdefault("wait_review", {})
-# 储存服务器层级 记录暂存的项目需求项目与版本
-app.storage.general.setdefault("temp_req", {})
-# 储存服务器层级 用于存储用户偏好信息
-app.storage.general.setdefault("user_preferences", {})
-# 储存服务器层级 用于存储项目定制信息
-app.storage.general.setdefault("custom_labels", {})
-# 储存服务器层级 用于标记项目概述是否要因转产而刷新
-# app.storage.general.setdefault("conversion_refresh", {})
-# 储存服务器层级 用于记录已经存在的临时项目号
-app.storage.general.setdefault("temp_project_name", [])
-# 储存服务器层级 用于记录各项目的项目工程师负责人
-app.storage.general.setdefault("project_engineer", {})
-# 储存服务器层级 用于记录各项目的项目工程师负责人
-app.storage.general.setdefault("over_change_broadcast", {})
-# 储存服务器层级 用于扁平化记录概述项配置信息
-app.storage.general.setdefault("over_config_data_flat", {})
-# 储存服务器层级 用于扁平化需求配置里的定制标签信息{"node_id": {"option_id":"option_label"}}
-app.storage.general.setdefault("config_service_custom_labels", {})
-# 需求 node_id 与概述 label 的影响关系；启动加载概述配置时会完成校验并覆盖此占位值。
-app.storage.general.setdefault("requirement_overview_impact_config", {})
-# 用于全局更新标记，通知所有监听此项目的客户端，暂时不用
-app.storage.general.setdefault("overview_last_update", {})
-# 储存服务器层级 用于记录概述数据的历史快照，键为日期字符串，值为当日概述数据的快照
-app.storage.general.setdefault("overview_pending_history", {})
-# 已完成概述填写的项目列表
-app.storage.general.setdefault("overview_completed", [])
-# 仅缺需填的项目列表
-app.storage.general.setdefault("overview_only_need", [])
-# 用于记录概述数据的版本核对状态，结构示例：{"project_name": {"version": True/False}}
-# True 表示已核对，False 表示未核对或需要重新核对（例如因为转产导致版本变更）
-app.storage.general.setdefault("overview_active_state_checked_versions", {})
+# 一次性补齐缺失键。NiceGUI 的 setdefault 即使键已存在也会触发持久化回调，逐项调用会在
+# 启动时重复校验和写入完整 storage-general.json；批量 update 最多只落盘一次。
+_general_storage_defaults: dict[str, object] = {
+    "project_req_max_ver": {},
+    "project_summary": {},
+    "project_table_update_config": {},
+    "overview_role": {},
+    "overview_charge_pending": {},
+    "project_sale": {},
+    "wait_review": {},
+    "temp_req": {},
+    "user_preferences": {},
+    "custom_labels": {},
+    "temp_project_name": [],
+    "project_engineer": {},
+    "over_change_broadcast": {},
+    "over_config_data_flat": {},
+    "config_service_custom_labels": {},
+    "requirement_overview_impact_config": {},
+    "overview_last_update": {},
+    "overview_pending_history": {},
+    "overview_completed": [],
+    "overview_only_need": [],
+    "overview_active_state_checked_versions": {},
+}
+_missing_general_storage_defaults = {
+    key: value for key, value in _general_storage_defaults.items() if key not in app.storage.general
+}
+if _missing_general_storage_defaults:
+    app.storage.general.update(_missing_general_storage_defaults)
 
 
 @ui.page("/view/svn_pdf")

@@ -10,11 +10,10 @@ os.environ.setdefault("ENABLE_DEV_IDENTITY_SWITCHER", "1")
 if not os.environ.get("DEV_TOOLS_PASSWORD"):
     raise RuntimeError("请先设置 DEV_TOOLS_PASSWORD，再启动 run_local_debug.py")
 
-from nicegui import ui  # noqa: E402
-
 from src import main as main_app  # noqa: E402,F401  # 注册正式页面与启动钩子
 from src.config import IMG_DIR, ST  # noqa: E402
 from src.modules.dev_identity_switcher import install_dev_identity_switcher  # noqa: E402
+from src.nicegui_bootstrap import ui  # noqa: E402
 
 install_dev_identity_switcher(listen_host="127.0.0.1")
 
