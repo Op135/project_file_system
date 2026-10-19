@@ -30,6 +30,9 @@ from src.modules.ecn.approval_transaction import ApprovalTransaction
 from src.modules.ecn.approval_reassignment import reassign_ecn_approval_reviewer
 from src.modules.ecn.editing import (
     ECNConflict,
+    confirm_participant,
+    get_scheme_association_change_removed,
+    has_scheme_association_change_notice,
     merge_fields,
     sync_review_snapshot,
     validate_overview_scheme_dependencies,
@@ -72,6 +75,40 @@ def record(state=ECNState.ECN_SCHEMING):
 
 
 class ECNConcurrencyTests(unittest.IsolatedAsyncioTestCase):
+    def test_empty_association_notice_does_not_show_or_block_confirmation(self):
+        value = record()
+        item = value["change_items"][0]
+        item["association_change_notice"] = {"removed": {"projects": []}}
+        value["workflow"]["scheme_participants"]["张三"] = ECN_PARTICIPANT_STATUS_EDITING
+
+        self.assertEqual(get_scheme_association_change_removed(item), {})
+        self.assertFalse(has_scheme_association_change_notice(item))
+        confirmed = confirm_participant(
+            value,
+            copy.deepcopy(value),
+            "张三",
+            ECN_PARTICIPANT_STATUS_CONFIRMED,
+        )
+
+        self.assertEqual(
+            confirmed["workflow"]["scheme_participants"]["张三"],
+            ECN_PARTICIPANT_STATUS_CONFIRMED,
+        )
+
+    def test_association_notice_keeps_only_concrete_removed_values(self):
+        item = {
+            "association_change_notice": {
+                "removed": {
+                    "projects": ["P2", "", "P2"],
+                    "req_idxs": [],
+                    "unknown": ["ignored"],
+                }
+            }
+        }
+
+        self.assertEqual(get_scheme_association_change_removed(item), {"projects": ["P2"]})
+        self.assertTrue(has_scheme_association_change_notice(item))
+
     def test_removed_association_invalidates_only_affected_required_reports(self):
         for field, removed in (("projects", "P2"), ("req_idxs", "removed-req"), ("linked_docs", "removed-doc"), ("linked_materials", "removed-material")):
             for with_attachment in (True, False):

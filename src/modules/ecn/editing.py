@@ -38,6 +38,29 @@ class ECNConflict(ValueError):
     """业务条件已变化，拒绝保存并交由界面提示。"""
 
 
+_ASSOCIATION_NOTICE_FIELDS = ("projects", "req_idxs", "linked_docs", "linked_materials")
+
+
+def get_scheme_association_change_removed(item: dict) -> dict[str, list[str]]:
+    """返回实际被删除的关联；空壳通知不应阻塞或出现在界面。"""
+    notice = item.get("association_change_notice")
+    if not isinstance(notice, dict):
+        return {}
+    removed = notice.get("removed")
+    if not isinstance(removed, dict):
+        return {}
+    normalized: dict[str, list[str]] = {}
+    for field in _ASSOCIATION_NOTICE_FIELDS:
+        values = sorted(_string_set(removed.get(field, [])))
+        if values:
+            normalized[field] = values
+    return normalized
+
+
+def has_scheme_association_change_notice(item: dict) -> bool:
+    return bool(get_scheme_association_change_removed(item))
+
+
 @dataclass
 class ECNResult:
     ok: bool
@@ -312,10 +335,7 @@ def reconcile_removed_scheme_associations(record: dict, user: str) -> set[str]:
         if not removed:
             continue
         invalidate_scheme_validation_report(item)
-        previous_notice = item.get("association_change_notice", {})
-        previous_notice = previous_notice if isinstance(previous_notice, dict) else {}
-        previous_removed = previous_notice.get("removed", {})
-        previous_removed = previous_removed if isinstance(previous_removed, dict) else {}
+        previous_removed = get_scheme_association_change_removed(item)
         merged_removed: dict[str, list[str]] = {}
         for field in labels:
             merged_removed[field] = sorted(
@@ -435,7 +455,7 @@ def acknowledge_scheme_association_change(
     ) if isinstance(expected_items, list) else None
     if not isinstance(expected_item, dict) or item != expected_item:
         raise ECNConflict("受影响方案或删除提示已更新，请刷新后重新核对。")
-    if not isinstance(item.get("association_change_notice"), dict):
+    if not has_scheme_association_change_notice(item):
         raise ECNConflict("该方案已完成影响范围复核，请刷新。")
     validate_scheme_associations(current, item)
     item.pop("association_change_notice", None)
@@ -456,7 +476,7 @@ def confirm_participant(current: dict, expected: dict, user: str, status: str) -
 
         if not own_items(current):
             raise ECNConflict("请先添加至少一条本人方案，再确认完成。")
-        if any(item.get("association_change_notice") for item in own_items(current)):
+        if any(has_scheme_association_change_notice(item) for item in own_items(current)):
             raise ECNConflict("存在因影响范围删除而需要确认的方案，请先确认保留、修改或删除。")
         if own_items(current) != own_items(expected):
             raise ECNConflict("本人的方案已变化，请核对最新内容后再确认。")

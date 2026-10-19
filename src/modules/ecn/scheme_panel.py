@@ -70,6 +70,7 @@ from .actions import (
     set_trial_production_decision,
     update_material_codes,
 )
+from .editing import get_scheme_association_change_removed, has_scheme_association_change_notice
 from .attachment_ui import open_ecn_attachment_dialog
 from .scheme_dialogs import (
     open_material_code_dialog,
@@ -411,6 +412,7 @@ def build_scheme_panel(
 
                     # 方案内容显示列
                     item_container = ui.column().classes("w-full gap-3")
+                    association_review_busy: set[str] = set()
                     scheme_group_expansion_state = {
                         ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT: True,
                         ECN_SCHEME_GROUP_ORDINARY_DOCUMENT: True,
@@ -434,18 +436,28 @@ def build_scheme_panel(
                         return True
 
                     async def retain_affected_scheme(item: dict) -> None:
-                        result = await retain_scheme_after_association_change(
-                            local_data["ecn_id"],
-                            copy.deepcopy(local_data),
-                            str(item.get("item_id") or ""),
-                            current_user,
-                            current_role,
-                        )
-                        if not result.ok or result.record is None:
-                            ui.notify(result.message, type="warning")
+                        item_id = str(item.get("item_id") or "")
+                        if not item_id or item_id in association_review_busy:
                             return
-                        apply_scheme_result(result.record)
-                        ui.notify("已确认保留该方案，请完成本人方案的最终确认。", type="positive")
+                        association_review_busy.add(item_id)
+                        try:
+                            result = await retain_scheme_after_association_change(
+                                local_data["ecn_id"],
+                                copy.deepcopy(local_data),
+                                item_id,
+                                current_user,
+                                current_role,
+                            )
+                            if not result.ok or result.record is None:
+                                ui.notify(result.message, type="warning")
+                                return
+                            apply_scheme_result(result.record)
+                            ui.notify(
+                                "已保留该方案并完成本项复核；全部方案核对后，请确认完成本人方案。",
+                                type="positive",
+                            )
+                        finally:
+                            association_review_busy.discard(item_id)
 
                     async def handle_save_material_codes(item: dict, codes: dict[str, str]) -> bool:
                         result = await update_material_codes(
@@ -539,7 +551,7 @@ def build_scheme_panel(
                                         "text-cyan-600",
                                         True,
                                     )
-                                if isinstance(item.get("association_change_notice"), dict):
+                                if has_scheme_association_change_notice(item):
                                     return "影响变更待复核", "rule", "text-orange-700", False
 
                                 participant_status = participants.get(item.get("author"))
@@ -581,12 +593,9 @@ def build_scheme_panel(
                                 return item.get("change_type") or "资料变更"
 
                             def association_change_notice_text(item: dict) -> str:
-                                notice = item.get("association_change_notice", {})
-                                if not isinstance(notice, dict):
+                                removed = get_scheme_association_change_removed(item)
+                                if not removed:
                                     return ""
-                                removed = notice.get("removed", {})
-                                if not isinstance(removed, dict):
-                                    removed = {}
                                 labels = {
                                     "projects": "项目",
                                     "req_idxs": "变更要求",
@@ -598,7 +607,7 @@ def build_scheme_panel(
                                     values = removed.get(field, [])
                                     if isinstance(values, list) and values:
                                         parts.append(f"{label}：{'、'.join(map(str, values))}")
-                                detail = "；".join(parts) or "原关联项"
+                                detail = "；".join(parts)
                                 return (
                                     f"影响范围已删除（{detail}），失效关联已自动移除。"
                                     "请核对后选择确认保留、编辑或删除本方案。"

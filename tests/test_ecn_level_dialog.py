@@ -12,6 +12,29 @@ from src.modules.ecn.editing import ECNResult
 
 
 class ECNLevelDialogTests(unittest.IsolatedAsyncioTestCase):
+    def test_own_action_does_not_claim_reopen_notice(self):
+        state = {"stage_change": False}
+        self.assertFalse(
+            detail.claim_stage_change_notice(state, action_in_progress=True, detail_closed=False)
+        )
+        self.assertFalse(state["stage_change"])
+
+    def test_external_stage_change_is_claimed_only_once(self):
+        state = {"stage_change": False}
+        self.assertTrue(
+            detail.claim_stage_change_notice(state, action_in_progress=False, detail_closed=False)
+        )
+        self.assertFalse(
+            detail.claim_stage_change_notice(state, action_in_progress=False, detail_closed=False)
+        )
+
+    def test_closed_detail_does_not_emit_notice(self):
+        self.assertFalse(
+            detail.claim_stage_change_notice(
+                {"stage_change": False}, action_in_progress=False, detail_closed=True
+            )
+        )
+
     async def test_polling_does_not_replace_level_dialog_baseline(self):
         source = Path(detail.__file__).read_text(encoding="utf-8-sig")
         handler = next(node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.FunctionDef) and node.name == "open_level_dialog")
