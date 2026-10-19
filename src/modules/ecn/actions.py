@@ -95,6 +95,7 @@ from .attachments import (
     validate_scheme_attachments,
 )
 from .scheme_notifications import send_scheme_sales_completion_notifications
+from .task_labels import scheme_log_label
 from .overview_files import prepare_overview_upload
 
 
@@ -335,7 +336,7 @@ async def retain_scheme_after_association_change(
             {
                 "user": user,
                 "role": actor_role,
-                "action": f"确认保留受影响方案（{item_id}）",
+                "action": f"确认保留受影响方案（{scheme_log_label(updated, item_id)}）",
                 "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             },
         )

@@ -26,6 +26,27 @@ def execution_scheme_no(record: dict[str, Any], item_id: object) -> str:
     return f"#{index:02d}" if index is not None else "#--"
 
 
+def scheme_log_label(record: dict[str, Any], item_id: object) -> str:
+    """生成审批记录使用的方案摘要，不向用户暴露内部方案ID。"""
+    item, index = _find_item(record, item_id)
+    if index is None:
+        return "原方案"
+    if item.get("type") == "overview_update":
+        subject = " · ".join(
+            value
+            for value in (
+                str(item.get("role") or "").strip(),
+                str(item.get("title") or item.get("label") or "系统内资料").strip(),
+            )
+            if value
+        )
+    else:
+        subject = str(item.get("change_type") or item.get("title") or "资料变更").strip()
+    projects = "、".join(get_ecn_scheme_target_projects({"target_projects": item.get("projects", [])}))
+    details = " · ".join(value for value in (subject, projects) if value)
+    return f"#{index:02d} · {details}" if details else f"#{index:02d}"
+
+
 def special_task_label(record: dict[str, Any], key: str) -> str:
     if key == "__erp__":
         return "ERP相关变更"
@@ -119,6 +140,7 @@ def humanize_ecn_log_action(record: dict[str, Any], action: object) -> str:
     for item in _change_items(record):
         item_id = str(item.get("item_id") or "")
         if item_id:
+            text = text.replace(f"（{item_id}）", f"（{scheme_log_label(record, item_id)}）")
             text = text.replace(f"特定事项 {item_id}", special_task_label(record, item_id))
             marker = f"物料责任项 {item_id} / "
             if marker in text:
@@ -136,6 +158,11 @@ def humanize_ecn_log_action(record: dict[str, Any], action: object) -> str:
     text = re.sub(
         r"特定事项 [0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}",
         "特定事项（原方案）",
+        text,
+    )
+    text = re.sub(
+        r"（[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}）",
+        "（原方案）",
         text,
     )
     return text

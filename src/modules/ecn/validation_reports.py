@@ -19,6 +19,7 @@ from ...ecn_access import (
 from ...ecn_management_config import ECN_LEVEL_COMPLEX, ECNState, get_ecn_level_code, build_ecn_scheme_snapshot
 from .editing import ECNConflict
 from .models import append_ecn_approval_log_once
+from .task_labels import scheme_log_label
 from .repository import mutate_record
 
 
@@ -105,9 +106,9 @@ async def set_validation_report_required(
                 "user": user,
                 "role": actor_role,
                 "action": (
-                    f"方案验证报告：指定提交（{item_id}）"
+                    f"方案验证报告：指定提交（{scheme_log_label(record, item_id)}）"
                     if required
-                    else f"方案验证报告：取消指定（{item_id}）"
+                    else f"方案验证报告：取消指定（{scheme_log_label(record, item_id)}）"
                 ),
                 "time": now,
             },
@@ -176,7 +177,10 @@ async def review_validation_report(
             {
                 "user": user,
                 "role": actor_role,
-                "action": f"方案验证报告：{'通过' if approved else '不通过'}（{item_id}）",
+                "action": (
+                    f"方案验证报告：{'通过' if approved else '不通过'}"
+                    f"（{scheme_log_label(record, item_id)}）"
+                ),
                 "note": note.strip(),
                 "time": now,
             },

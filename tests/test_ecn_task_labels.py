@@ -4,6 +4,7 @@ from src.modules.ecn.task_labels import (
     humanize_ecn_log_action,
     material_confirmation_tooltip_text,
     material_task_label,
+    scheme_log_label,
     special_task_label,
 )
 
@@ -40,6 +41,28 @@ def test_special_task_labels_use_scheme_number_and_business_name():
     assert special_task_label(record, "__erp__") == "ERP相关变更"
     assert item_id not in humanize_ecn_log_action(record, f"特定事项 {item_id} 确认完成")
     assert humanize_ecn_log_action(record, "特定事项 __erp__ 取消确认") == "ERP相关变更 取消确认"
+
+
+def test_scheme_log_labels_hide_ids_in_current_and_historical_actions():
+    record, item_id, _, _ = _record()
+    label = scheme_log_label(record, item_id)
+
+    assert label == "#01 · 测试报告内容格式 · RFFM-1009-B"
+    retained = humanize_ecn_log_action(record, f"确认保留受影响方案（{item_id}）")
+    validation = humanize_ecn_log_action(record, f"方案验证报告：通过（{item_id}）")
+
+    assert retained == f"确认保留受影响方案（{label}）"
+    assert validation == f"方案验证报告：通过（{label}）"
+    assert item_id not in retained
+    assert item_id not in validation
+
+
+def test_unknown_historical_scheme_uuid_uses_readable_fallback():
+    unknown_id = "ff76d033-3e5b-42a2-a482-6e2ad735088e"
+
+    assert humanize_ecn_log_action({}, f"确认保留受影响方案（{unknown_id}）") == (
+        "确认保留受影响方案（原方案）"
+    )
 
 
 def test_material_task_labels_hide_item_and_task_keys():
