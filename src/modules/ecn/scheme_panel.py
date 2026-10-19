@@ -78,6 +78,7 @@ from .scheme_dialogs import (
     open_text_change_dialog,
 )
 from .validation_reports import review_validation_report, set_validation_report_required
+from .scheme_assignments import open_scheme_assignment_dialog
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +93,7 @@ def build_scheme_panel(
     participants,
     is_scheming_phase,
     is_scheme_writer,
+    can_assign_scheme_writers,
     can_edit_material_codes,
     can_designate_validation_reports,
     can_view_validation_reports,
@@ -113,6 +115,9 @@ def build_scheme_panel(
 
     def apply_scheme_result(record):
         local_data["change_items"] = copy.deepcopy(record["change_items"])
+        local_data["workflow"]["scheme_assignees"] = copy.deepcopy(
+            record.get("workflow", {}).get("scheme_assignees", [])
+        )
         participants.clear()
         participants.update(record["workflow"].get("scheme_participants", {}))
         render_parts()
@@ -366,6 +371,18 @@ def build_scheme_panel(
                                         ).props("size=sm").classes("text-white")
 
                             render_parts()
+
+                        if is_scheming_phase and can_assign_scheme_writers:
+                            ui.button(
+                                "指定填写人",
+                                icon="group_add",
+                                on_click=lambda: open_scheme_assignment_dialog(
+                                    local_data,
+                                    current_user,
+                                    current_role,
+                                    apply_scheme_result,
+                                ),
+                            ).props("outline dense color=primary")
 
                         # 方案编写不同状态提供不同按钮交互，且只有方案编写者才有权限操作
                         my_action_container = ui.row()

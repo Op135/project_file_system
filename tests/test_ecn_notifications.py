@@ -412,6 +412,16 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.check(), (1, 0))
         self.assertIn("待处理人员：manager", self.sender.call_args.args[0])
 
+    async def test_assigned_writer_uses_existing_notification_frequency(self):
+        self.record["workflow"]["scheme_assignees"] = ["manager"]
+        self.record["workflow"]["scheme_participants"] = {"manager": "editing"}
+        await self.save_record()
+
+        self.assertEqual(await self.check(), (1, 0))
+        self.assertIn("待处理人员：manager", self.sender.call_args.args[0])
+        self.assertIn("已被指定为方案填写人", self.sender.call_args.args[0])
+        self.assertEqual(await self.check(), (0, 0))
+
     async def test_closed_record_does_not_retry_failed_message(self):
         self.sender.return_value = (False, "模拟网络失败")
         with self.assertLogs(level="WARNING"):

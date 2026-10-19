@@ -583,6 +583,7 @@ STATISTICS_PERMISSIONS = (
 ECN_VIEW_PERMISSION = "ecn.view"
 ECN_CREATE_PERMISSION = "ecn.request.create"
 ECN_IMPACT_EDIT_PERMISSION = "ecn.impact.edit"
+ECN_SCHEME_ASSIGN_PERMISSION = "ecn.scheme.assign"
 ECN_SCHEME_EDIT_PERMISSION = "ecn.scheme.edit"
 ECN_SCHEME_REVIEW_SUBMIT_PERMISSION = "ecn.scheme.review.submit"
 ECN_LEVEL_CLASSIFY_ECR_PERMISSION = "ecn.level.classify.ecr"
@@ -636,6 +637,12 @@ ECN_PERMISSIONS = (
         "维护 — ECN影响评估",
         "工程变更 · 影响与方案",
         "允许在方案编写阶段维护扩大影响范围、涉及资料和物料等影响信息",
+    ),
+    PermissionDefinition(
+        ECN_SCHEME_ASSIGN_PERMISSION,
+        "指定 — ECN方案填写人",
+        "工程变更 · 影响与方案",
+        "允许在方案编写阶段指定在职且具备ECN查看和方案编写权限的具体人员填写方案",
     ),
     PermissionDefinition(
         ECN_SCHEME_EDIT_PERMISSION,

@@ -409,6 +409,43 @@ def save_scheme(current: dict, expected: dict, item: dict, original: dict | None
     return current
 
 
+def assign_scheme_writers(
+    current: dict,
+    expected: dict,
+    assignees: list[str],
+) -> dict:
+    """并发安全地替换明确指定的方案填写人，并同步其参与状态。"""
+    require_scheming(current, expected)
+    current_workflow = current.setdefault("workflow", {})
+    expected_workflow = expected.get("workflow", {})
+    expected_workflow = expected_workflow if isinstance(expected_workflow, dict) else {}
+    current_assignees = current_workflow.get("scheme_assignees", [])
+    current_assignees = current_assignees if isinstance(current_assignees, list) else []
+    expected_assignees = expected_workflow.get("scheme_assignees", [])
+    expected_assignees = expected_assignees if isinstance(expected_assignees, list) else []
+    if current_assignees != expected_assignees:
+        raise ECNConflict("方案填写人已被其他页面调整，请刷新后重新选择。")
+
+    normalized = list(dict.fromkeys(name.strip() for name in assignees if name.strip()))
+    previous = {str(name) for name in current_assignees if str(name).strip()}
+    selected = set(normalized)
+    participants = current_workflow.setdefault("scheme_participants", {})
+    if not isinstance(participants, dict):
+        raise ECNConflict("方案参与人数据异常，请刷新后重试。")
+    for name in selected - previous:
+        participants[name] = ECN_PARTICIPANT_STATUS_EDITING
+    authors = {
+        str(item.get("author") or "").strip()
+        for item in current.get("change_items", [])
+        if isinstance(item, dict) and str(item.get("author") or "").strip()
+    }
+    for name in previous - selected:
+        if name not in authors:
+            participants.pop(name, None)
+    current_workflow["scheme_assignees"] = normalized
+    return current
+
+
 def delete_scheme(current: dict, expected: dict, original: dict, user: str) -> dict:
     require_scheming(current, expected)
     items = current.get("change_items", [])

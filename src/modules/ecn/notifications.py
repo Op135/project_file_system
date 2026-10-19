@@ -256,6 +256,18 @@ def pending_task_details(
     else:
         description = "完善影响评估或本人方案；被驳回方案请整改后重新确认"
 
+    workflow = record.get("workflow", {})
+    workflow = workflow if isinstance(workflow, dict) else {}
+    assigned_writers = workflow.get("scheme_assignees", [])
+    assigned_writers = {
+        str(name) for name in assigned_writers
+    } if isinstance(assigned_writers, list) else set()
+    scheme_authors = {
+        str(item.get("author") or "")
+        for item in record.get("change_items", [])
+        if isinstance(item, dict)
+    }
+
     def needs_assistant_reminder(name: str, role: str) -> bool:
         if state != ECNState.ECN_EXECUTING:
             return True
@@ -277,10 +289,19 @@ def pending_task_details(
             )
         return True
 
-    return {
-        name: special_tasks[name] + ([description] if needs_assistant_reminder(name, role) else [])
-        for name, role in pending.items()
-    }
+    result: dict[str, list[str]] = {}
+    for name, role in pending.items():
+        personal_description = description
+        if (
+            state == ECNState.ECN_SCHEMING
+            and name in assigned_writers
+            and name not in scheme_authors
+        ):
+            personal_description = "您已被指定为方案填写人，请新增并完善本人负责的ECN方案"
+        result[name] = special_tasks[name] + (
+            [personal_description] if needs_assistant_reminder(name, role) else []
+        )
+    return result
 
 
 def build_notification_fingerprint(record: dict, tasks: dict, config: dict) -> str:

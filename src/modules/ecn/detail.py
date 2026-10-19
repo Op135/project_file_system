@@ -25,6 +25,7 @@ from ...config import (
 from ...ecn_access import (
     build_ecn_access_snapshot,
     can_approve_ecn_validation_report,
+    can_assign_ecn_scheme_writers,
     can_classify_ecn_level_before_scheme_review,
     can_classify_ecn_level_during_ecr,
     can_create_ecn_request,
@@ -95,12 +96,21 @@ def sync_detail_scheme_snapshot(local_data: dict, participants: dict, fresh: dic
     fresh_workflow = fresh_workflow if isinstance(fresh_workflow, dict) else {}
     fresh_participants = fresh_workflow.get("scheme_participants", {})
     fresh_participants = fresh_participants if isinstance(fresh_participants, dict) else {}
-    changed = fresh_items != local_data.get("change_items", []) or fresh_participants != participants
+    fresh_assignees = fresh_workflow.get("scheme_assignees", [])
+    fresh_assignees = fresh_assignees if isinstance(fresh_assignees, list) else []
+    local_workflow = local_data.get("workflow", {})
+    local_workflow = local_workflow if isinstance(local_workflow, dict) else {}
+    changed = (
+        fresh_items != local_data.get("change_items", [])
+        or fresh_participants != participants
+        or fresh_assignees != local_workflow.get("scheme_assignees", [])
+    )
     if not changed:
         return False
     local_data["change_items"] = copy.deepcopy(fresh_items)
     participants.clear()
     participants.update(copy.deepcopy(fresh_participants))
+    local_workflow["scheme_assignees"] = copy.deepcopy(fresh_assignees)
     return True
 
 
@@ -167,6 +177,9 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
     can_create_request = can_create_ecn_request(current_role, current_user, access_snapshot=access_snapshot)
     can_edit_impact = can_edit_ecn_impact(current_role, current_user, access_snapshot=access_snapshot)
     can_edit_scheme = can_edit_ecn_scheme(current_role, current_user, access_snapshot=access_snapshot)
+    can_assign_scheme = can_assign_ecn_scheme_writers(
+        current_role, current_user, access_snapshot=access_snapshot
+    )
     can_edit_material_codes = can_edit_ecn_material_codes(
         current_role,
         current_user,
@@ -1054,6 +1067,7 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                     participants,
                     is_scheming_phase,
                     is_scheme_writer,
+                    can_assign_scheme,
                     can_edit_material_codes,
                     can_designate_validation,
                     can_view_validation,

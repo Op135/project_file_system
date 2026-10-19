@@ -69,6 +69,7 @@ def get_ecn_template() -> dict:
             "pending_roles": [],  # 当前节点角色集合；实际待审批角色需排除 step_approvals 已通过项
             "step_approvals": {},  # 当前并行节点各角色的审批结果
             "scheme_participants": {},  # 方案参与者
+            "scheme_assignees": [],  # 由授权人员明确指定的方案填写人
             "impact_handlers": [],  # 实际维护过ECN影响区的具体人员，用于精准待办提醒
         },
         "approval_log": [],  # 审批日志，记录每一步的审批人、时间、意见等信息

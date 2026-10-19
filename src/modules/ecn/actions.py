@@ -25,6 +25,7 @@ from ...ecn_access import (
     can_edit_ecn_material_codes,
     can_edit_ecn_impact,
     can_edit_ecn_scheme,
+    can_assign_ecn_scheme_writers,
     can_submit_ecn_scheme_review,
     can_view_ecn,
     get_active_ecn_actor_role,
@@ -65,6 +66,7 @@ from .approval_transaction import (
 )
 from .editing import (
     acknowledge_scheme_association_change,
+    assign_scheme_writers,
     ECNConflict,
     confirm_participant,
     delete_scheme,
@@ -85,6 +87,7 @@ from .repository import (
 from ...issue_workflow_utils import schedule_background_task
 from .overview_locks import collect_ecn_overview_locks, collect_ecn_overview_row_dependencies, active_overview_row_exists
 from ...workflow_notifications import send_workflow_completion_cc
+from ...notification_recipients import is_system_admin_username
 from .attachments import (
     cleanup_published_attachments,
     cleanup_staged,
@@ -257,6 +260,56 @@ async def set_participant_status(ecn_id, expected, user, role, status, *, user_s
         actor_role = require_active_actor_role(user, role, user_service)
         require_permission(can_edit_ecn_scheme, actor_role, user, user_service)
         return confirm_participant(current, expected, user, status)
+
+    return await mutate_record(ecn_id, operation, storage=storage)
+
+
+async def set_scheme_assignees(
+    ecn_id,
+    expected,
+    assignees,
+    user,
+    role,
+    *,
+    user_service=None,
+    storage=None,
+):
+    """指定方案填写人；资格与流程阶段均在最新单据事务中复核。"""
+    normalized = list(dict.fromkeys(str(name).strip() for name in assignees if str(name).strip()))
+
+    async def operation(current, connection):
+        del connection
+        actor_role = require_active_actor_role(user, role, user_service)
+        require_permission(can_assign_ecn_scheme_writers, actor_role, user, user_service)
+        for name in normalized:
+            if is_system_admin_username(name):
+                raise ECNConflict("系统管理员账号不能作为方案填写人。")
+            info = user_service.get_user(name) if user_service is not None else None
+            candidate_role = get_active_ecn_actor_role(
+                name,
+                info.get("role") if isinstance(info, dict) else "",
+                user_service=user_service,
+            )
+            if (
+                not isinstance(info, dict)
+                or candidate_role is None
+                or not can_view_ecn(candidate_role, name, user_service=user_service)
+                or not can_edit_ecn_scheme(candidate_role, name, user_service=user_service)
+            ):
+                raise ECNConflict(f"{name} 已停用或缺少ECN查看/方案编写权限，不能指定。")
+        updated = assign_scheme_writers(current, expected, normalized)
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        append_ecn_approval_log_once(
+            updated.setdefault("approval_log", []),
+            {
+                "user": user,
+                "role": actor_role,
+                "action": "指定方案填写人",
+                "time": now,
+                "note": "、".join(normalized) if normalized else "清空指定人员",
+            },
+        )
+        return updated
 
     return await mutate_record(ecn_id, operation, storage=storage)
 

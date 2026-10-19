@@ -1070,6 +1070,89 @@ class ECNConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("先添加至少一条本人方案", result.message)
         self.assertNotIn("李四", (await self.fresh())["workflow"]["scheme_participants"])
 
+    async def test_authorized_user_assigns_scheme_writer_and_assignment_blocks_review(self):
+        value = record()
+        value["change_items"] = []
+        value["workflow"]["scheme_participants"] = {}
+        await self.store(value)
+
+        result = await actions.set_scheme_assignees(
+            value["ecn_id"],
+            value,
+            ["李四"],
+            "张三",
+            "研发经理",
+            user_service=self.service,
+            storage=self.left,
+        )
+
+        self.assertTrue(result.ok, result.message)
+        assert result.record is not None
+        self.assertEqual(result.record["workflow"]["scheme_assignees"], ["李四"])
+        self.assertEqual(
+            result.record["workflow"]["scheme_participants"]["李四"],
+            ECN_PARTICIPANT_STATUS_EDITING,
+        )
+        self.assertFalse(actions.is_ecn_scheme_ready_for_review(result.record))
+
+    async def test_removing_assignment_keeps_existing_scheme_author_responsibility(self):
+        value = record()
+        value["workflow"]["scheme_assignees"] = ["张三", "李四"]
+        value["workflow"]["scheme_participants"]["李四"] = ECN_PARTICIPANT_STATUS_EDITING
+        await self.store(value)
+
+        result = await actions.set_scheme_assignees(
+            value["ecn_id"],
+            value,
+            [],
+            "经理",
+            "研发经理",
+            user_service=self.service,
+            storage=self.left,
+        )
+
+        self.assertTrue(result.ok, result.message)
+        assert result.record is not None
+        self.assertEqual(result.record["workflow"]["scheme_assignees"], [])
+        self.assertIn("张三", result.record["workflow"]["scheme_participants"])
+        self.assertNotIn("李四", result.record["workflow"]["scheme_participants"])
+
+    async def test_stale_scheme_assignment_window_cannot_overwrite_newer_selection(self):
+        value = record()
+        await self.store(value)
+        first = await actions.set_scheme_assignees(
+            value["ecn_id"], value, ["李四"], "张三", "研发经理",
+            user_service=self.service, storage=self.left,
+        )
+        stale = await actions.set_scheme_assignees(
+            value["ecn_id"], value, ["审核人"], "经理", "研发经理",
+            user_service=self.service, storage=self.right,
+        )
+
+        self.assertTrue(first.ok, first.message)
+        self.assertFalse(stale.ok)
+        self.assertIn("其他页面调整", stale.message)
+        self.assertEqual((await self.fresh())["workflow"]["scheme_assignees"], ["李四"])
+
+    async def test_scheme_assignment_requires_dedicated_permission(self):
+        value = record()
+        await self.store(value)
+        role_id = self.service.create_security_role(
+            code="test.ecn.scheme.writer.only",
+            name="仅方案编写",
+            permission_codes=["ecn.view", "ecn.scheme.edit"],
+        )
+        self.service.set_user_security_roles("经理", [role_id])
+
+        result = await actions.set_scheme_assignees(
+            value["ecn_id"], value, ["李四"], "经理", "研发经理",
+            user_service=self.service, storage=self.left,
+        )
+
+        self.assertFalse(result.ok)
+        self.assertIn("没有执行此操作的权限", result.message)
+        self.assertEqual((await self.fresh())["workflow"]["scheme_assignees"], [])
+
     async def test_review_start_rechecks_latest_confirmation_and_coverage(self):
         value = record()
         for mutate in (

@@ -48,6 +48,7 @@ from .permission_catalog import (
     ECN_LEVEL_CLASSIFY_SCHEME_PERMISSION,
     ECN_MATERIAL_CODE_EDIT_PERMISSION,
     ECN_SCHEME_APPROVE_PERMISSION,
+    ECN_SCHEME_ASSIGN_PERMISSION,
     ECN_SCHEME_EDIT_PERMISSION,
     ECN_SCHEME_REVIEW_SUBMIT_PERMISSION,
     ECN_VIEW_PERMISSION,
@@ -112,6 +113,7 @@ def build_ecn_access_snapshot(user_service=None) -> dict[str, Any]:
             ECN_VIEW_PERMISSION,
             ECN_CREATE_PERMISSION,
             ECN_IMPACT_EDIT_PERMISSION,
+            ECN_SCHEME_ASSIGN_PERMISSION,
             ECN_SCHEME_EDIT_PERMISSION,
             ECN_SCHEME_REVIEW_SUBMIT_PERMISSION,
             ECN_LEVEL_CLASSIFY_ECR_PERMISSION,
@@ -264,6 +266,25 @@ def can_edit_ecn_scheme(
         _service(user_service),
         current_user,
         ECN_SCHEME_EDIT_PERMISSION,
+    )
+
+
+def can_assign_ecn_scheme_writers(
+    current_role: object,
+    current_user: str,
+    *,
+    user_service=None,
+    access_snapshot: dict[str, Any] | None = None,
+) -> bool:
+    """判断是否可以指定具体方案填写人。"""
+    if isinstance(access_snapshot, dict) and access_snapshot.get("database_mode") is True:
+        return _snapshot_permission(access_snapshot, current_user, ECN_SCHEME_ASSIGN_PERMISSION)
+    if not _database_mode(user_service):
+        return False
+    return can(
+        _service(user_service),
+        current_user,
+        ECN_SCHEME_ASSIGN_PERMISSION,
     )
 
 
