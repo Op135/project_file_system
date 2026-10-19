@@ -32,7 +32,7 @@ from ...overview_operation import (
 )
 from .editing import get_pending_overview_anchor_source
 from .overview_locks import active_overview_row_exists
-from .overview_files import publish_overview_upload
+from .overview_files import publish_overview_upload, verify_published_overview_upload
 
 logger = logging.getLogger(__name__)
 
@@ -338,6 +338,8 @@ async def execute_ecn_overview_schemes(
                         existing_new = label_data.get(str(new_chip["id"]))
                         if existing_new is not None:
                             if _has_ecn_source_marker(existing_new, ecn_id, source_operation_id):
+                                if item.get("config_processing_type") in {"file", "image", "video"}:
+                                    verify_published_overview_upload(item, existing_new, app.storage.general.get("over_config_data_flat", {}).get(str(label), {}))
                                 if action == ECN_OVERVIEW_ACTION_UPDATE and not _has_ecn_source_marker(old_chip, ecn_id, source_operation_id):
                                     raise ValueError("原概述缺少本次失活记录，请核对处理。")
                                 operation_state["applied"] = True
@@ -423,7 +425,7 @@ async def execute_ecn_overview_schemes(
                     storage=db_storage,
                 )
                 if not saved or operation_state["error"] or not operation_state["applied"]:
-                    # 正式文件不回收；相同执行的重试继续使用既有 UUID5 路径。
+                    # 正式文件不回收；重试校验方案已确认的正式路径。
                     raise ValueError(operation_state["error"] or "概述资料原子保存失败")
 
                 project_results[project] = {

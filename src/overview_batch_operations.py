@@ -6,7 +6,7 @@ import re
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Iterable, Mapping, Optional
+from typing import Awaitable, Callable, Iterable, Mapping, Optional
 
 from nicegui import app
 
@@ -65,7 +65,7 @@ def get_batch_overview_pending_count(
         status = request.get("status")
         if status == "pending" and can_review_batch_overview_request(request, current_user, current_role):
             count += 1
-        elif status in {"rejected", "failed"} and request.get("submitter") == current_user:
+        elif status in {"rejected", "failed", "interrupted"} and request.get("submitter") == current_user:
             count += 1
     return count
 
@@ -87,17 +87,70 @@ async def create_batch_overview_request(request: dict) -> tuple[bool, str]:
     return success, request_id
 
 
-async def update_batch_overview_request(request_id: str, changes: dict) -> bool:
+async def update_batch_overview_request(request_id: str, changes: dict, *, expected: dict | None = None, actor: str = "") -> bool:
     """原子更新申请，申请不存在时不创建。"""
 
+    changed = False
     def update(request):
+        nonlocal changed
         if not request:
             return db_storage.ATOMIC_NO_UPDATE
+        if changes.get("status") == "pending":
+            from .overview_request_storage import resubmission_matches
+            if not resubmission_matches(request, expected, actor):
+                return db_storage.ATOMIC_NO_UPDATE
+            config = app.storage.general.get("over_config_data_flat", {}).get(str(request.get("payload", {}).get("label") or request.get("payload", {}).get("config", {}).get("label") or ""), {})
+            if not can_edit_overview_item(config, str(request.get("submitter_role") or ""), actor):
+                return db_storage.ATOMIC_NO_UPDATE
         request.update(copy.deepcopy(changes))
         request["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        changed = True
         return request
 
-    return await db_storage.atomic_deep_update([BATCH_OVERVIEW_REQUESTS_KEY, request_id], update)
+    saved = await db_storage.atomic_deep_update([BATCH_OVERVIEW_REQUESTS_KEY, request_id], update)
+    return saved and changed
+
+
+async def recover_interrupted_batch_requests() -> bool:
+    """仅在启动时执行：不重放业务写入，完整结果可恢复，其余转人工核对。"""
+    def recover(records):
+        for request in (records or {}).values():
+            if request.get("status") != "processing":
+                continue
+            checkpoint = request.get("completion_checkpoint")
+            if isinstance(checkpoint, dict):
+                request.update(copy.deepcopy(checkpoint))
+            else:
+                request["status"] = "interrupted"
+                request["result"] = copy.deepcopy(request.get("execution_progress") or {
+                    "message": "执行已中断，无法确认最后一步是否完成。请核对实际概述及关联影响，不要直接重跑整单。",
+                    "successes": [], "skipped": [], "failed": [],
+                })
+        return records or {}
+    return await db_storage.atomic_deep_update([BATCH_OVERVIEW_REQUESTS_KEY], recover)
+
+
+async def resolve_batch_interruption(request_id: str, reviewer: str, role: str, note: str) -> bool:
+    """恢复已保存的完整结果，或由审核人核对中断单后归档；绝不重跑业务。"""
+    changed = False
+    def resolve(request):
+        nonlocal changed
+        if not request or not can_review_batch_overview_request(request, reviewer, role):
+            return db_storage.ATOMIC_NO_UPDATE
+        checkpoint = request.get("completion_checkpoint")
+        if request.get("status") in {"processing", "interrupted"} and isinstance(checkpoint, dict):
+            request.update(copy.deepcopy(checkpoint))
+        elif request.get("status") == "interrupted" and note.strip():
+            request["status"] = "reconciled"
+            request.setdefault("review_log", []).append({"action": "reconcile", "user": reviewer,
+                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "note": note.strip()})
+        else:
+            return db_storage.ATOMIC_NO_UPDATE
+        request["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        changed = True
+        return request
+    saved = await db_storage.atomic_deep_update([BATCH_OVERVIEW_REQUESTS_KEY, request_id], resolve)
+    return saved and changed
 
 
 def build_batch_result_lines(
@@ -409,7 +462,7 @@ def _is_duplicate_chip(existing: dict, candidate: dict) -> bool:
     return existing.get("content") == candidate.get("content")
 
 
-async def insert_overview_chip(project: str, label: str, chip: dict) -> tuple[bool, str]:
+async def insert_overview_chip(project: str, label: str, chip: dict, *, config: dict | None = None, req_max_ver: str | None = None) -> tuple[bool, str]:
     """原子查重并新增 chip。"""
     inserted = {"value": False}
 
@@ -421,11 +474,27 @@ async def insert_overview_chip(project: str, label: str, chip: dict) -> tuple[bo
         inserted["value"] = True
         return current
 
-    success = await overview_storage.atomic_deep_update([f"{project}_over_data", label], insert)
+    if config is not None and config.get("is_table_group") and label != config.get("first_col_label"):
+        def insert_child(data):
+            data = data or {}
+            first = data.get(str(config.get("first_col_label") or ""), {})
+            if not chip.get("row_id") or not any(
+                value.get("row_id") == chip.get("row_id") and value.get("select_activ_dic", {}).get(req_max_ver, value.get("enabled")) is True
+                for value in first.values()
+            ):
+                return db_storage.ATOMIC_NO_UPDATE
+            children = insert(data.get(label))
+            if children is db_storage.ATOMIC_NO_UPDATE:
+                return children
+            data[label] = children
+            return data
+        success = await overview_storage.atomic_deep_update([f"{project}_over_data"], insert_child)
+    else:
+        success = await overview_storage.atomic_deep_update([f"{project}_over_data", label], insert)
     if not success:
         return False, "数据库写入失败"
     if not inserted["value"]:
-        return False, "相同概述内容已存在"
+        return False, "相同概述内容已存在，或表格基准行已变化"
     return True, "已新增"
 
 
@@ -437,10 +506,12 @@ async def atomic_update_overview_with_row(
     group_configs: Optional[list[dict]] = None,
     creator: str = "",
     changed_targets: Optional[set[tuple[str, str]]] = None,
+    transaction_effect: Callable | None = None,
 ) -> bool:
     """把首列和同行联动纳入同一次概述事务；被占用时整行均不写入。"""
     if not group_configs:
-        return await overview_storage.atomic_deep_update([f"{project}_over_data", label, chip_id], updater)
+        return await overview_storage.atomic_deep_update([f"{project}_over_data", label, chip_id], updater,
+                                                         transaction_effect=transaction_effect)
     first_label = str(group_configs[0].get("label") or "")
     excluded = get_table_state_follow_excluded_labels(group_configs)
     changed: set[tuple[str, str]] = set()
@@ -493,12 +564,54 @@ async def atomic_update_overview_with_row(
                     changed.add((child_label, str(child_id)))
         return data
 
-    success = await overview_storage.atomic_deep_update([f"{project}_over_data"], update_project)
+    success = await overview_storage.atomic_deep_update([f"{project}_over_data"], update_project,
+                                                         transaction_effect=transaction_effect)
     if conflict["message"]:
         raise overview_storage.OverviewWriteError(conflict["message"])
     if success and changed_targets is not None:
         changed_targets.update(changed)
     return success
+
+
+def make_related_record_archive_effect(
+    project: str, label: str, chip_id: str, creator: str, *, include_changed_row: bool = False,
+) -> tuple[Callable, dict[str, bool]]:
+    """供状态写事务使用；仅归档本次真正改变的行及其待处理原因。"""
+    archived = {"value": False}
+
+    async def archive_effect(before, after, connection):
+        from .overview_request_storage import read_json, write_json
+
+        affected = {(label, chip_id)}
+        if include_changed_row and isinstance(before, dict) and isinstance(after, dict):
+            for changed_label, chips in after.items():
+                old_chips = before.get(changed_label, {})
+                if not isinstance(chips, dict) or not isinstance(old_chips, dict):
+                    continue
+                for changed_id, chip in chips.items():
+                    if chip != old_chips.get(changed_id):
+                        affected.add((str(changed_label), str(changed_id)))
+        record_key = f"{project}_over_related_record"
+        records = await read_json(connection, db_storage, record_key)
+        now_text = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        for changed_label, changed_id in affected:
+            entry = records.get(changed_label, {}).get(changed_id)
+            if not isinstance(entry, dict) or "open" not in entry:
+                continue
+            opened = entry.pop("open")
+            opened["close_time"] = now_text
+            opened["close_related_user"] = creator
+            history_key = now_text
+            suffix = 1
+            while history_key in entry:
+                history_key = f"{now_text}.{suffix:06d}"
+                suffix += 1
+            entry[history_key] = opened
+            archived["value"] = True
+        if archived["value"]:
+            await write_json(connection, db_storage, record_key, records)
+
+    return archive_effect, archived
 
 
 async def update_overview_chip_state(
@@ -513,6 +626,7 @@ async def update_overview_chip_state(
     *,
     group_configs: Optional[list[dict]] = None,
     changed_targets: Optional[set[tuple[str, str]]] = None,
+    expected_snapshot: dict | None = None,
 ) -> tuple[bool, str, Optional[dict]]:
     """原子更新一个 chip 指定版本的激活状态，可选校验提交瞬间的原状态。"""
     outcome: dict[str, object] = {"changed": False, "chip": None}
@@ -520,6 +634,10 @@ async def update_overview_chip_state(
 
     def update(chip):
         if not chip:
+            return db_storage.ATOMIC_NO_UPDATE
+        if expected_snapshot is not None and (chip != expected_snapshot or str(app.storage.general.get("project_req_max_ver", {}).get(project, "0.0")) != req_max_ver):
+            state_conflict["value"] = True
+            outcome["chip"] = copy.deepcopy(chip)
             return db_storage.ATOMIC_NO_UPDATE
         old_state = chip.get("select_activ_dic", {}).get(req_max_ver, chip.get("enabled"))
         if expected_state is not _OVERVIEW_STATE_EXPECTATION_UNSET and old_state is not expected_state:
@@ -541,9 +659,18 @@ async def update_overview_chip_state(
         outcome["chip"] = copy.deepcopy(chip)
         return chip
 
-    success = await atomic_update_overview_with_row(
-        project, label, chip_id, update, group_configs, creator, changed_targets,
+    archive_effect, archived = make_related_record_archive_effect(
+        project, label, chip_id, creator, include_changed_row=target_state is False,
     )
+    row_changes: set[tuple[str, str]] = set()
+    success = await atomic_update_overview_with_row(
+        project, label, chip_id, update, group_configs, creator, row_changes,
+        transaction_effect=archive_effect,
+    )
+    if success and archived["value"]:
+        await db_storage.get_fresh_item(f"{project}_over_related_record", {})
+    if success and changed_targets is not None:
+        changed_targets.update(row_changes)
     if not success:
         lock_message = overview_storage.take_ecn_lock_message()
         return False, lock_message or "数据库写入失败", None
@@ -629,21 +756,6 @@ async def cascade_promote_table_row(
     return changed_labels
 
 
-async def archive_related_record(project: str, label: str, chip_id: str, creator: str) -> None:
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    def archive(record):
-        if not record or "open" not in record:
-            return db_storage.ATOMIC_NO_UPDATE
-        open_record = record.pop("open")
-        open_record["close_time"] = now_str
-        open_record["close_related_user"] = creator
-        record[now_str] = open_record
-        return record
-
-    await db_storage.atomic_deep_update([f"{project}_over_related_record", label, chip_id], archive)
-
-
 async def apply_related_overview_impacts(
     *,
     project: str,
@@ -664,71 +776,52 @@ async def apply_related_overview_impacts(
         "operate_chip_content": source_content,
         "operate_chip_state": source_state,
     }
-    overview_data = db_storage.get_item(f"{project}_over_data", {})
-    for related_label in related_labels:
-        chips = overview_data.get(related_label, {})
-        label_changed = False
-        for chip_id, snapshot in chips.items():
-            versions = list(snapshot.get("select_activ_dic", {}))
-            if not versions:
-                continue
-            latest_version = max(
-                versions,
-                key=lambda value: float(value) if str(value).replace(".", "", 1).isdigit() else -1,
-            )
-            pending_result = {"eligible": False, "changed": False}
-            related_role = config_flat.get(related_label, {}).get("role", "")
-            related_user_raw = overview_role.get(project, {}).get(related_role, {}).get("latest_user", "")
-            related_user = (
-                related_user_raw.split("：", 1)[1] if "：" in related_user_raw else related_user_raw
-            ) or str(snapshot.get("creator") or "待定负责人")
+    from .overview_request_storage import read_json, write_json
+    affected: list[tuple[str, str, str]] = []
+    labels = list(dict.fromkeys(related_labels))
+    def mark_pending(data):
+        data = data or {}
+        for related_label in labels:
+            for chip_id, chip in data.get(related_label, {}).items():
+                states = chip.get("select_activ_dic", {})
+                if not states:
+                    continue
+                latest_version = max(states, key=_overview_version_sort_key)
+                if states[latest_version] is False:
+                    continue
+                role = config_flat.get(related_label, {}).get("role", "")
+                raw_user = overview_role.get(project, {}).get(role, {}).get("latest_user", "")
+                related_user = (raw_user.split("：", 1)[-1] if raw_user else "") or str(chip.get("creator") or "待定负责人")
+                affected.append((related_label, str(chip_id), related_user))
+                changed_labels.add(related_label)
+                if states[latest_version] is True:
+                    states[latest_version] = None
+                    chip.update(enabled=None, icon="question_mark", bg_color="bg-amber-5")
+                    append_overview_timestamp(chip, creator=related_user,
+                        reason=get_automatic_overview_reason("related_pending"), operation_time=now_str)
+        return data if affected else db_storage.ATOMIC_NO_UPDATE
 
-            def mark_pending(chip):
-                if not chip:
-                    return db_storage.ATOMIC_NO_UPDATE
-                current_state = chip.get("select_activ_dic", {}).get(latest_version)
-                if current_state is False:
-                    return db_storage.ATOMIC_NO_UPDATE
-                pending_result["eligible"] = True
-                if current_state is True:
-                    chip["select_activ_dic"][latest_version] = None
-                    chip["enabled"] = None
-                    chip["icon"] = "question_mark"
-                    chip["bg_color"] = "bg-amber-5"
-                    append_overview_timestamp(
-                        chip,
-                        creator=related_user,
-                        reason=get_automatic_overview_reason("related_pending"),
-                        operation_time=now_str,
-                    )
-                    pending_result["changed"] = True
-                    return chip
-                return db_storage.ATOMIC_NO_UPDATE
+    record_key = f"{project}_over_related_record"
+    async def save_reasons(_before, _after, connection):
+        records = await read_json(connection, db_storage, record_key)
+        for label, chip_id, related_user in affected:
+            opened = records.setdefault(label, {}).setdefault(chip_id, {}).setdefault("open", {
+                "open_time": now_str, "open_related_user": related_user, "close_time": "", "close_related_user": "", "record": {},
+            })
+            history = opened.setdefault("record", {})
+            history_key = now_str
+            suffix = 1
+            while history_key in history:
+                history_key = f"{now_str}.{suffix:06d}"
+                suffix += 1
+            history[history_key] = copy.deepcopy(record_entry)
+        await write_json(connection, db_storage, record_key, records)
 
-            await overview_storage.checked_atomic_deep_update(
-                [f"{project}_over_data", related_label, chip_id], mark_pending
-            )
-            if not pending_result["eligible"]:
-                continue
-
-            def append_record(open_record):
-                if not open_record:
-                    return {
-                        "open_time": now_str,
-                        "open_related_user": related_user,
-                        "close_time": "",
-                        "close_related_user": "",
-                        "record": {now_str: record_entry},
-                    }
-                open_record.setdefault("record", {})[now_str] = record_entry
-                return open_record
-
-            await db_storage.atomic_deep_update(
-                [f"{project}_over_related_record", related_label, chip_id, "open"], append_record
-            )
-            label_changed = True
-        if label_changed:
-            changed_labels.add(related_label)
+    saved = await overview_storage.atomic_deep_update([f"{project}_over_data"], mark_pending,
+                                                     transaction_effect=save_reasons, storage=db_storage)
+    overview_storage.require_write_success(saved, "关联概述与影响原因保存失败，已一起回滚")
+    if affected:
+        await db_storage.get_fresh_item(record_key, {})
     return changed_labels
 
 
@@ -802,7 +895,7 @@ def _install_staged_media(payload: dict, config: dict) -> tuple[bool, str]:
     return True, ""
 
 
-async def execute_batch_overview_request(request: dict) -> dict:
+async def execute_batch_overview_request(request: dict, *, progress: Callable[[dict], Awaitable[None]] | None = None) -> dict:
     """审批通过后执行申请，并返回可归档的完整结果。"""
     from .utils import validate_search_path, validate_svn_url
 
@@ -822,6 +915,8 @@ async def execute_batch_overview_request(request: dict) -> dict:
         str(summary.get("sub_project") or key): summary
         for key, summary in app.storage.general.get("project_summary", {}).items()
     }
+    excluded_projects = [project for project in selected_projects
+                         if live_summary.get(project, {}).get("state") not in BATCH_OVERVIEW_ALLOWED_PROJECT_STATES]
     selected_projects = [
         project
         for project in selected_projects
@@ -850,7 +945,7 @@ async def execute_batch_overview_request(request: dict) -> dict:
             "ok": False,
             "message": "目标项目均已不在允许批量处理的状态范围内",
             "successes": [],
-            "skipped": [],
+            "skipped": [f"{project}：项目已不存在或状态不再允许批量处理" for project in excluded_projects],
             "failed": [],
         }
 
@@ -859,7 +954,7 @@ async def execute_batch_overview_request(request: dict) -> dict:
         return {"ok": False, "message": media_message, "successes": [], "skipped": [], "failed": []}
 
     successes: list[dict] = []
-    skipped: list[str] = []
+    skipped: list[str] = [f"{project}：项目已不存在或状态不再允许批量处理" for project in excluded_projects]
     failed: list[str] = []
     changed_pairs: set[tuple[str, str]] = set()
     configured_related = {str(item) for item in config.get("impact_list", []) if item}
@@ -874,6 +969,9 @@ async def execute_batch_overview_request(request: dict) -> dict:
         common_extra = copy.deepcopy(payload.get("extra_data") or {})
         row_anchors = payload.get("row_anchors") or {}
         for project in selected_projects:
+            if progress is not None:
+                await progress({"successes": copy.deepcopy(successes), "current": project,
+                                "message": "已完成主项见下方；当前项目及关联影响需核对，禁止直接重跑整单"})
             try:
                 req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(project, "0.0")
                 extra = copy.deepcopy(common_extra)
@@ -923,7 +1021,7 @@ async def execute_batch_overview_request(request: dict) -> dict:
                     processing_type=actual_type,
                     extra_data=extra,
                 )
-                inserted, message = await insert_overview_chip(project, label, chip)
+                inserted, message = await insert_overview_chip(project, label, chip, config=config, req_max_ver=str(req_max_ver))
                 if not inserted:
                     skipped.append(f"{project}：{message}")
                     continue
@@ -953,10 +1051,15 @@ async def execute_batch_overview_request(request: dict) -> dict:
             project = str(target.get("project") or "")
             chip_id = str(target.get("chip_id") or "")
             if project not in selected_projects:
-                skipped.append(f"{project}：项目已不在当前允许范围")
                 continue
+            if progress is not None:
+                await progress({"successes": copy.deepcopy(successes), "current": f"{project} / {chip_id}",
+                                "message": "已完成主项见下方；当前条目及关联影响需核对，禁止直接重跑整单"})
             try:
                 req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(project, "0.0")
+                if not isinstance(target.get("snapshot"), dict) or str(target.get("req_ver") or "") != str(req_max_ver):
+                    failed.append(f"{project}：送审版本缺失或已经变化，请重新核对后申请")
+                    continue
                 current_chip = db_storage.get_deep_item([f"{project}_over_data", label, chip_id], {})
                 if not current_chip:
                     skipped.append(f"{project}：概述条目已不存在")
@@ -996,14 +1099,11 @@ async def execute_batch_overview_request(request: dict) -> dict:
                     str(payload.get("reason") or payload.get("notes") or "状态确认"),
                     group_configs=group_configs if config.get("is_table_group") else None,
                     changed_targets=row_changes,
+                    expected_snapshot=target["snapshot"],
                 )
                 if not changed or updated_chip is None:
                     skipped.append(f"{project}：{message}")
                     continue
-                await archive_related_record(project, label, chip_id, submitter)
-                for changed_label, changed_id in row_changes - {(label, chip_id)}:
-                    if target_state is False:
-                        await archive_related_record(project, changed_label, changed_id, submitter)
                 successes.append(
                     {
                         "project": project,
@@ -1020,6 +1120,9 @@ async def execute_batch_overview_request(request: dict) -> dict:
                 failed.append(f"{project}：{exc}")
 
     if related_labels:
+        if progress is not None:
+            await progress({"successes": copy.deepcopy(successes), "current": "关联影响",
+                            "message": "主项已处理，关联影响可能部分完成，请核对后仅补处理未完成项"})
         flat_config = app.storage.general.get("over_config_data_flat", {})
         overview_role = app.storage.general.get("overview_role", {})
         for operation in successes:
@@ -1039,7 +1142,7 @@ async def execute_batch_overview_request(request: dict) -> dict:
         _publish_batch_overview_changes(changed_pairs, str(config.get("role") or ""))
     message = build_batch_result_lines(len(successes), skipped, failed)[0]
     return {
-        "ok": bool(successes) and not failed,
+        "ok": bool(successes) and not failed and not skipped,
         "message": message,
         "successes": successes,
         "skipped": skipped,

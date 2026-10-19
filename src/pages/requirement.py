@@ -58,7 +58,6 @@ from ..overview_batch_operations import (
     BATCH_OVERVIEW_STAGING_DIR,
     BATCH_OVERVIEW_TOOL_ROLES,
     apply_related_overview_impacts,
-    archive_related_record,
     build_batch_result_lines,
     build_new_overview_chip,
     build_project_category_map,
@@ -3988,7 +3987,7 @@ async def requirement_page(
                 ptype = str(config.get("processing_type", "text"))
                 actual_type = ptype
                 extra_data: dict[str, Any] = {}
-                chip_targets: list[dict[str, str]] = []
+                chip_targets: list[dict[str, Any]] = []
                 target_state: Optional[bool] = None
 
                 if state["action"] == "add":
@@ -4106,7 +4105,7 @@ async def requirement_page(
                             if not valid:
                                 validation_errors.append(f"{project}：{message}")
                                 continue
-                        chip_targets.append({"project": project, "chip_id": chip_id})
+                        chip_targets.append({"project": project, "chip_id": chip_id, "req_ver": str(req_max_ver), "snapshot": copy.deepcopy(chip)})
                     if validation_errors:
                         notify_batch_lines(["以下目标校验未通过，申请尚未提交：", *validation_errors])
                         return
@@ -4304,7 +4303,7 @@ async def requirement_page(
                                 processing_type=actual_type,
                                 extra_data=extra,
                             )
-                            inserted, message = await insert_overview_chip(project, config["label"], chip)
+                            inserted, message = await insert_overview_chip(project, config["label"], chip, config=config, req_max_ver=str(req_max_ver))
                             if not inserted:
                                 skipped.append(f"{project}：{message}")
                                 continue
@@ -4384,10 +4383,6 @@ async def requirement_page(
                             if not changed or updated_chip is None:
                                 skipped.append(f"{project}：{message}")
                                 continue
-                            await archive_related_record(project, config["label"], chip_id, creator)
-                            for changed_label, changed_id in row_changes - {(config["label"], chip_id)}:
-                                if target_state is False:
-                                    await archive_related_record(project, changed_label, changed_id, creator)
                             successes.append(
                                 {
                                     "project": project,

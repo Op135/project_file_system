@@ -17,7 +17,6 @@ from nicegui import app
 
 from . import db_storage
 from .overview_batch_operations import (
-    archive_related_record,
     is_table_child_state_allowed,
     update_overview_chip_state,
 )
@@ -675,7 +674,6 @@ async def _process_conversion_review_item(
     if not changed:
         await reconcile_conversion_reviews(project_name)
         return ConversionReviewResult(False, message)
-    await archive_related_record(project_name, item.label, item.chip_id, actor)
     await _publish_changed_labels(project_name, item.role, {item.label})
     await reconcile_conversion_reviews(project_name)
     refreshed = get_conversion_reviews().get(review_id, {})
@@ -768,7 +766,6 @@ async def _process_conversion_review_batch(
                 failures.append(f"{item.title}：{message}")
                 blocked_ids.add(item.target_id)
             continue
-        await archive_related_record(project_name, item.label, item.chip_id, actor)
         changed_count += 1
         changed_labels.add(item.label)
 

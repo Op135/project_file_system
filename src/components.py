@@ -48,6 +48,7 @@ from .overview_batch_operations import (
     atomic_update_overview_with_row,
     get_table_child_state_violations,
     is_table_child_state_allowed,
+    make_related_record_archive_effect,
     validate_overview_content,
 )
 from .overview_corrections import (
@@ -686,12 +687,20 @@ async def _save_overview_activation_atomically(
         chip["timestamp"][history_key]["select_activ_dic"] = copy.deepcopy(new_states)
         return chip
 
+    deactivating = any(state is False and expected_states.get(version) is not False
+                       for version, state in new_states.items())
+    archive_effect, archived = make_related_record_archive_effect(
+        project, label, chip_id, creator, include_changed_row=deactivating,
+    )
     success = await atomic_update_overview_with_row(
         project, label, chip_id, update, group_configs, creator, changed_targets,
+        transaction_effect=archive_effect,
     )
     if conflict["message"]:
         raise overview_storage.OverviewWriteError(conflict["message"])
     overview_storage.require_write_success(success)
+    if archived["value"]:
+        await db_storage.get_fresh_item(f"{project}_over_related_record", {})
     return latest_state
 
 
@@ -1116,22 +1125,6 @@ def _show_no_related_impact_confirmation(on_confirm: Callable) -> None:
             ui.button("确认不影响其它项", color="negative", on_click=confirm_no_impact)
 
     confirm_dialog.open()
-
-
-async def _archive_pending_record(project: str, label: str, chip_id: str, creator: str) -> None:
-    """待定状态完成判断后，关闭对应的关联变更记录。"""
-    time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    def process_close_record(chip_record_dic):
-        if not chip_record_dic or "open" not in chip_record_dic:
-            return chip_record_dic
-        open_dic = chip_record_dic.pop("open")
-        open_dic["close_time"] = time_str
-        open_dic["close_related_user"] = creator
-        chip_record_dic[time_str] = open_dic
-        return chip_record_dic
-
-    await db_storage.atomic_deep_update([f"{project}_over_related_record", label, chip_id], process_close_record)
 
 
 class OverviewVersionManager:
@@ -2358,6 +2351,7 @@ class InteractiveButton:
                         before_snapshot,
                         config_snapshot,
                         request_staged_path,
+                        after=after_snapshot,
                     )
                     if not audit_ok:
                         ui.notify(audit_message, type="warning")
@@ -2415,7 +2409,7 @@ class InteractiveButton:
                     "payload": request_payload,
                 }
                 if existing_rid:
-                    saved = await update_correction_request(existing_rid, record)
+                    saved = await update_correction_request(existing_rid, record, expected=existing_req, actor=current_user)
                 else:
                     saved, _ = await create_correction_request(record)
                 if not saved:
@@ -4142,26 +4136,6 @@ class InteractiveButton:
                 self.cancel_checkbox_change(chip_id)
                 ui_spinner.set_visibility(False)
 
-                time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-                def process_close_record(chip_record_dic):
-                    if not chip_record_dic or "open" not in chip_record_dic:
-                        return chip_record_dic
-
-                    # 提取并修改 open 记录
-                    open_dic = chip_record_dic.pop("open")  # 从字典中弹出（删除 "open" 键）
-                    open_dic["close_time"] = time_str
-                    open_dic["close_related_user"] = creator
-
-                    # 存入归档键
-                    chip_record_dic[time_str] = open_dic
-                    return chip_record_dic
-
-                # 在父层级执行原子更新，同时完成删除和新增
-                await db_storage.atomic_deep_update(
-                    [f"{self.project}_over_related_record", self.label, chip_id], process_close_record
-                )
-
                 self._show_related_chip_select_dialog(chip_text, chip_state, "activ_change")
                 # self.last_state_hash = None  # Trigger display update via timer
                 # await self._update_chip_display()
@@ -5031,7 +5005,6 @@ class InteractiveButton:
                 reason,
                 active_icon,
             )
-            await _archive_pending_record(self.project, self.label, chip_id, creator)
             applied_states += chip_applied_states
             applied_chips += 1
             impact_operations.append((chip_texts[chip_id], latest_state))
@@ -5515,11 +5488,6 @@ class OverviewTableGroup:
                 failed_rows.append(f"{chip_texts[chip_id]}：{exc}")
                 continue
             changed_targets.update(row_changes)
-            deactivating = any(state is False and chip_data.get("select_activ_dic", {}).get(version) is not False
-                               for version, state in select_activ_dic.items())
-            for changed_label, changed_id in row_changes:
-                if (changed_label, changed_id) == (label, chip_id) or deactivating:
-                    await _archive_pending_record(self.project, changed_label, changed_id, creator)
             applied_states += chip_applied_states
             applied_chips += 1
             impact_operations.append((chip_texts[chip_id], latest_state))
@@ -7975,11 +7943,6 @@ class OverviewTableGroup:
                     group_configs=self.configs,
                     changed_targets=row_changes,
                 )
-                deactivating = any(state is False and OLD_CHIP_SELECT_DIC.get(version) is not False
-                                   for version, state in new_select_activ_dic.items())
-                for changed_label, changed_id in row_changes:
-                    if (changed_label, changed_id) == (label, chip_id) or deactivating:
-                        await _archive_pending_record(self.project, changed_label, changed_id, str(creator))
                 for changed_label in {target[0] for target in row_changes}:
                     OverviewVersionManager.bump(self.project, changed_label)
                 # 级联修改完成后一次性刷新，避免先显示首列、随后才显示同行的短暂不一致。
@@ -8849,6 +8812,7 @@ class OverviewTableGroup:
                         before_snapshot,
                         config_snapshot,
                         request_staged_path,
+                        after=after_snapshot,
                     )
                     if not audit_ok:
                         ui.notify(audit_message, type="warning")
@@ -8904,7 +8868,7 @@ class OverviewTableGroup:
                     "payload": request_payload,
                 }
                 if existing_rid:
-                    saved = await update_correction_request(existing_rid, record)
+                    saved = await update_correction_request(existing_rid, record, expected=existing_req, actor=current_user)
                 else:
                     saved, _ = await create_correction_request(record)
                 if not saved:

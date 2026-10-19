@@ -345,6 +345,13 @@ async def master_startup():
 
     # 第一顺位：建立底层基础设施（必须加 await 等待完成）
     await db_storage.init_db()
+    from .overview_batch_operations import recover_interrupted_batch_requests
+    if not await recover_interrupted_batch_requests():
+        raise RuntimeError("批量概述中断状态恢复失败，请检查数据库后重启")
+    from .overview_request_storage import recover_processing
+    for key in ("overview_correction_requests", "overview_add_approval_requests"):
+        if not await recover_processing(db_storage, key):
+            raise RuntimeError("概述审批中断恢复失败，请检查数据库后重启")
 
     # 样品单从旧版整块JSON自动迁移为逐订单实体存储；旧键保留作回滚备份。
     await initialize_sample_order_storage()

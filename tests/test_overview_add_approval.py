@@ -124,11 +124,8 @@ class OverviewAddApprovalLifecycleTests(unittest.IsolatedAsyncioTestCase):
             patch("src.overview_add_approval.db_storage.get_deep_item", return_value=request),
             patch("src.overview_add_approval.can_review_overview_add_request", return_value=True),
             patch(
-                "src.overview_add_approval.advance_approval_sequence",
-                return_value={
-                    "status": "completed",
-                    "assignment": {"status": "completed"},
-                },
+                "src.overview_add_approval._advance_add_review",
+                new=AsyncMock(return_value=(request, "completed")),
             ),
             patch("src.overview_add_approval._execute_approved_add", new=execute_add),
             patch("src.overview_add_approval._update_request", new=update_request),
@@ -216,6 +213,7 @@ class OverviewAddApprovalLifecycleTests(unittest.IsolatedAsyncioTestCase):
         update_request = AsyncMock(return_value=True)
         cleanup = Mock()
         with (
+            patch("src.overview_add_approval._advance_add_review", new=AsyncMock(return_value=(request, "rejected"))),
             patch("src.overview_add_approval.db_storage.get_deep_item", return_value=request),
             patch("src.overview_add_approval.can_review_overview_add_request", return_value=True),
             patch("src.overview_add_approval._update_request", new=update_request),

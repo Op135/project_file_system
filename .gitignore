@@ -16,6 +16,8 @@ uploads/
 .agents/
 .codex/
 .local/
+tests/*
+!tests/test_overview_safety_batch.py
 .env.local
 .pyright_tool/
 *.pyc

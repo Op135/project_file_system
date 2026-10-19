@@ -51,6 +51,7 @@ async def atomic_deep_update(
     *args,
     allow_ecn: bool = False,
     transaction_guard: Callable | None = None,
+    transaction_effect: Callable | None = None,
     storage=None,
     **kwargs,
 ) -> bool:
@@ -113,6 +114,10 @@ async def atomic_deep_update(
                 )
                 blocked = True
                 return storage.ATOMIC_NO_UPDATE
+        if transaction_effect is not None:
+            effect = transaction_effect(before, new_top, connection)
+            if inspect.isawaitable(effect):
+                await effect
         return new_top
 
     success = await storage.atomic_deep_update_transaction([top_key], apply)

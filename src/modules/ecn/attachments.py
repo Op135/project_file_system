@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from ... import db_storage
-from ...overview_file_storage import copy_named_file
+from ...overview_file_storage import copy_named_file, file_digest
 from ...ecn_access import (
     can_confirm_ecn_material_spec,
     can_create_ecn_request,
@@ -260,8 +260,14 @@ def publish_pending(attachment: dict, ecn_id: str, username: str, scope: str, *,
     target = _safe_path(relative)
     target.parent.mkdir(parents=True, exist_ok=True)
     if scope.startswith("overview_"):
+        source = overview_source if overview_source is not None else pending
+        # 失败归档永久保留；改变选择后的重试必须使用新的归档身份。
+        if target.exists() and file_digest(target) != file_digest(source):
+            attachment = {**attachment, "id": uuid.uuid4().hex}
+            relative = "/".join(relative.split("/")[:-1] + [f"{attachment['id']}{extension}"])
+            target = _safe_path(relative)
         # 概述归档失败后保留文件，重试沿用原编号、核对内容，不再回收文件。
-        copy_named_file(overview_source if overview_source is not None else pending, target, expected_digest=expected_digest)
+        copy_named_file(source, target, expected_digest=expected_digest)
     else:
         if target.exists():
             raise ECNConflict("附件归档编号已存在，请重新上传")
@@ -272,6 +278,7 @@ def publish_pending(attachment: dict, ecn_id: str, username: str, scope: str, *,
             raise
     published = {key: value for key, value in attachment.items() if key != "pending_path"}
     published["relative_path"] = relative
+    published["size"] = target.stat().st_size
     return published, target
 
 

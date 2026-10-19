@@ -46,6 +46,20 @@ class FileChoiceTests(unittest.IsolatedAsyncioTestCase):
         item["new_data"]["file_selection"] = selection
         return overview_files.prepare_overview_upload(item, None, "ECN1", "owner")[0]
 
+    async def test_checkpoint_recovery_validates_formal_file_without_restoring_it(self):
+        selection = make_file_selection(self.formal, "recovery.pdf", "new", hashlib.sha256(b"new upload").hexdigest())
+        item = self.prepare(selection)
+        chip, _ = overview_files.publish_overview_upload(item, "P1", "ECN1", self.config)
+        overview_files.verify_published_overview_upload(item, chip, self.config)
+        target = Path(chip["local_file_path"])
+        target.write_bytes(b"changed outside system")
+        with self.assertRaises(ValueError):
+            overview_files.verify_published_overview_upload(item, chip, self.config)
+        target.unlink()
+        with self.assertRaises(ValueError):
+            overview_files.verify_published_overview_upload(item, chip, self.config)
+        self.assertFalse(target.exists())
+
     async def test_new_original_name_shared_by_projects_and_idempotent(self):
         selection = make_file_selection(self.formal, "报告-新版本.pdf", "new", hashlib.sha256(b"new upload").hexdigest())
         item = self.prepare(selection)
@@ -67,6 +81,33 @@ class FileChoiceTests(unittest.IsolatedAsyncioTestCase):
         result, installed = overview_files.publish_overview_upload(item, "P1", "ECN1", self.config)
         self.assertIsNone(installed)
         self.assertEqual(Path(result["local_file_path"]), target)
+        self.assertEqual(item["new_data"]["overview_upload"]["size"], target.stat().st_size)
+
+    async def test_retry_cannot_publish_bytes_different_from_selection(self):
+        target = self.formal / Upload.name
+        target.write_bytes(b"existing selected bytes")
+        first = self.prepare(make_file_selection(self.formal, Upload.name, "existing", file_digest(target)))
+        old_archive = attachments.resolve_attachment(first["new_data"]["overview_upload"])
+        # 同名但内容不匹配时仍不能把上传文件冒充所选内容。
+        with self.assertRaises(ValueError):
+            self.prepare(make_file_selection(self.formal, Upload.name, "new", file_digest(target)))
+        self.assertEqual(old_archive.read_bytes(), b"existing selected bytes")
+
+    async def test_failed_save_retry_new_content_preserves_previous_archive(self):
+        target = self.formal / Upload.name
+        target.write_bytes(b"existing selected bytes")
+        first = self.prepare(make_file_selection(self.formal, Upload.name, "existing", file_digest(target)))
+        old_archive = attachments.resolve_attachment(first["new_data"]["overview_upload"])
+        target.unlink()
+        second = self.prepare(make_file_selection(self.formal, Upload.name, "new", hashlib.sha256(b"new upload").hexdigest()))
+        new_archive = attachments.resolve_attachment(second["new_data"]["overview_upload"])
+        self.assertNotEqual(old_archive, new_archive)
+        self.assertEqual(old_archive.read_bytes(), b"existing selected bytes")
+        self.assertEqual(new_archive.read_bytes(), b"new upload")
+
+    async def test_renamed_archive_metadata_matches_confirmed_name(self):
+        item = self.prepare(make_file_selection(self.formal, "renamed.pdf", "new", hashlib.sha256(b"new upload").hexdigest()))
+        self.assertEqual(item["new_data"]["overview_upload"]["name"], "renamed.pdf")
 
     async def test_existing_changed_after_review_is_rejected(self):
         target = self.formal / Upload.name

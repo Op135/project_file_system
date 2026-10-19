@@ -12,6 +12,25 @@ from unittest.mock import AsyncMock, MagicMock
 class InformationOverviewRefreshTests(unittest.IsolatedAsyncioTestCase):
     """隔离数据库和页面初始化，验证概述审批回调的局部刷新行为。"""
 
+    async def test_correction_failed_claim_never_executes(self):
+        source = Path(__file__).resolve().parents[1] / "src" / "pages" / "information.py"
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+        callback = next(node for node in ast.walk(tree)
+                        if isinstance(node, ast.AsyncFunctionDef) and node.name == "approve_correction_request")
+        async def atomic_update(path, updater):
+            updater({"status": "pending"})
+            return False
+        execute = AsyncMock()
+        namespace = {"asyncio": asyncio, "copy": copy, "datetime": datetime,
+            "correction_request_dialog": MagicMock(), "_overview_correction_review_locks": defaultdict(asyncio.Lock),
+            "db_storage": SimpleNamespace(atomic_deep_update=atomic_update, ATOMIC_NO_UPDATE=object()),
+            "OVERVIEW_CORRECTION_REQUESTS_KEY": "requests", "current_user": "reviewer", "current_role": "role",
+            "can_review_correction_request": lambda *args: True, "ui": MagicMock(),
+            "execute_correction_request": execute, "refresh_overview_request_sections": MagicMock()}
+        exec(compile(ast.Module(body=[callback], type_ignores=[]), str(source), "exec"), namespace)
+        await namespace["approve_correction_request"]("r")
+        execute.assert_not_awaited()
+
     def test_overview_request_handlers_do_not_reload_the_whole_page(self):
         source = Path(__file__).resolve().parents[1] / "src" / "pages" / "information.py"
         tree = ast.parse(source.read_text(encoding="utf-8"))
@@ -46,7 +65,7 @@ class InformationOverviewRefreshTests(unittest.IsolatedAsyncioTestCase):
             else:
                 self.assertIn("refresh_overview_request_sections", called_functions, name)
 
-    async def run_approval(self, *, allowed=True, execution_error=False):
+    async def run_approval(self, *, allowed=True, execution_error=False, claim_saved=True, update_results=None, skipped=False):
         source = Path(__file__).resolve().parents[1] / "src" / "pages" / "information.py"
         tree = ast.parse(source.read_text(encoding="utf-8"))
         callback = next(
@@ -57,11 +76,12 @@ class InformationOverviewRefreshTests(unittest.IsolatedAsyncioTestCase):
 
         async def atomic_update(path, updater):
             updater(copy.deepcopy(request))
+            return claim_saved
 
         ui = MagicMock()
         refresh = MagicMock()
-        update = AsyncMock()
-        execute = AsyncMock(return_value={"successes": ["P1"], "failed": [], "message": "完成"})
+        update = AsyncMock(return_value=True, side_effect=update_results)
+        execute = AsyncMock(return_value={"successes": ["P1"], "failed": [], "skipped": ["P2"] if skipped else [], "message": "完成"})
         if execution_error:
             execute.side_effect = RuntimeError("模拟执行失败")
         namespace = {
@@ -100,10 +120,38 @@ class InformationOverviewRefreshTests(unittest.IsolatedAsyncioTestCase):
         _, update, ui = await self.run_approval(execution_error=True)
         call = update.await_args
         assert call is not None
-        self.assertEqual(call.args[1]["status"], "failed")
+        self.assertEqual(call.args[1]["status"], "interrupted")
         ui.notification.return_value.dismiss.assert_called_once()
 
     async def test_lost_review_permission_refreshes_without_execution(self):
         execute, update, _ = await self.run_approval(allowed=False)
         execute.assert_not_awaited()
         update.assert_not_awaited()
+
+    async def test_failed_claim_never_executes(self):
+        execute, update, _ = await self.run_approval(claim_saved=False)
+        execute.assert_not_awaited()
+        update.assert_not_awaited()
+
+    async def test_final_save_retries_only_status_not_business(self):
+        execute, update, _ = await self.run_approval(update_results=[True, False, True])
+        execute.assert_awaited_once()
+        self.assertEqual(update.await_count, 3)
+
+    async def test_persistent_final_save_failure_still_refreshes(self):
+        execute, update, ui = await self.run_approval(update_results=[True, False, False])
+        execute.assert_awaited_once()
+        self.assertEqual(update.await_count, 3)
+        self.assertTrue(any("最终状态保存失败" in str(call) for call in ui.notify.call_args_list))
+
+    async def test_checkpoint_failure_requires_reconciliation(self):
+        _, update, _ = await self.run_approval(update_results=[False, True])
+        call = update.await_args
+        assert call is not None
+        self.assertEqual(call.args[1]["status"], "interrupted")
+
+    async def test_skipped_project_is_partial_completion(self):
+        _, update, _ = await self.run_approval(skipped=True)
+        call = update.await_args
+        assert call is not None
+        self.assertEqual(call.args[1]["status"], "approved_with_warnings")

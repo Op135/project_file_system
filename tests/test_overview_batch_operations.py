@@ -3,7 +3,7 @@ import copy
 import unittest
 from datetime import datetime
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from src import db_storage
 from src.components import _prepare_overview_state_draft, _release_overview_state_draft
@@ -183,6 +183,7 @@ class OverviewBatchOperationTests(unittest.TestCase):
 
         async def fake_atomic(path, updater, *args, **kwargs):
             label, chip_id = path[1], path[2]
+            kwargs.pop("transaction_effect", None)
             result = updater(copy.deepcopy(stored[label][chip_id]), *args, **kwargs)
             if result is not db_storage.ATOMIC_NO_UPDATE:
                 stored[label][chip_id] = result
@@ -351,6 +352,7 @@ class OverviewBatchOperationTests(unittest.TestCase):
 
         async def fake_atomic(_path, updater, *args, **kwargs):
             nonlocal stored
+            kwargs.pop("transaction_effect", None)
             result = updater(copy.deepcopy(stored), *args, **kwargs)
             if result is not db_storage.ATOMIC_NO_UPDATE:
                 stored = result
@@ -380,6 +382,7 @@ class OverviewBatchOperationTests(unittest.TestCase):
         }
 
         async def fake_atomic(_path, updater, *args, **kwargs):
+            kwargs.pop("transaction_effect", None)
             result = updater(copy.deepcopy(stored), *args, **kwargs)
             self.assertIs(result, db_storage.ATOMIC_NO_UPDATE)
             return True
@@ -418,10 +421,11 @@ class OverviewBatchOperationTests(unittest.TestCase):
 
         async def fake_atomic(path, updater, *args, **kwargs):
             if path[0].endswith("_over_data"):
-                chip = overview[path[1]][path[2]]
-                result = updater(copy.deepcopy(chip), *args, **kwargs)
+                result = updater(copy.deepcopy(overview))
                 if result is not db_storage.ATOMIC_NO_UPDATE:
-                    overview[path[1]][path[2]] = result
+                    overview.clear()
+                    overview.update(result)
+                    await kwargs["transaction_effect"](None, result, None)
                 return True
             key = tuple(path[1:4])
             result = updater(copy.deepcopy(records.get(key)), *args, **kwargs)
@@ -430,6 +434,9 @@ class OverviewBatchOperationTests(unittest.TestCase):
             return True
 
         with (
+            patch("src.overview_request_storage.read_json", new=AsyncMock(return_value=records)),
+            patch("src.overview_request_storage.write_json", new=AsyncMock()),
+            patch("src.overview_batch_operations.db_storage.get_fresh_item", new=AsyncMock()),
             patch("src.overview_batch_operations.db_storage.get_item", new=fake_get_item),
             patch("src.overview_batch_operations.db_storage.atomic_deep_update", new=fake_atomic),
             patch("src.overview_batch_operations.overview_storage.atomic_deep_update", new=fake_atomic),
@@ -449,9 +456,9 @@ class OverviewBatchOperationTests(unittest.TestCase):
 
         self.assertEqual(changed_labels, {"target"})
         self.assertIsNone(overview["target"]["active"]["select_activ_dic"]["2.0"])
-        self.assertIn(("target", "active", "open"), records)
-        self.assertIn(("target", "pending", "open"), records)
-        self.assertNotIn(("target", "inactive", "open"), records)
+        self.assertIn("open", records["target"]["active"])
+        self.assertIn("open", records["target"]["pending"])
+        self.assertNotIn("inactive", records["target"])
 
 
 if __name__ == "__main__":

@@ -41,6 +41,8 @@
 | `permission_catalog.py` | 全系统稳定权限编码目录 |
 | `access_control.py` 及 `*_access.py` | 公共和各业务模块权限判断 |
 | `approval_workflow.py` | 通用审批流程匹配、具体审批人解析和多节点推进 |
+| `approval_transaction.py` | 审批待办事务代理；ECN 和关键概述新增在业务事务内一起提交待办与申请状态 |
+| `overview_request_storage.py` | 概述申请的条件撤回、重新提交校验和中断结果恢复；不自动重跑业务 |
 | `overview_add_approval.py` | 配置驱动的关键概述新增申请、逐节点审批、上传暂存及通过后生效 |
 | `overview_conversion_review.py` | 研发转转产时按项目和职能生成概述汇总确认待办，合并特殊待定原因并按真实状态自动校准 |
 | `overview_conversion_review_ui.py` | 在项目需求概述页右侧展示不遮挡需求正文的转产职能快捷确认面板 |

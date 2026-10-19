@@ -174,6 +174,10 @@ class OverviewECNIntegrationTests(unittest.IsolatedAsyncioTestCase):
                    "before_fingerprint": overview_corrections.chip_snapshot_fingerprint(before),
                    "after_snapshot": {**before, "content": new.name}, "config": config,
                    "uploaded_file_type": chip_type + "/test", "target_url_path": "/files/" + new.name}}
+        ok, message, audit = overview_corrections.build_media_file_audit(
+            before, config, "", after=request["payload"]["after_snapshot"])
+        self.assertTrue(ok, message)
+        request["payload"].update(audit)
         return request, old, new
 
     async def test_correction_repoints_ecn_file_image_and_video(self):
@@ -343,6 +347,7 @@ class OverviewECNIntegrationTests(unittest.IsolatedAsyncioTestCase):
         request = self.storage.get_deep_item([overview_corrections.OVERVIEW_CORRECTION_REQUESTS_KEY, request_id])
         result = await overview_corrections.execute_correction_request(request)
         self.assertTrue(result["ok"], result)
+        await self.storage.set_deep_item([overview_corrections.OVERVIEW_CORRECTION_REQUESTS_KEY, request_id, "status"], "approved")
         archived = await overview_corrections.archive_correction_request(request_id, request, "approved", {"result": result})
         self.assertTrue(archived)
         payload = self.storage.get_deep_item([overview_corrections.OVERVIEW_CORRECTION_ARCHIVES_KEY, request_id, "payload"])

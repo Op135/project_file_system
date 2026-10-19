@@ -39,7 +39,7 @@ def prepare_overview_upload(item: dict, original: dict | None, ecn_id: str, user
             raise ECNConflict("系统内资料上传人不匹配。")
         source = target if selection["mode"] == "existing" else None
         attachment, installed = publish_pending(
-            attachment, ecn_id, user, f"overview_{item['item_id']}",
+            {**attachment, "name": selection["name"]}, ecn_id, user, f"overview_{item['item_id']}",
             overview_source=source, expected_digest=selection["sha256"],
         )
         new_data["overview_upload"] = attachment
@@ -80,3 +80,13 @@ def publish_overview_upload(item: dict, project: str, ecn_id: str, config: dict)
         "local_file_path": str(target), "url_path": f"/files/{selection['name']}",
         "content": selection["name"],
     }, None if existed else target
+
+
+def verify_published_overview_upload(item: dict, chip: dict, config: dict) -> None:
+    """恢复检查点只校验正式文件，绝不重新发布或恢复被删除文件。"""
+    selection = item.get("new_data", {}).get("file_selection")
+    if not isinstance(selection, dict):
+        raise ECNConflict("送审文件选择缺失，不能恢复执行")
+    target = validate_file_selection({**selection, "mode": "existing"}, Path(str(config.get("upload_path") or "")))
+    if Path(str(chip.get("local_file_path") or "")).resolve() != target.resolve():
+        raise ECNConflict("已执行概述的正式文件路径与方案不一致")

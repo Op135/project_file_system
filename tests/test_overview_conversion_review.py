@@ -246,7 +246,6 @@ class OverviewConversionReviewTests(unittest.IsolatedAsyncioTestCase):
             patches[3],
             patch("src.overview_conversion_review._validate_item_activation", new=AsyncMock(return_value=(True, ""))),
             patch("src.overview_conversion_review.update_overview_chip_state", new=update_state),
-            patch("src.overview_conversion_review.archive_related_record", new=AsyncMock()),
             patch("src.overview_conversion_review._publish_changed_labels", new=AsyncMock()),
         ):
             await reconcile_conversion_reviews(

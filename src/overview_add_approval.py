@@ -103,16 +103,6 @@ def _service(user_service=None):
     return user_service or getattr(app.state, "user_service", None)
 
 
-def _supersede_current_assignment(service, request_id: str, assignment: dict[str, Any]) -> None:
-    task_key = str(assignment.get("current_task_key") or "").strip()
-    if task_key:
-        service.supersede_pending_work_assignments(
-            module="project_overview",
-            entity_id=request_id,
-            task_key=task_key,
-        )
-
-
 def _safe_staging_path(value: object) -> Path | None:
     text = str(value or "").strip()
     if not text:
@@ -137,7 +127,7 @@ def _cleanup_staged_file(request: dict[str, Any]) -> None:
         pass
 
 
-async def _insert_request(record: dict[str, Any]) -> bool:
+async def _insert_request(record: dict[str, Any], *, assignment_transaction=None) -> bool:
     request_id = str(record["id"])
     project = str(record.get("project") or "")
     label = str(record.get("label") or "")
@@ -170,14 +160,20 @@ async def _insert_request(record: dict[str, Any]) -> bool:
             and other_chip.get("row_id") == candidate.get("row_id")
         )
 
-    def insert(records):
+    inserted = False
+    async def insert(records, connection):
+        nonlocal inserted
         records = records or {}
         if request_id in records or any(is_same_candidate(other) for other in records.values()):
             return db_storage.ATOMIC_NO_UPDATE
         records[request_id] = copy.deepcopy(record)
+        if assignment_transaction is not None:
+            await assignment_transaction.flush(connection)
+        inserted = True
         return records
 
-    return await db_storage.atomic_deep_update([OVERVIEW_ADD_REQUESTS_KEY], insert)
+    saved = await db_storage.atomic_deep_update_transaction([OVERVIEW_ADD_REQUESTS_KEY], insert)
+    return saved and inserted
 
 
 async def save_or_submit_overview_addition(
@@ -208,6 +204,8 @@ async def save_or_submit_overview_addition(
     service = _service(user_service)
     if service is None:
         return OverviewAddSaveResult("error", "关键概述必须使用数据库审批流程，当前身份服务不可用")
+    from .approval_transaction import ApprovalTransaction
+    assignment_transaction = ApprovalTransaction(service)
 
     request_id = str(uuid.uuid4())
     staged_file_path = ""
@@ -228,7 +226,7 @@ async def save_or_submit_overview_addition(
             final_file_path = str(source_path)
 
         workflow_result = create_approval_sequence_assignments(
-            service,
+            assignment_transaction,
             module="project_overview",
             event=OVERVIEW_ADD_WORKFLOW_EVENT,
             entity_id=request_id,
@@ -277,14 +275,11 @@ async def save_or_submit_overview_addition(
                 "related_labels": normalized_related_labels,
             },
         }
-        if not await _insert_request(record):
-            _supersede_current_assignment(service, request_id, assignment)
+        if not await _insert_request(record, assignment_transaction=assignment_transaction):
             _cleanup_staged_file(record)
             return OverviewAddSaveResult("error", "关键概述新增申请保存失败")
         return OverviewAddSaveResult("pending", "已提交审批，通过后才会生效", request_id)
     except Exception as exc:
-        if assignment is not None:
-            _supersede_current_assignment(service, request_id, assignment)
         if staged_file_path:
             _cleanup_staged_file({"payload": {"staged_file_path": staged_file_path}})
         return OverviewAddSaveResult("error", f"关键概述新增申请提交失败：{exc}")
@@ -334,27 +329,39 @@ def get_overview_add_pending_count(
             isinstance(request, dict)
             and (
                 can_review_overview_add_request(request, username, user_service=user_service)
+                or can_reconcile_overview_add(request, username, user_service=user_service)
                 or (
                     request.get("submitter") == username
-                    and request.get("status") in {"rejected", "failed"}
+                    and request.get("status") in {"rejected", "failed", "interrupted"}
                 )
             )
         )
     )
 
 
-async def _update_request(request_id: str, changes: dict[str, Any]) -> bool:
-    def update(request):
+async def _update_request(request_id: str, changes: dict[str, Any], *, expected: dict | None = None,
+                          assignment_transaction=None) -> bool:
+    updated = False
+    async def update(request, connection):
+        nonlocal updated
         if not request:
+            return db_storage.ATOMIC_NO_UPDATE
+        if expected is not None and request != expected:
+            return db_storage.ATOMIC_NO_UPDATE
+        if changes.get("status") == "pending" and (expected is None or request.get("status") != "rejected"):
             return db_storage.ATOMIC_NO_UPDATE
         request.update(copy.deepcopy(changes))
         request["updated_at"] = _now_text()
+        if assignment_transaction is not None:
+            await assignment_transaction.flush(connection)
+        updated = True
         return request
 
-    return await db_storage.atomic_deep_update(
+    saved = await db_storage.atomic_deep_update_transaction(
         [OVERVIEW_ADD_REQUESTS_KEY, request_id],
         update,
     )
+    return saved and updated
 
 
 def _refresh_candidate_versions(chip: dict[str, Any], project: str) -> None:
@@ -433,7 +440,7 @@ async def _execute_approved_add(request: dict[str, Any]) -> tuple[bool, str]:
         copy_named_file(staged_path, final_path)
 
     try:
-        inserted, message = await insert_overview_chip(project, label, chip)
+        inserted, message = await insert_overview_chip(project, label, chip, config=config, req_max_ver=req_max_ver)
     except Exception as exc:
         return False, f"概述写入失败：{exc}"
     if not inserted:
@@ -474,117 +481,79 @@ async def _execute_approved_add(request: dict[str, Any]) -> tuple[bool, str]:
     return True, "审批通过，概述已生效"
 
 
-async def approve_overview_add_request(
-    request_id: str,
-    reviewer: str,
-    *,
-    user_service=None,
-) -> dict[str, Any]:
-    """推进当前审批节点；全部节点通过后才把候选概述写入正式数据。"""
+async def _advance_add_review(request_id: str, reviewer: str, service, *, expected: dict | None = None, reject_reason: str = "") -> tuple[dict | None, str]:
+    from .approval_transaction import ApprovalTransaction
+    updated_record: dict | None = None
+    outcome = "error"
+    async def advance(current, connection):
+        nonlocal updated_record, outcome
+        if (not isinstance(current, dict) or current.get("status") != "pending" or (expected is not None and current != expected)
+                or not can_review_overview_add_request(current, reviewer, user_service=service)):
+            return db_storage.ATOMIC_NO_UPDATE
+        transaction = ApprovalTransaction(service)
+        assignment = current.get("workflow_assignment")
+        if not isinstance(assignment, dict):
+            return db_storage.ATOMIC_NO_UPDATE
+        if reject_reason:
+            transaction.replace_work_assignments(module="project_overview", entity_id=request_id,
+                task_key=str(assignment.get("current_task_key") or ""), assignee_usernames=[], source_policy_code="")
+            current.update(status="rejected", reject_reason=reject_reason)
+            current["workflow_assignment"] = {**assignment, "status": "rejected"}
+            outcome = "rejected"
+        else:
+            result = advance_approval_sequence(transaction, module="project_overview", entity_id=request_id,
+                                              assignment=assignment, username=reviewer)
+            outcome = str(result.get("status") or "")
+            updated_assignment = result.get("assignment")
+            if outcome not in {"node_pending", "advanced", "completed"} or not isinstance(updated_assignment, dict):
+                return db_storage.ATOMIC_NO_UPDATE
+            current["workflow_assignment"] = updated_assignment
+            if outcome == "completed":
+                current["status"] = "processing"
+                current.pop("completion_checkpoint", None)
+        current.setdefault("review_log", []).append({"action": "reject" if reject_reason else "approve",
+            "user": reviewer, "time": _now_text(), "note": reject_reason, "node_index": assignment.get("current_node_index", 0)})
+        current["updated_at"] = _now_text()
+        await transaction.flush(connection)
+        updated_record = copy.deepcopy(current)
+        return current
+    saved = await db_storage.atomic_deep_update_transaction([OVERVIEW_ADD_REQUESTS_KEY, request_id], advance)
+    return (updated_record, outcome) if saved and updated_record is not None else (None, "error")
+
+
+async def approve_overview_add_request(request_id: str, reviewer: str, *, user_service=None, expected: dict | None = None) -> dict[str, Any]:
+    """审批待办与申请同事务推进；最终生效中断只核对，不自动重跑。"""
     service = _service(user_service)
     if service is None:
         return {"status": "error", "message": "身份服务不可用"}
     async with _review_locks[request_id]:
-        request = db_storage.get_deep_item([OVERVIEW_ADD_REQUESTS_KEY, request_id], {})
-        if not can_review_overview_add_request(request, reviewer, user_service=service):
-            return {"status": "forbidden", "message": "申请已处理或当前账号没有审批待办"}
-        assignment = request.get("workflow_assignment")
-        if not isinstance(assignment, dict):
-            return {"status": "error", "message": "审批快照无效"}
-        advance_result = advance_approval_sequence(
-            service,
-            module="project_overview",
-            entity_id=request_id,
-            assignment=assignment,
-            username=reviewer,
-        )
-        advance_status = str(advance_result.get("status") or "")
-        updated_assignment = advance_result.get("assignment")
-        if advance_status not in {"node_pending", "advanced", "completed"} or not isinstance(
-            updated_assignment,
-            dict,
-        ):
-            return {
-                "status": "error",
-                "message": str(advance_result.get("message") or "审批节点推进失败"),
-            }
-        review_log = list(request.get("review_log") or [])
-        review_log.append(
-            {
-                "action": "approve",
-                "user": reviewer,
-                "time": _now_text(),
-                "node_index": assignment.get("current_node_index", 0),
-            }
-        )
-        if advance_status != "completed":
-            await _update_request(
-                request_id,
-                {
-                    "workflow_assignment": updated_assignment,
-                    "review_log": review_log,
-                },
-            )
-            return {
-                "status": advance_status,
-                "message": str(advance_result.get("message") or "当前审批节点已处理"),
-                "assignment": updated_assignment,
-            }
-
+        request, status = await _advance_add_review(request_id, reviewer, service, expected=expected)
+        if request is None:
+            return {"status": "error", "message": "审批保存失败，或单据/待办已变化，请刷新后重试"}
+        if status != "completed":
+            return {"status": status, "message": "当前审批节点已处理", "assignment": request.get("workflow_assignment")}
         try:
             effective, message = await _execute_approved_add(request)
         except Exception as exc:
-            logger.error("关键概述审批通过后的生效处理失败：%s", request_id, exc_info=True)
-            effective, message = False, f"审批已完成，但概述生效失败：{exc}"
-        final_status = "approved" if effective else "failed"
-        await _update_request(
-            request_id,
-            {
-                "status": final_status,
-                "workflow_assignment": updated_assignment,
-                "review_log": review_log,
-                "reviewer": reviewer,
-                "finished_at": _now_text(),
-                "result": {"ok": effective, "message": message},
-            },
-        )
-        return {"status": final_status, "message": message, "assignment": updated_assignment}
+            logger.error("关键概述生效失败：%s", request_id, exc_info=True)
+            effective, message = False, str(exc)
+        final_status = "approved" if effective else "interrupted"
+        completion = {"status": final_status, "reviewer": reviewer, "finished_at": _now_text(),
+                      "result": {"ok": effective, "message": message if effective else f"{message}；可能部分完成，请核对后归档，不要重跑"}}
+        if not await _update_request(request_id, {"completion_checkpoint": completion}):
+            return {"status": "error", "message": "业务结果保存失败，请核对实际概述；重启后转为中断待核对，不能重跑"}
+        if not await _update_request(request_id, {**completion, "completion_checkpoint": None}):
+            return {"status": "error", "message": "最终状态保存失败，完整结果已保留，可恢复结果；请勿重复执行"}
+        return {"status": final_status, "message": completion["result"]["message"], "assignment": request.get("workflow_assignment")}
 
 
-async def reject_overview_add_request(
-    request_id: str,
-    reviewer: str,
-    reason: str,
-    *,
-    user_service=None,
-) -> dict[str, str]:
+async def reject_overview_add_request(request_id: str, reviewer: str, reason: str, *, user_service=None, expected: dict | None = None) -> dict[str, str]:
     service = _service(user_service)
-    if service is None:
-        return {"status": "error", "message": "身份服务不可用"}
+    if service is None or not reason.strip():
+        return {"status": "error", "message": "身份服务不可用或未填写驳回原因"}
     async with _review_locks[request_id]:
-        request = db_storage.get_deep_item([OVERVIEW_ADD_REQUESTS_KEY, request_id], {})
-        if not can_review_overview_add_request(request, reviewer, user_service=service):
-            return {"status": "forbidden", "message": "申请已处理或当前账号没有审批待办"}
-        assignment = request.get("workflow_assignment")
-        if not isinstance(assignment, dict):
-            return {"status": "error", "message": "审批快照无效"}
-        _supersede_current_assignment(service, request_id, assignment)
-        rejected_assignment = copy.deepcopy(assignment)
-        rejected_assignment["status"] = "rejected"
-        review_log = list(request.get("review_log") or [])
-        review_log.append(
-            {"action": "reject", "user": reviewer, "note": reason, "time": _now_text()}
-        )
-        await _update_request(
-            request_id,
-            {
-                "status": "rejected",
-                "reject_reason": reason,
-                "workflow_assignment": rejected_assignment,
-                "review_log": review_log,
-            },
-        )
-        return {"status": "rejected", "message": "关键概述新增申请已驳回"}
+        request, status = await _advance_add_review(request_id, reviewer, service, expected=expected, reject_reason=reason.strip())
+        return {"status": status, "message": "关键概述新增申请已驳回" if request is not None else "审批保存失败或申请已变化，请刷新后重试"}
 
 
 async def resubmit_overview_add_request(
@@ -602,6 +571,7 @@ async def resubmit_overview_add_request(
     service = _service(user_service)
     if service is None:
         return OverviewAddSaveResult("error", "身份服务不可用", request_id)
+    from .approval_transaction import ApprovalTransaction
 
     async with _review_locks[request_id]:
         request = db_storage.get_deep_item([OVERVIEW_ADD_REQUESTS_KEY, request_id], {})
@@ -622,8 +592,9 @@ async def resubmit_overview_add_request(
         if label != str(config.get("label") or label):
             return OverviewAddSaveResult("error", "重新提交的概述项与原申请不一致", request_id)
 
+        assignment_transaction = ApprovalTransaction(service)
         workflow_result = create_approval_sequence_assignments(
-            service,
+            assignment_transaction,
             module="project_overview",
             event=OVERVIEW_ADD_WORKFLOW_EVENT,
             entity_id=request_id,
@@ -646,7 +617,6 @@ async def resubmit_overview_add_request(
         if uploaded_file_path is not None:
             source_path = uploaded_file_path.resolve()
             if not source_path.is_file():
-                _supersede_current_assignment(service, request_id, assignment)
                 return OverviewAddSaveResult("error", "重新上传的文件已不存在", request_id)
             staging_dir = OVERVIEW_ADD_STAGING_DIR / request_id
             staging_dir.mkdir(parents=True, exist_ok=True)
@@ -654,7 +624,6 @@ async def resubmit_overview_add_request(
             try:
                 shutil.copyfile(source_path, new_staged_path)
             except OSError as exc:
-                _supersede_current_assignment(service, request_id, assignment)
                 return OverviewAddSaveResult("error", f"重新暂存送审文件失败：{exc}", request_id)
             final_file_path = str(source_path)
 
@@ -695,9 +664,10 @@ async def resubmit_overview_add_request(
                 "finished_at": "",
                 "result": {},
             },
+            expected=request,
+            assignment_transaction=assignment_transaction,
         )
         if not saved:
-            _supersede_current_assignment(service, request_id, assignment)
             if new_staged_path is not None:
                 new_staged_path.unlink(missing_ok=True)
             return OverviewAddSaveResult("error", "申请重新提交失败，请稍后重试", request_id)
@@ -725,12 +695,31 @@ async def withdraw_overview_add_request(
             or request.get("status") not in {"pending", "rejected", "failed"}
         ):
             return {"status": "forbidden", "message": "申请状态已变化，当前无法撤销"}
-        assignment = request.get("workflow_assignment")
-        if service is not None and isinstance(assignment, dict):
-            _supersede_current_assignment(service, request_id, assignment)
-        _cleanup_staged_file(request)
-        deleted = await db_storage.del_deep_item([OVERVIEW_ADD_REQUESTS_KEY, request_id])
+        removed = False
+        async def remove(records, connection):
+            nonlocal removed
+            current = (records or {}).get(request_id)
+            if not isinstance(current, dict) or current != request or current.get("status") not in {"pending", "rejected", "failed"}:
+                return db_storage.ATOMIC_NO_UPDATE
+            await connection.execute("UPDATE work_assignments SET status='superseded', updated_at=? WHERE module=? AND entity_id=? AND status='pending'",
+                                     (_now_text(), "project_overview", request_id))
+            records.pop(request_id)
+            removed = True
+            return records
+        saved = await db_storage.atomic_deep_update_transaction([OVERVIEW_ADD_REQUESTS_KEY], remove)
+        deleted = saved and removed
+        if deleted:
+            _cleanup_staged_file(request)
         return {
             "status": "withdrawn" if deleted else "error",
             "message": "申请已撤销" if deleted else "申请撤销失败",
         }
+
+
+def can_reconcile_overview_add(request: dict, actor: str, *, user_service=None) -> bool:
+    from .access_control import can
+    from .permission_catalog import PROJECT_OVERVIEW_ADD_REVIEW_PERMISSION
+    service = _service(user_service)
+    return bool(service is not None and request.get("status") in {"processing", "interrupted"}
+                and any(entry.get("user") == actor and entry.get("action") == "approve" for entry in request.get("review_log", []))
+                and can(service, actor, PROJECT_OVERVIEW_ADD_REVIEW_PERMISSION))

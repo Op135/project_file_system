@@ -104,7 +104,9 @@ def get_correction_pending_count(requests: dict, current_user: str, current_role
         status = request.get("status")
         if status == "pending" and can_review_correction_request(request, current_user, current_role):
             count += 1
-        elif status in {"rejected", "failed"} and request.get("submitter") == current_user:
+        elif status in {"rejected", "failed", "interrupted"} and request.get("submitter") == current_user:
+            count += 1
+        elif status in {"interrupted", "approved"} and can_review_correction_request(request, current_user, current_role):
             count += 1
     return count
 
@@ -214,12 +216,18 @@ async def create_correction_request(request: dict) -> tuple[bool, str]:
     return bool(success and inserted["value"]), request_id
 
 
-async def update_correction_request(request_id: str, changes: dict) -> bool:
+async def update_correction_request(request_id: str, changes: dict, *, expected: dict | None = None, actor: str = "") -> bool:
     updated = {"value": False}
 
     def update(request):
         if not request:
             return db_storage.ATOMIC_NO_UPDATE
+        if changes.get("status") in {"failed", "interrupted"} and request.get("status") == "approved":
+            return db_storage.ATOMIC_NO_UPDATE
+        if changes.get("status") == "pending":
+            from .overview_request_storage import resubmission_matches
+            if not resubmission_matches(request, expected, actor):
+                return db_storage.ATOMIC_NO_UPDATE
         request.update(copy.deepcopy(changes))
         request["updated_at"] = correction_now()
         updated["value"] = True
@@ -313,7 +321,7 @@ async def publish_correction_media(request: dict, source: Path, directory: Path,
     return copy_named_file(source, directory / Path(filename).name, expected_digest=digest)
 
 
-def build_media_file_audit(before: dict, config: dict, staged_path_value: str) -> tuple[bool, str, dict]:
+def build_media_file_audit(before: dict, config: dict, staged_path_value: str, *, after: dict | None = None) -> tuple[bool, str, dict]:
     """记录送审时的新旧文件指纹，确保审批执行的正是申请人提交的文件。"""
     upload_path_value = str(config.get("upload_path") or "").strip()
     if not upload_path_value:
@@ -326,12 +334,17 @@ def build_media_file_audit(before: dict, config: dict, staged_path_value: str) -
     staged_ok, staged_path = validate_staged_path(staged_path_value)
     if staged_path_value and (not staged_ok or staged_path is None):
         return False, "纠错暂存文件不存在或路径无效", {}
+    selected_path = upload_path / Path(str((after or before).get("content") or "")).name
+    if staged_path is None and after is not None and not selected_path.is_file():
+        return False, "选择的已有文件不存在", {}
     return (
         True,
         "",
         {
             "original_file_sha256": file_sha256(original_path) if original_path.is_file() else "",
             "staged_file_sha256": file_sha256(staged_path) if staged_path is not None else "",
+            "selected_file_sha256": file_sha256(selected_path) if staged_path is None and selected_path.is_file() else "",
+            "selected_file_path": str(selected_path.resolve()) if staged_path is None else "",
         },
     )
 
@@ -361,7 +374,7 @@ def _prepare_media_target(payload: dict, config: dict) -> tuple[bool, str, Optio
     return True, "", staged_path, target_path
 
 
-async def execute_correction_request(request: dict) -> dict:
+async def execute_correction_request(request: dict, *, reviewer: str = "", reviewer_role: str = "") -> dict:
     """审批通过后执行纠错；不修改 creator、timestamp、req_ver、notes 或激活状态。"""
     from .utils import validate_search_path, validate_svn_url
 
@@ -431,6 +444,11 @@ async def execute_correction_request(request: dict) -> dict:
             if expected_original_hash and original_hash != expected_original_hash:
                 return {"ok": False, "message": "原文件已在审批期间发生变化，请驳回后重新申请"}
             staged_hash = file_sha256(staged_path) if staged_path is not None else ""
+            if staged_path is None:
+                if (target_path is None or not payload.get("selected_file_sha256")
+                        or str(target_path.resolve()) != payload.get("selected_file_path")
+                        or file_sha256(target_path) != payload["selected_file_sha256"]):
+                    return {"ok": False, "message": "引用文件缺少送审校验信息或内容已变化，请重新核对后提交"}
             expected_staged_hash = str(payload.get("staged_file_sha256") or "")
             if expected_staged_hash and staged_hash != expected_staged_hash:
                 return {"ok": False, "message": "纠错暂存文件已发生变化，请驳回后重新申请"}
@@ -508,12 +526,45 @@ async def execute_correction_request(request: dict) -> dict:
         except Exception as exc:
             return {"ok": False, "message": f"纠错文件保存失败：{exc}"}
 
-    success = await overview_storage.atomic_deep_update([f"{project}_over_data"], apply_correction)
+    from .overview_request_storage import read_json, write_json
+    async def guard(_before, connection):
+        if not reviewer:
+            return True
+        records = await read_json(connection, db_storage, OVERVIEW_CORRECTION_REQUESTS_KEY)
+        current = records.get(str(request.get("id") or ""))
+        return bool(isinstance(current, dict) and current.get("status") == "processing"
+                    and current.get("payload") == request.get("payload")
+                    and can_review_correction_request(current, reviewer, reviewer_role))
+
+    async def complete(_before, _after, connection):
+        if not reviewer:
+            return
+        records = await read_json(connection, db_storage, OVERVIEW_CORRECTION_REQUESTS_KEY)
+        current = records[str(request["id"])]
+        current.update(status="approved", reviewer=reviewer, reviewer_role=reviewer_role,
+            reviewed_at=correction_now(), result={"ok": True, "message": "纠错已执行", "before_snapshot": before,
+                "after_snapshot": actual_after, "file_change": file_change,
+                "changes": build_correction_changes(before, actual_after, config, action),
+                "deleted_snapshots": [copy.deepcopy(target.get("snapshot") or {}) for target in delete_targets]
+                if action == "delete" else []})
+        current.setdefault("review_log", []).append({"action": "approve", "user": reviewer, "time": correction_now()})
+        await write_json(connection, db_storage, OVERVIEW_CORRECTION_REQUESTS_KEY, records)
+
+    if reviewer:
+        success = await overview_storage.atomic_deep_update([f"{project}_over_data"], apply_correction,
+            transaction_guard=guard, transaction_effect=complete)
+    else:
+        success = await overview_storage.atomic_deep_update([f"{project}_over_data"], apply_correction)
     if not success or not correction_applied:
         # 正式文件可能被其他概述引用，业务失败只放弃本次引用。
         return {"ok": False, "message": "原概述已在审批期间发生变化，请驳回后重新申请"}
     if staged_path is not None:
-        cleanup_correction_staged_files([str(staged_path)])
+        try:
+            cleanup_correction_staged_files([str(staged_path)])
+        except OSError:
+            pass  # 正式数据已经提交；暂存清理失败不能改成审批失败。
+    if reviewer:
+        await db_storage.get_fresh_item(OVERVIEW_CORRECTION_REQUESTS_KEY, {})
 
     from .components import OverviewVersionManager
 
@@ -546,12 +597,22 @@ async def archive_correction_request(request_id: str, request: dict, status: str
         archive.setdefault("payload", {})["after_snapshot"] = copy.deepcopy(actual_after)
         archive["payload"]["staged_file_path"] = ""
 
-    def append(archives):
-        archives = archives or {}
+    from .overview_request_storage import read_json, write_json
+    removed = False
+    async def append(requests, connection):
+        nonlocal removed
+        current = (requests or {}).get(request_id)
+        if not isinstance(current, dict) or current.get("payload") != request.get("payload") or current.get("status") != "approved":
+            return db_storage.ATOMIC_NO_UPDATE
+        archives = await read_json(connection, db_storage, OVERVIEW_CORRECTION_ARCHIVES_KEY)
         archives[request_id] = archive
-        return archives
+        await write_json(connection, db_storage, OVERVIEW_CORRECTION_ARCHIVES_KEY, archives)
+        requests.pop(request_id)
+        removed = True
+        return requests
 
-    saved = await db_storage.atomic_deep_update([OVERVIEW_CORRECTION_ARCHIVES_KEY], append)
-    if not saved:
+    saved = await db_storage.atomic_deep_update_transaction([OVERVIEW_CORRECTION_REQUESTS_KEY], append)
+    if not saved or not removed:
         return False
-    return await db_storage.del_deep_item([OVERVIEW_CORRECTION_REQUESTS_KEY, request_id])
+    await db_storage.get_fresh_item(OVERVIEW_CORRECTION_ARCHIVES_KEY, {})
+    return True

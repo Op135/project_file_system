@@ -39,6 +39,7 @@ from ..overview_add_approval import (
     OVERVIEW_ADD_REQUESTS_KEY,
     approve_overview_add_request,
     can_review_overview_add_request,
+    can_reconcile_overview_add,
     get_overview_add_pending_count,
     reject_overview_add_request,
     withdraw_overview_add_request,
@@ -322,6 +323,8 @@ def status_badge(text: str | None, color_name: str = "gray"):
         "approved": ("green-100", "green-800"),
         "approved_with_warnings": ("amber-100", "amber-800"),
         "processing": ("blue-100", "blue-800"),
+        "interrupted": ("red-100", "red-800"),
+        "reconciled": ("gray-100", "gray-800"),
         "failed": ("red-100", "red-800"),
     }
     display_text = {
@@ -331,6 +334,8 @@ def status_badge(text: str | None, color_name: str = "gray"):
         "approved": "已通过",
         "approved_with_warnings": "已通过（部分异常）",
         "processing": "审批执行中",
+        "interrupted": "中断待核对",
+        "reconciled": "已核对归档",
         "failed": "执行失败",
     }.get(normalized_text, normalized_text)
     bg, fg = colors.get(normalized_text, (f"{color_name}-100", f"{color_name}-800"))
@@ -1184,6 +1189,24 @@ def information_page():
 
     correction_request_dialog = ui.dialog().props("persistent")
 
+    def render_interruption_controls(key, request_id, request, authorized):
+        if request.get("status") not in {"processing", "interrupted"}:
+            return
+        ui.label("执行可能部分完成。请核对实际概述和关联影响，不要重复提交整单。").classes("text-red-700")
+        if not authorized(request) or (request.get("status") == "processing" and not request.get("completion_checkpoint")):
+            return
+        note = ui.input("核对说明：已完成项、未完成项及后续处理").classes("w-full")
+        async def reconcile():
+            from ..overview_request_storage import reconcile_interrupted
+            if await reconcile_interrupted(db_storage, key, request_id, current_user, str(note.value or ""), authorized):
+                correction_request_dialog.close()
+                overview_add_request_dialog.close()
+                refresh_overview_request_sections()
+                ui.notify("结果已恢复或核对归档，未重跑业务。", type="positive")
+            else:
+                ui.notify("请填写核对说明；状态或权限变化后请重新打开。", type="warning")
+        ui.button("恢复已保存结果" if request.get("completion_checkpoint") else "确认核对并归档", on_click=reconcile)
+
     async def delete_correction_request(request_id: str) -> None:
         request = db_storage.get_deep_item([OVERVIEW_CORRECTION_REQUESTS_KEY, request_id], {})
         if request.get("submitter") != current_user or request.get("status") not in {
@@ -1193,7 +1216,8 @@ def information_page():
         }:
             ui.notify("申请状态已变化，当前无法撤销删除。", type="warning")
             return
-        deleted = await db_storage.del_deep_item([OVERVIEW_CORRECTION_REQUESTS_KEY, request_id])
+        from ..overview_request_storage import withdraw_request
+        deleted = await withdraw_request(db_storage, OVERVIEW_CORRECTION_REQUESTS_KEY, request_id, current_user, request)
         if not deleted:
             ui.notify("纠错申请删除失败，请刷新后重试。", type="negative")
             return
@@ -1203,7 +1227,7 @@ def information_page():
         ui.notify("纠错申请已撤销删除。", type="positive")
         refresh_overview_request_sections()
 
-    async def approve_correction_request(request_id: str) -> None:
+    async def approve_correction_request(request_id: str, expected: dict | None = None) -> None:
         # 先让详情弹窗完成关闭动画；审批中的文件、数据库和归档操作随后继续执行。
         correction_request_dialog.close()
         await asyncio.sleep(0.1)
@@ -1215,6 +1239,7 @@ def information_page():
                     not request
                     or request.get("status") != "pending"
                     or not can_review_correction_request(request, current_user, str(current_role or ""))
+                    or (expected is not None and request != expected)
                 ):
                     return db_storage.ATOMIC_NO_UPDATE
                 request["status"] = "processing"
@@ -1223,15 +1248,15 @@ def information_page():
                 claimed["request"] = copy.deepcopy(request)
                 return request
 
-            await db_storage.atomic_deep_update([OVERVIEW_CORRECTION_REQUESTS_KEY, request_id], claim)
+            claim_saved = await db_storage.atomic_deep_update([OVERVIEW_CORRECTION_REQUESTS_KEY, request_id], claim)
             request = claimed["request"]
-            if claimed["value"] is not True or not isinstance(request, dict):
+            if not claim_saved or claimed["value"] is not True or not isinstance(request, dict):
                 ui.notify("申请已被处理或当前账号无审批权限。", type="warning")
                 refresh_overview_request_sections()
                 return
             processing_notice = ui.notification("正在执行单项概述纠错审批…", timeout=None, spinner=True)
             try:
-                result = await execute_correction_request(request)
+                result = await execute_correction_request(request, reviewer=current_user, reviewer_role=str(current_role or ""))
                 if not result.get("ok"):
                     await update_correction_request(
                         request_id,
@@ -1290,14 +1315,14 @@ def information_page():
                 logger.error("执行单项概述纠错失败: request_id=%s", request_id, exc_info=True)
                 await update_correction_request(
                     request_id,
-                    {"status": "failed", "result": {"ok": False, "message": str(exc)}},
+                    {"status": "interrupted", "result": {"ok": False, "message": f"{exc}；请核对实际结果，不要直接重跑"}},
                 )
                 ui.notify(f"纠错审批异常：{exc}", type="negative", timeout=0)
             finally:
                 processing_notice.dismiss()
             refresh_overview_request_sections()
 
-    def reject_correction_request(request_id: str) -> None:
+    def reject_correction_request(request_id: str, expected: dict | None = None) -> None:
         reject_dialog = ui.dialog().props("persistent")
         with reject_dialog, ui.card().classes("w-[440px] max-w-[94vw]"):
             ui.label("驳回原记录纠错申请").classes("text-lg font-bold text-red-700")
@@ -1315,6 +1340,7 @@ def information_page():
                         not request
                         or request.get("status") != "pending"
                         or not can_review_correction_request(request, current_user, str(current_role or ""))
+                        or (expected is not None and request != expected)
                     ):
                         return db_storage.ATOMIC_NO_UPDATE
                     request["status"] = "rejected"
@@ -1332,8 +1358,8 @@ def information_page():
                     rejected["value"] = True
                     return request
 
-                await db_storage.atomic_deep_update([OVERVIEW_CORRECTION_REQUESTS_KEY, request_id], reject)
-                if rejected["value"] is not True:
+                saved = await db_storage.atomic_deep_update([OVERVIEW_CORRECTION_REQUESTS_KEY, request_id], reject)
+                if not saved or rejected["value"] is not True:
                     ui.notify("申请已被处理或当前账号无审批权限。", type="warning")
                     return
                 reject_dialog.close()
@@ -1446,11 +1472,26 @@ def information_page():
                         )
 
             with ui.row().classes("w-full justify-end gap-2 pt-2 border-t"):
+                render_interruption_controls(OVERVIEW_CORRECTION_REQUESTS_KEY, request_id, request,
+                    lambda current: can_review_correction_request(current, current_user, str(current_role or "")))
+                if can_review and request.get("status") == "approved":
+                    async def retry_archive():
+                        current = await db_storage.get_fresh_item(OVERVIEW_CORRECTION_REQUESTS_KEY, {})
+                        current = current.get(request_id, {})
+                        if (current.get("status") == "approved"
+                            and can_review_correction_request(current, current_user, str(current_role or ""))
+                            and await archive_correction_request(request_id, current, "approved")):
+                            correction_request_dialog.close()
+                            refresh_overview_request_sections()
+                            ui.notify("归档完成，未重复执行纠错。", type="positive")
+                        else:
+                            ui.notify("归档未完成，请刷新后重试。", type="warning")
+                    ui.button("重试归档（不重复纠错）", on_click=retry_archive)
                 if can_review and request.get("status") == "pending":
-                    ui.button("驳回", on_click=lambda: reject_correction_request(request_id)).props(
+                    ui.button("驳回", on_click=lambda: reject_correction_request(request_id, copy.deepcopy(request))).props(
                         "outline color=negative"
                     )
-                    ui.button("审批通过并纠错", on_click=lambda: approve_correction_request(request_id)).props(
+                    ui.button("审批通过并纠错", on_click=lambda: approve_correction_request(request_id, copy.deepcopy(request))).props(
                         "color=positive"
                     )
                 if is_mine and request.get("status") in {"pending", "rejected", "failed"}:
@@ -1473,8 +1514,8 @@ def information_page():
     batch_request_dialog = ui.dialog().props("persistent")
     overview_add_request_dialog = ui.dialog().props("persistent")
 
-    async def approve_overview_add(request_id: str) -> None:
-        result = await approve_overview_add_request(request_id, current_user)
+    async def approve_overview_add(request_id: str, expected: dict | None = None) -> None:
+        result = await approve_overview_add_request(request_id, current_user, expected=expected)
         status = str(result.get("status") or "")
         ui.notify(
             str(result.get("message") or "审批处理完成"),
@@ -1493,7 +1534,7 @@ def information_page():
         overview_add_request_dialog.close()
         refresh_overview_request_sections()
 
-    def reject_overview_add(request_id: str) -> None:
+    def reject_overview_add(request_id: str, expected: dict | None = None) -> None:
         reject_dialog = ui.dialog().props("persistent")
         with reject_dialog, ui.card().classes("w-[440px] max-w-[94vw]"):
             ui.label("驳回关键概述新增申请").classes("text-lg font-bold text-red-700")
@@ -1508,6 +1549,7 @@ def information_page():
                     request_id,
                     current_user,
                     reason,
+                    expected=expected,
                 )
                 ui.notify(
                     result["message"],
@@ -1539,7 +1581,8 @@ def information_page():
             return
         is_mine = request.get("submitter") == current_user
         can_review = can_review_overview_add_request(request, current_user)
-        if not is_mine and not can_review:
+        can_reconcile = can_reconcile_overview_add(request, current_user)
+        if not is_mine and not can_review and not can_reconcile:
             ui.notify("当前账号无权查阅该申请。", type="negative")
             return
 
@@ -1703,11 +1746,11 @@ def information_page():
                 if can_review and request.get("status") == "pending":
                     ui.button(
                         "驳回",
-                        on_click=lambda: reject_overview_add(request_id),
+                        on_click=lambda: reject_overview_add(request_id, copy.deepcopy(request)),
                     ).props("outline color=negative")
                     ui.button(
                         "审批通过并生效",
-                        on_click=lambda: approve_overview_add(request_id),
+                        on_click=lambda: approve_overview_add(request_id, copy.deepcopy(request)),
                     ).props("color=positive")
                 if is_mine and request.get("status") in {"pending", "rejected", "failed"}:
                     ui.button(
@@ -1723,11 +1766,15 @@ def information_page():
                             add_request_id=request_id,
                         ),
                     ).props("color=primary")
+                render_interruption_controls(OVERVIEW_ADD_REQUESTS_KEY, request_id, request,
+                    lambda current: can_reconcile_overview_add(current, current_user))
                 ui.button("关闭", on_click=overview_add_request_dialog.close).props("flat color=grey")
         overview_add_request_dialog.open()
 
     def batch_status_text(status: str) -> str:
         return {
+            "interrupted": "中断待核对",
+            "reconciled": "已核对归档",
             "pending": "待审批",
             "processing": "审批执行中",
             "rejected": "已驳回",
@@ -1749,7 +1796,8 @@ def information_page():
             return
         payload = request.get("payload") or {}
         staged_path = Path(str(payload.get("staged_file_path") or ""))
-        deleted = await db_storage.del_deep_item([BATCH_OVERVIEW_REQUESTS_KEY, request_id])
+        from ..overview_request_storage import withdraw_request
+        deleted = await withdraw_request(db_storage, BATCH_OVERVIEW_REQUESTS_KEY, request_id, current_user, request)
         if not deleted:
             ui.notify("申请删除失败，请刷新后重试。", type="negative")
             return
@@ -1767,7 +1815,7 @@ def information_page():
         ui.notify("批量概述申请已撤销删除。", type="positive")
         refresh_overview_request_sections()
 
-    async def approve_batch_request(request_id: str) -> None:
+    async def approve_batch_request(request_id: str, expected: dict | None = None) -> None:
         # 批量执行可能包含多个项目和文件操作，先收起弹窗避免界面等待执行完成。
         batch_request_dialog.close()
         await asyncio.sleep(0.1)
@@ -1779,27 +1827,34 @@ def information_page():
                     not request
                     or request.get("status") != "pending"
                     or not can_review_batch_overview_request(request, current_user, str(current_role or ""))
+                    or (expected is not None and request != expected)
                 ):
                     return db_storage.ATOMIC_NO_UPDATE
                 request["status"] = "processing"
                 request["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                request.pop("completion_checkpoint", None)
+                request.pop("execution_progress", None)
                 claimed["value"] = True
                 claimed["request"] = copy.deepcopy(request)
                 return request
 
-            await db_storage.atomic_deep_update([BATCH_OVERVIEW_REQUESTS_KEY, request_id], claim)
+            claim_saved = await db_storage.atomic_deep_update([BATCH_OVERVIEW_REQUESTS_KEY, request_id], claim)
             request = claimed["request"]
-            if claimed["value"] is not True or not isinstance(request, dict):
+            if not claim_saved or claimed["value"] is not True or not isinstance(request, dict):
                 ui.notify("申请已被处理或当前账号无审核权限。", type="warning")
                 refresh_overview_request_sections()
                 return
 
             processing_notice = ui.notification("正在执行批量概述审批…", timeout=None, spinner=True)
+            result = None
             try:
-                result = await execute_batch_overview_request(request)
+                async def save_progress(progress):
+                    if not await update_batch_overview_request(request_id, {"execution_progress": progress}):
+                        raise RuntimeError("执行进度保存失败，已停止后续处理，请核对已完成项目")
+                result = await execute_batch_overview_request(request, progress=save_progress)
                 success_count = len(result.get("successes", []))
                 failed_items = result.get("failed", [])
-                if success_count and failed_items:
+                if success_count and (failed_items or result.get("skipped")):
                     final_status = "approved_with_warnings"
                 elif success_count:
                     final_status = "approved"
@@ -1814,17 +1869,21 @@ def information_page():
                         "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     }
                 )
-                await update_batch_overview_request(
-                    request_id,
-                    {
+                completion = {
                         "status": final_status,
                         "reviewer": current_user,
                         "reviewer_role": current_role,
                         "finished_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         "result": result,
                         "review_log": review_log,
-                    },
-                )
+                    }
+                if not await update_batch_overview_request(request_id, {"completion_checkpoint": completion}):
+                    raise RuntimeError("业务已执行，但结果检查点保存失败；请核对实际结果，不能重新执行整单")
+                if not await update_batch_overview_request(request_id, completion):
+                    # 只重试结果写入，不重跑业务。
+                    if not await update_batch_overview_request(request_id, completion):
+                        ui.notify("业务已执行，最终状态保存失败；完整结果已保留，重启后恢复状态，请勿重复执行。", type="negative", timeout=0)
+                        return
                 if success_count:
                     completion_scheduler = globals().get("_schedule_overview_completion_cc")
                     if callable(completion_scheduler):
@@ -1838,19 +1897,21 @@ def information_page():
                 ui.notify(result.get("message", "批量申请已处理。"), type=notification_type, timeout=0)
             except Exception as exc:
                 logger.error("执行批量概述审批申请失败: request_id=%s", request_id, exc_info=True)
-                await update_batch_overview_request(
+                saved = await update_batch_overview_request(
                     request_id,
                     {
-                        "status": "failed",
-                        "result": {"message": str(exc), "successes": [], "skipped": [], "failed": [str(exc)]},
+                        "status": "interrupted",
+                        "result": {**(result or {}), "message": f"{exc}。执行可能部分完成，请核对进度及实际概述，不要重跑整单。", "failed": [str(exc)]},
                     },
                 )
+                if not saved:
+                    ui.notify("中断状态也未能保存，请恢复数据库连接并重启，系统将转为中断待核对。", type="negative", timeout=0)
                 ui.notify(f"审批执行失败：{exc}", type="negative", timeout=0)
             finally:
                 processing_notice.dismiss()
-            refresh_overview_request_sections()
+                refresh_overview_request_sections()
 
-    def reject_batch_request(request_id: str) -> None:
+    def reject_batch_request(request_id: str, expected: dict | None = None) -> None:
         reject_dialog = ui.dialog().props("persistent")
         with reject_dialog, ui.card().classes("w-[440px] max-w-[94vw]"):
             ui.label("驳回批量概述申请").classes("text-lg font-bold text-red-700")
@@ -1868,6 +1929,7 @@ def information_page():
                         not request
                         or request.get("status") != "pending"
                         or not can_review_batch_overview_request(request, current_user, str(current_role or ""))
+                        or (expected is not None and request != expected)
                     ):
                         return db_storage.ATOMIC_NO_UPDATE
                     request["status"] = "rejected"
@@ -1885,8 +1947,8 @@ def information_page():
                     rejected["value"] = True
                     return request
 
-                await db_storage.atomic_deep_update([BATCH_OVERVIEW_REQUESTS_KEY, request_id], reject)
-                if rejected["value"] is not True:
+                saved = await db_storage.atomic_deep_update([BATCH_OVERVIEW_REQUESTS_KEY, request_id], reject)
+                if not saved or rejected["value"] is not True:
                     ui.notify("申请已被处理或当前账号无审核权限。", type="warning")
                     return
                 reject_dialog.close()
@@ -1926,6 +1988,14 @@ def information_page():
                 if label
             },
         }
+
+        reviewed_targets = copy.deepcopy(payload.get("chip_targets") or [])
+        if editable and action == "state":
+            label = str(payload.get("label") or payload.get("config", {}).get("label") or "")
+            for target in reviewed_targets:
+                project = str(target.get("project") or "")
+                target["snapshot"] = db_storage.get_deep_item([f"{project}_over_data", label, str(target.get("chip_id") or "")], {})
+                target["req_ver"] = str(app.storage.general.get("project_req_max_ver", {}).get(project, "0.0"))
 
         batch_request_dialog.clear()
         with batch_request_dialog, ui.card().classes("w-[900px] max-w-[96vw] h-[80vh] max-h-[92vh] p-4"):
@@ -1998,6 +2068,8 @@ def information_page():
                                         ui.label(value).classes("whitespace-pre-wrap break-all text-sm text-gray-600")
                     else:
                         ui.label(f"已选概述条目：{len(payload.get('chip_targets', []))} 条").classes("text-sm")
+                        for target in reviewed_targets:
+                            ui.label(f"{target.get('project')}｜版本 {target.get('req_ver', '未记录')}｜{target.get('snapshot', {}).get('content', '未记录，请重新申请')}").classes("text-sm")
                         target_radio = (
                             ui.radio({"active": "设为激活", "pending": "设为待定", "inactive": "设为失活"})
                             .bind_value(editor, "target_state")
@@ -2042,6 +2114,12 @@ def information_page():
                                 checkbox.disable()
 
                     result = request.get("result") or {}
+                    progress = request.get("execution_progress") or {}
+                    if request.get("status") in {"processing", "interrupted"}:
+                        ui.label("执行可能部分完成，请核对实际概述和关联影响；不要重新提交整个批次。仅对确认未完成的项目另行申请。").classes("text-red-700")
+                        ui.label(f"最后执行位置：{progress.get('current', '尚未记录')}")
+                        for completed in progress.get("successes", []):
+                            ui.label(f"主项已处理｜{completed.get('project')} / {completed.get('chip_id')}（关联影响另行核对）")
                     if result:
                         ui.separator()
                         ui.label("执行结果").classes("font-bold")
@@ -2069,7 +2147,7 @@ def information_page():
                         editor["target_state"]
                     ]
                     new_payload["chip_targets"] = [
-                        target for target in new_payload.get("chip_targets", []) if target.get("project") in projects
+                        target for target in reviewed_targets if target.get("project") in projects
                     ]
                     if not new_payload["chip_targets"]:
                         ui.notify("所选项目中没有可处理的目标概述条目。", type="warning")
@@ -2097,7 +2175,7 @@ def information_page():
                         "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     }
                 )
-                await update_batch_overview_request(
+                saved = await update_batch_overview_request(
                     request_id,
                     {
                         "status": "pending",
@@ -2105,15 +2183,31 @@ def information_page():
                         "payload": new_payload,
                         "review_log": review_log,
                     },
+                    expected=request, actor=current_user,
                 )
+                if not saved:
+                    ui.notify("申请已被处理、修改或权限已变化，请关闭后重新打开。", type="warning")
+                    return
                 batch_request_dialog.close()
                 ui.notify("申请已修改并重新提交审批。", type="positive")
                 refresh_overview_request_sections()
 
             with ui.row().classes("w-full justify-end gap-2 pt-2 border-t"):
+                if can_review and request.get("status") in {"interrupted", "processing"}:
+                    if request.get("completion_checkpoint") or request.get("status") == "interrupted":
+                        reconcile_note = ui.input("核对说明：已完成项、未完成项及后续处理").classes("w-full")
+                        async def reconcile_batch():
+                            from ..overview_batch_operations import resolve_batch_interruption
+                            if await resolve_batch_interruption(request_id, current_user, str(current_role or ""), str(reconcile_note.value or "")):
+                                batch_request_dialog.close()
+                                refresh_overview_request_sections()
+                                ui.notify("结果已恢复或核对归档，未重新执行任何业务。", type="positive")
+                            else:
+                                ui.notify("请填写核对说明；申请状态或权限变化时请刷新重试。", type="warning")
+                        ui.button("恢复已保存结果" if request.get("completion_checkpoint") else "确认核对并归档", on_click=reconcile_batch)
                 if can_review and request.get("status") == "pending":
-                    ui.button("驳回", on_click=lambda: reject_batch_request(request_id)).props("outline color=negative")
-                    ui.button("审批通过并执行", on_click=lambda: approve_batch_request(request_id)).props(
+                    ui.button("驳回", on_click=lambda: reject_batch_request(request_id, copy.deepcopy(request))).props("outline color=negative")
+                    ui.button("审批通过并执行", on_click=lambda: approve_batch_request(request_id, copy.deepcopy(request))).props(
                         "color=positive"
                     )
                 if is_mine and request.get("status") in {"pending", "rejected", "failed"}:
@@ -2629,9 +2723,9 @@ def information_page():
         visible_correction_requests = {
             rid: request
             for rid, request in correction_requests.items()
-            if (request.get("submitter") == current_user and request.get("status") in {"pending", "rejected", "failed"})
+            if (request.get("submitter") == current_user and request.get("status") in {"pending", "rejected", "failed", "processing", "interrupted", "approved"})
             or (
-                request.get("status") == "pending"
+                request.get("status") in {"pending", "processing", "interrupted", "approved"}
                 and can_review_correction_request(request, current_user, str(current_role or ""))
             )
         }
@@ -2641,10 +2735,10 @@ def information_page():
             for rid, request in batch_requests.items()
             if (
                 request.get("submitter") == current_user
-                and request.get("status") in {"pending", "rejected", "failed", "withdrawn"}
+                and request.get("status") in {"pending", "rejected", "failed", "withdrawn", "processing", "interrupted"}
             )
             or (
-                request.get("status") == "pending"
+                request.get("status") in {"pending", "processing", "interrupted"}
                 and can_review_batch_overview_request(request, current_user, str(current_role or ""))
             )
         }
@@ -2657,9 +2751,10 @@ def information_page():
                 and (
                     (
                         request.get("submitter") == current_user
-                        and request.get("status") in {"pending", "rejected", "failed"}
+                        and request.get("status") in {"pending", "rejected", "failed", "processing", "interrupted"}
                     )
                     or can_review_overview_add_request(request, current_user)
+                    or can_reconcile_overview_add(request, current_user)
                 )
             )
         }
