@@ -10,9 +10,20 @@ from unittest.mock import patch
 from fastapi import HTTPException
 
 from src.ecn_management_config import ECNState, ECN_EXECUTION_STAGE_OVERVIEW_RUNNING
-from src.modules.ecn import actions, attachment_preview, attachments, repository, overview_execution, overview_files
+from src.modules.ecn import (
+    actions,
+    attachment_preview,
+    attachment_ui,
+    attachments,
+    repository,
+    overview_execution,
+    overview_files,
+)
 from src.overview_file_storage import file_digest, make_file_selection
 from src.modules.ecn.models import get_ecn_template
+from src.modules.ecn.scheme_panel import get_overview_file_selection_note
+from src.config import PDF_PREVIEW_CACHE
+from src.pdf_preview import get_cached_pdf_response
 from src.user_service import UserService
 from tests.test_error_management_concurrency import load_isolated_db_storage
 
@@ -363,6 +374,37 @@ class ECNAttachmentPreviewTests(unittest.TestCase):
         self.addCleanup(attachment_preview._preview_tokens.clear)
         attachment_preview._pending_preview_tokens.clear()
         self.addCleanup(attachment_preview._pending_preview_tokens.clear)
+        PDF_PREVIEW_CACHE.clear()
+        self.addCleanup(PDF_PREVIEW_CACHE.clear)
+
+    def test_cached_pdf_can_be_read_repeatedly_by_browser_viewer(self):
+        PDF_PREVIEW_CACHE["client-id-preview-id"] = b"%PDF-1.7\ncontent"
+
+        first = get_cached_pdf_response("client-id-preview-id")
+        second = get_cached_pdf_response("client-id-preview-id")
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(first.body, second.body)
+        self.assertEqual(first.media_type, "application/pdf")
+        self.assertIn("client-id-preview-id", PDF_PREVIEW_CACHE)
+
+    def test_overview_file_selection_note_is_file_type_independent(self):
+        for name in ("示意图.png", "执行文件.hex", "规格书.pdf"):
+            with self.subTest(name=name):
+                self.assertEqual(
+                    get_overview_file_selection_note(
+                        {"file_selection": {"mode": "new", "name": name}}
+                    ),
+                    f"保存本次上传文件 · 正式文件名：{name}",
+                )
+        self.assertEqual(
+            get_overview_file_selection_note(
+                {"file_selection": {"mode": "existing", "name": "已有文件.pdf"}}
+            ),
+            "使用服务器已有文件 · 正式文件名：已有文件.pdf",
+        )
+        self.assertEqual(get_overview_file_selection_note({"content": "普通文字"}), "")
 
     def test_pdf_and_image_use_inline_response(self):
         for name, media_type in (("测试报告.pdf", "application/pdf"), ("现场照片.png", "image/png")):
@@ -380,6 +422,30 @@ class ECNAttachmentPreviewTests(unittest.TestCase):
                 self.assertEqual(response.media_type, media_type)
                 self.assertTrue(response.headers["content-disposition"].startswith("inline;"))
                 self.assertEqual(response.headers["x-content-type-options"], "nosniff")
+
+    def test_pdf_open_uses_same_browser_window_method_as_overview_page(self):
+        path = Path(self.temp.name) / "测试报告.pdf"
+        path.write_bytes(b"pdf-content")
+        metadata = {"id": "file-1", "name": "测试报告.pdf"}
+        with (
+            patch.object(attachment_ui, "visible_attachments", return_value=[metadata]),
+            patch.object(attachment_ui, "resolve_attachment", return_value=path),
+            patch.object(
+                attachment_ui,
+                "issue_attachment_preview_url",
+                return_value="/ecn_attachment_preview/test-token",
+            ),
+            patch.object(attachment_ui.ui, "run_javascript") as run_javascript,
+            patch.object(attachment_ui.ui.navigate, "to") as navigate_to,
+        ):
+            attachment_ui.open_ecn_attachment_file(
+                "ECN26091601", "scheme", "item-1", "", "file-1", "owner", "测试岗位"
+            )
+
+        run_javascript.assert_called_once_with(
+            'window.open("/ecn_attachment_preview/test-token", \'_blank\');'
+        )
+        navigate_to.assert_not_called()
 
     def test_execution_review_attachment_is_visible_to_reviewer_and_original_owner(self):
         attachment = {

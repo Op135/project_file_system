@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Callable
 
 from nicegui import app, ui
@@ -34,6 +35,11 @@ def _show_image_preview(url: str) -> None:
     preview.open()
 
 
+def _open_pdf_in_new_tab(url: str) -> None:
+    """沿用普通概述页的浏览器原生打开方式，避免导航组件的新标签页被拦截。"""
+    ui.run_javascript(f"window.open({json.dumps(url)}, '_blank');")
+
+
 def open_ecn_attachment_file(
     ecn_id: str, scope: str, item_id: str, task_key: str, file_id: str, user: str, role: str,
 ) -> None:
@@ -54,9 +60,9 @@ def open_ecn_attachment_file(
             ecn_id, scope, item_id, task_key, file_id, user, role,
         ))
     elif kind == "pdf":
-        ui.navigate.to(issue_attachment_preview_url(
+        _open_pdf_in_new_tab(issue_attachment_preview_url(
             ecn_id, scope, item_id, task_key, file_id, user, role,
-        ), new_tab=True)
+        ))
     else:
         ui.download(path, name)
 
@@ -77,7 +83,7 @@ def open_staged_ecn_attachment_file(attachment: dict, user: str, role: str) -> N
     if kind == "image":
         _show_image_preview(issue_staged_attachment_preview_url(attachment, user, role))
     elif kind == "pdf":
-        ui.navigate.to(issue_staged_attachment_preview_url(attachment, user, role), new_tab=True)
+        _open_pdf_in_new_tab(issue_staged_attachment_preview_url(attachment, user, role))
     else:
         ui.download(path, name)
 

@@ -6,8 +6,6 @@ import sys
 import warnings
 from logging.handlers import RotatingFileHandler
 
-from starlette.responses import Response
-
 from .nicegui_bootstrap import app, ui
 
 # 关键：导入所有页面。这将自动注册所有 @ui.page 路由
@@ -21,7 +19,8 @@ from . import (
     pages as pages,  # 导入页面以注册路由；显式保留副作用导入
 )
 from .components import StorageBackupManager
-from .config import BASE_DIR, IMG_DIR, PDF_PREVIEW_CACHE, ST, WECOM_CONTACT_CACHE_TTL_SECONDS
+from .config import BASE_DIR, IMG_DIR, ST, WECOM_CONTACT_CACHE_TTL_SECONDS
+from .pdf_preview import get_cached_pdf_response
 from .config_service import ConfigService
 from .ecn_workflow import reconcile_ecn_work_assignments
 from .error_management_config import (
@@ -447,19 +446,8 @@ async def get_svn_pdf_from_cache(id: str):  # <--- [修改] 接收 id 查询参�
     """
     一个专门的路由，用于从 *内存缓存* 中获取并返回 PDF 字节。
     """
-    # !!! 关键修改：从 PDF_PREVIEW_CACHE 中读取 !!!
-    #    使用 .pop() 来获取数据并立即将其从缓存中删除 (自清理)
-    pdf_bytes = PDF_PREVIEW_CACHE.pop(id, None)
-
-    if not pdf_bytes:
-        return Response(content="PDF 数据未找到、已过期或会话已结束。", status_code=404)
-
-    # (这个返回部分保持不变)
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": 'inline; filename="document.pdf"'},
-    )
+    # Chrome PDF查看器可能对同一URL发起多次读取；不能在首次请求时弹出并删除缓存。
+    return get_cached_pdf_response(id)
 
 
 # ======================

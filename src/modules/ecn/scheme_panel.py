@@ -83,6 +83,22 @@ from .scheme_assignments import open_scheme_assignment_dialog
 logger = logging.getLogger(__name__)
 
 
+def get_overview_file_selection_note(new_data: object) -> str:
+    """返回系统内资料文件选择说明，供文件名悬停展示而不占用表格正文。"""
+    if not isinstance(new_data, dict):
+        return ""
+    file_selection = new_data.get("file_selection")
+    if not isinstance(file_selection, dict):
+        return ""
+    source_text = (
+        "使用服务器已有文件"
+        if file_selection.get("mode") == "existing"
+        else "保存本次上传文件"
+    )
+    name = str(file_selection.get("name") or "").strip()
+    return f"{source_text} · 正式文件名：{name}" if name else source_text
+
+
 def build_scheme_panel(
     tab_scheme,
     wf,
@@ -1423,10 +1439,7 @@ def build_scheme_panel(
                                 new_data = item.get("new_data", {})
                                 project_states = item.get("project_states", {})
                                 new_content = str(new_data.get("content") or "（未填写）")
-                                file_selection = new_data.get("file_selection")
-                                if isinstance(file_selection, dict):
-                                    source_text = "使用服务器已有文件" if file_selection.get("mode") == "existing" else "保存本次上传文件"
-                                    ui.label(f"{source_text} · 正式文件名：{file_selection.get('name', '')}").classes("text-xs text-blue-800 break-all")
+                                file_selection_note = get_overview_file_selection_note(new_data)
                                 if project_states:
                                     with ui.column().classes("w-full gap-0 self-stretch"):
                                         for project, project_state in project_states.items():
@@ -1481,6 +1494,8 @@ def build_scheme_panel(
                                                         if action == ECN_OVERVIEW_ACTION_ADD
                                                         else "原内容失效"
                                                     )
+                                                    if file_selection_note:
+                                                        result_note = f"{result_note}\n{file_selection_note}"
                                                     is_file_content = str(
                                                         new_data.get("type") or item.get("config_processing_type") or ""
                                                     ) in {
@@ -1503,7 +1518,11 @@ def build_scheme_panel(
                                                             "w-full text-sm font-semibold text-slate-900 cursor-help"
                                                         ).tooltip(result_note)
                                     return
-                                ui.label(new_content).classes("text-sm font-semibold text-slate-900 break-all")
+                                content_label = ui.label(new_content).classes(
+                                    "text-sm font-semibold text-slate-900 break-all"
+                                )
+                                if file_selection_note:
+                                    content_label.tooltip(file_selection_note)
 
                             rejection_history_dialog = ui.dialog()
 
