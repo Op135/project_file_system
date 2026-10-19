@@ -22,6 +22,7 @@ from src.modules.ecn import (
 from src.overview_file_storage import file_digest, make_file_selection
 from src.modules.ecn.models import get_ecn_template
 from src.modules.ecn.scheme_panel import get_overview_file_selection_note
+from src.modules.ecn.scheme_dialogs import discard_overview_upload_draft
 from src.config import PDF_PREVIEW_CACHE
 from src.pdf_preview import get_cached_pdf_response
 from src.user_service import UserService
@@ -36,6 +37,16 @@ class Uploaded:
 
     async def save(self, path):
         Path(path).write_bytes(b"test-pdf-content")
+
+
+class ReplacementUploaded:
+    name = "替换报告.pdf"
+
+    def size(self):
+        return len(b"replacement-pdf-content")
+
+    async def save(self, path):
+        Path(path).write_bytes(b"replacement-pdf-content")
 
 
 class ECNAttachmentTests(unittest.IsolatedAsyncioTestCase):
@@ -141,6 +152,140 @@ class ECNAttachmentTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(final_path.is_file())
         archive = saved.record["change_items"][0]["new_data"]["overview_upload"]
         self.assertTrue(attachments.resolve_attachment(archive).is_file())
+
+    async def test_removing_overview_upload_draft_deletes_pending_file(self):
+        staged = await attachments.stage_upload(Uploaded(), "owner")
+        pending_path = attachments.resolve_staged_attachment(staged)
+        self.assertTrue(pending_path.is_file())
+        staged_uploads = [staged]
+        new_data = {
+            "content": Uploaded.name,
+            "overview_upload": staged,
+            "file_selection": {"name": Uploaded.name},
+            "url_path": "/temporary",
+            "file_type": "application/pdf",
+            "local_file_path": str(pending_path),
+        }
+
+        discard_overview_upload_draft(new_data, staged_uploads)
+
+        self.assertFalse(pending_path.exists())
+        self.assertEqual(staged_uploads, [])
+        self.assertEqual(new_data, {})
+
+    async def test_overview_scheme_preview_rechecks_latest_author_and_file_reference(self):
+        file_id = "a" * 32
+        relative_path = f"owner/ECN26101902/overview_scheme-preview/{file_id}.png"
+        archive_path = self.files / relative_path
+        archive_path.parent.mkdir(parents=True)
+        archive_path.write_bytes(b"image-content")
+        attachment = {
+            "id": file_id,
+            "name": "方案图片.png",
+            "size": archive_path.stat().st_size,
+            "uploaded_by": "owner",
+            "relative_path": relative_path,
+        }
+        value = get_ecn_template()
+        value["ecn_id"] = "ECN26101902"
+        value["change_items"] = [{
+            "item_id": "scheme-preview",
+            "author": "owner",
+            "new_data": {"overview_upload": attachment},
+        }]
+        await self.storage.set_item("ecn_management_data", {value["ecn_id"]: value})
+        fake_app = SimpleNamespace(state=SimpleNamespace(user_service=self.service))
+        with (
+            patch.object(attachment_preview, "db_storage", self.storage),
+            patch.object(attachment_preview, "app", fake_app),
+        ):
+            url = attachment_preview.issue_overview_scheme_preview_url(
+                value["ecn_id"], "scheme-preview", file_id, "owner", "测试岗位"
+            )
+            response = attachment_preview.serve_ecn_overview_scheme_preview(url.rsplit("/", 1)[-1])
+            self.assertEqual(Path(response.path), archive_path)
+
+            denied_url = attachment_preview.issue_overview_scheme_preview_url(
+                value["ecn_id"], "scheme-preview", file_id, "other", "测试岗位"
+            )
+            with self.assertRaises(HTTPException):
+                attachment_preview.serve_ecn_overview_scheme_preview(denied_url.rsplit("/", 1)[-1])
+
+    async def test_replacing_and_deleting_overview_scheme_removes_old_archives(self):
+        value = get_ecn_template()
+        value["ecn_id"] = "ECN26101901"
+        value["workflow"].update(current_state=ECNState.ECN_SCHEMING, current_phase="ECN_SCHEME_PHASE")
+        value["target_projects"] = ["P1"]
+        await self.storage.set_item("ecn_management_data", {value["ecn_id"]: value})
+
+        staged = await attachments.stage_upload(Uploaded(), "owner")
+        selection = make_file_selection(
+            self.formal,
+            Uploaded.name,
+            "new",
+            file_digest(attachments.resolve_staged_attachment(staged)),
+        )
+        item = {
+            "item_id": "replace-upload-scheme",
+            "type": "overview_update",
+            "scheme_category": "overview_document",
+            "author": "owner",
+            "role": "研发",
+            "label": "file-param",
+            "first_col_label": "file-param",
+            "config_processing_type": "file",
+            "projects": ["P1"],
+            "req_idxs": [],
+            "linked_docs": [],
+            "linked_materials": [],
+            "project_states": {"P1": {"action": "add"}},
+            "new_data": {
+                "content": selection["name"],
+                "overview_upload": staged,
+                "file_selection": selection,
+            },
+        }
+        first = await actions.edit_scheme(
+            value["ecn_id"], value, item, None, "owner", "测试岗位",
+            user_service=self.service, storage=self.storage,
+        )
+        self.assertTrue(first.ok, first.message)
+        assert first.record is not None
+        original_item = first.record["change_items"][0]
+        old_archive = attachments.resolve_attachment(original_item["new_data"]["overview_upload"])
+        self.assertTrue(old_archive.is_file())
+
+        replacement = await attachments.stage_upload(ReplacementUploaded(), "owner")
+        replacement_selection = make_file_selection(
+            self.formal,
+            ReplacementUploaded.name,
+            "new",
+            file_digest(attachments.resolve_staged_attachment(replacement)),
+        )
+        replacement_item = copy.deepcopy(original_item)
+        replacement_item["new_data"] = {
+            "content": replacement_selection["name"],
+            "overview_upload": replacement,
+            "file_selection": replacement_selection,
+        }
+        replaced = await actions.edit_scheme(
+            value["ecn_id"], first.record, replacement_item, original_item, "owner", "测试岗位",
+            user_service=self.service, storage=self.storage,
+        )
+        self.assertTrue(replaced.ok, replaced.message)
+        assert replaced.record is not None
+        saved_replacement = replaced.record["change_items"][0]
+        new_archive = attachments.resolve_attachment(saved_replacement["new_data"]["overview_upload"])
+        self.assertFalse(old_archive.exists())
+        self.assertTrue(new_archive.is_file())
+
+        deleted = await actions.edit_scheme(
+            value["ecn_id"], replaced.record, saved_replacement, saved_replacement,
+            "owner", "测试岗位", delete=True,
+            user_service=self.service, storage=self.storage,
+        )
+        self.assertTrue(deleted.ok, deleted.message)
+        self.assertFalse(new_archive.exists())
 
     async def test_running_ecn_cannot_be_deleted(self):
         value = get_ecn_template()

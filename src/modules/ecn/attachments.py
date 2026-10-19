@@ -317,12 +317,12 @@ def collect_unique_published_attachments(value: object) -> list[dict]:
     return collected
 
 
-async def cleanup_published_attachments(value: object) -> int:
-    """业务删除提交后清理独占附件；失败只记录，避免反向伪造已提交业务数据。"""
+async def cleanup_published_attachments(value: object, *, include_overview: bool = False) -> int:
+    """业务删除提交后清理独占附件；概述归档仅在明确请求时删除。"""
     removed = 0
     for attachment in collect_unique_published_attachments(value):
-        # 系统内资料/概述的归档文件保留原路径，只解除业务引用。
-        if Path(str(attachment.get("relative_path") or "")).parent.name.startswith("overview_"):
+        is_overview = Path(str(attachment.get("relative_path") or "")).parent.name.startswith("overview_")
+        if is_overview and not include_overview:
             continue
         try:
             path = resolve_attachment(attachment)

@@ -12,10 +12,21 @@ from src.tools.intensity_distribution import (
     first_crossing, target_angle_rows,
 )
 from src.permission_catalog import TOOL_PERMISSIONS
-from src.custom_ui import CustomUploadRemovedEventArguments
+from src.custom_ui import CustomUploadRemovedEventArguments, _file_kind, _format_size
 
 
 class IntensityTests(unittest.TestCase):
+    def test_compact_upload_formats_size_summary(self):
+        self.assertEqual(_format_size(0), "0.0B")
+        self.assertEqual(_format_size(1536), "1.5KB")
+        self.assertEqual(_format_size(2 * 1024 * 1024), "2.0MB")
+
+    def test_compact_upload_classifies_preview_type(self):
+        self.assertEqual(_file_kind({"name": "图片.PNG"}), "image")
+        self.assertEqual(_file_kind({"name": "无后缀", "type": "image/webp"}), "image")
+        self.assertEqual(_file_kind({"name": "报告.PDF"}), "pdf")
+        self.assertEqual(_file_kind({"name": "固件.hex"}), "file")
+
     def test_constant_intensity_is_recovered_from_planar_illuminance(self):
         offsets = np.arange(-2, 3) * 0.25
         x, y = np.meshgrid(offsets, offsets)

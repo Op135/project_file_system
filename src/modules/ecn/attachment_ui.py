@@ -14,6 +14,7 @@ from ...ecn_management_config import ECN_ATTACHMENT_CONFIG
 from .attachment_preview import (
     attachment_kind,
     issue_attachment_preview_url,
+    issue_overview_scheme_preview_url,
     issue_staged_attachment_preview_url,
 )
 from .attachments import (
@@ -86,6 +87,26 @@ def open_staged_ecn_attachment_file(attachment: dict, user: str, role: str) -> N
         _open_pdf_in_new_tab(issue_staged_attachment_preview_url(attachment, user, role))
     else:
         ui.download(path, name)
+
+
+def open_overview_scheme_upload(
+    ecn_id: str,
+    item_id: str,
+    attachment: dict,
+    user: str,
+    role: str,
+) -> None:
+    """按文件类型打开系统内资料方案中已经归档的原文件。"""
+    name = str(attachment.get("name") or "附件")
+    file_id = str(attachment.get("id") or "")
+    url = issue_overview_scheme_preview_url(ecn_id, item_id, file_id, user, role)
+    kind = attachment_kind(name)
+    if kind == "image":
+        _show_image_preview(url)
+    elif kind == "pdf":
+        _open_pdf_in_new_tab(url)
+    else:
+        ui.download(url, name)
 
 
 def render_ecn_ecr_attachments(ecn_id: str, user: str, role: str, *, can_upload: bool) -> None:

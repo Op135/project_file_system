@@ -51,10 +51,30 @@ from ...ecn_management_config import (
 from .attachment_preview import (
     attachment_kind,
     issue_attachment_preview_url,
+    issue_overview_scheme_preview_url,
     issue_staged_attachment_preview_url,
 )
-from .attachment_ui import open_ecn_attachment_file, open_staged_ecn_attachment_file
+from .attachment_ui import (
+    open_ecn_attachment_file,
+    open_overview_scheme_upload,
+    open_staged_ecn_attachment_file,
+)
 from .attachments import cleanup_staged, publish_pending, stage_upload, resolve_staged_attachment
+
+
+def discard_overview_upload_draft(new_data: dict, staged_uploads: list[dict]) -> None:
+    """移除概述方案草稿文件，并同步删除仍处于暂存区的实体文件。"""
+    cleanup_staged(staged_uploads)
+    staged_uploads.clear()
+    for key in (
+        "overview_upload",
+        "file_selection",
+        "content",
+        "url_path",
+        "file_type",
+        "local_file_path",
+    ):
+        new_data.pop(key, None)
 
 
 def open_material_code_dialog(item: dict, on_save_callback) -> None:
@@ -993,6 +1013,14 @@ def open_overview_change_dialog(ecn_data, current_user, on_save_callback, edit_i
                                 elif ptype in ["file", "image", "video"]:
                                     ui.label("上传新文件").classes("text-xs text-gray-500 mb-1")
 
+                                    def clear_selected_overview_upload():
+                                        """清除当前编辑草稿中的文件及其同名确认结果。"""
+                                        discard_overview_upload_draft(
+                                            sel_state["new_data"],
+                                            staged_overview_uploads,
+                                        )
+                                        invalidate_path_validation()
+
                                     async def handle_upload(e):
                                         if upload_state["busy"]:
                                             return ui.notify("请等待当前文件上传完成。", type="warning")
@@ -1018,21 +1046,48 @@ def open_overview_change_dialog(ecn_data, current_user, on_save_callback, edit_i
                                             upload_state["busy"] = False
 
                                     def handle_upload_removed():
-                                        cleanup_staged(staged_overview_uploads)
-                                        staged_overview_uploads.clear()
-                                        sel_state["new_data"].pop("overview_upload", None)
-                                        sel_state["new_data"]["content"] = ""
-                                        invalidate_path_validation()
+                                        clear_selected_overview_upload()
+
+                                    saved_upload = sel_state["new_data"].get("overview_upload")
+                                    existing_uploads: list[dict] = []
+                                    if (
+                                        isinstance(saved_upload, dict)
+                                        and saved_upload.get("relative_path")
+                                        and not saved_upload.get("pending_path")
+                                    ):
+                                        existing_upload = copy.deepcopy(saved_upload)
+                                        existing_upload.setdefault(
+                                            "file_type",
+                                            sel_state["new_data"].get("file_type", ""),
+                                        )
+                                        actor_role = str(app.storage.user.get("current_role") or "")
+                                        ecn_id = str(ecn_data.get("ecn_id") or "")
+                                        item_id = str(edit_data.get("item_id") or "")
+                                        if attachment_kind(str(existing_upload.get("name") or "")) == "image":
+                                            existing_upload["preview_url"] = issue_overview_scheme_preview_url(
+                                                ecn_id,
+                                                item_id,
+                                                str(existing_upload.get("id") or ""),
+                                                current_user,
+                                                actor_role,
+                                            )
+                                        existing_upload["on_open"] = lambda entry=copy.deepcopy(
+                                            existing_upload
+                                        ): open_overview_scheme_upload(
+                                            ecn_id,
+                                            item_id,
+                                            entry,
+                                            current_user,
+                                            actor_role,
+                                        )
+                                        existing_uploads.append(existing_upload)
 
                                     custom_upload(
                                         on_upload=handle_upload,
                                         on_removed=handle_upload_removed,
+                                        existing_files=existing_uploads,
+                                        on_existing_removed=clear_selected_overview_upload,
                                     ).props("accept=*/*")
-                                    ui.label().bind_text_from(
-                                        sel_state["new_data"],
-                                        "content",
-                                        backward=lambda x: f"暂存文件: {x}" if x else "",
-                                    ).classes("text-sm text-green-600 mt-1")
 
                                 ui.label("注: 原因和记录将被系统自动接管").classes(
                                     "text-[10px] text-gray-400 mt-2 block"

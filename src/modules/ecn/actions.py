@@ -242,16 +242,16 @@ async def edit_scheme(ecn_id, expected, item, original, user, role, *, delete=Fa
         await validate_overview_scheme_target_lock(connection, ecn_id, prepared)
         return updated
 
-    # 系统内资料已归档文件永久保留，保存失败只放弃引用；暂存留给重试。
+    # 保存失败时保留已生成的概述归档供重试；成功替换或删除方案后回收旧归档。
     result = await mutate_record(ecn_id, operation, storage=storage)
     if result.ok and isinstance(pending_upload, dict) and pending_upload.get("pending_path"):
         cleanup_staged([pending_upload])
     if result.ok and not delete and isinstance(original, dict):
         previous_upload = original.get("new_data", {}).get("overview_upload")
         if previous_upload and previous_upload != pending_upload:
-            await cleanup_published_attachments(previous_upload)
+            await cleanup_published_attachments(previous_upload, include_overview=True)
     if delete and result.ok:
-        await cleanup_published_attachments(original)
+        await cleanup_published_attachments(original, include_overview=True)
     return result
 
 

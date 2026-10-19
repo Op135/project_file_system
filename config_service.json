@@ -7195,6 +7195,14 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_6",
+                    "option_content": "Reach",
+                    "option_out": "Reach",
+                    "option_bold": "Reach",
+                    "option_show": "",
+                    "option_label": ""
+                },
+                {
                     "option_id": "opt_3",
                     "option_content": "激光安全",
                     "option_out": "激光安全",
@@ -7697,7 +7705,7 @@
             ]
         }
     },
-    "config_timestamp": "2026-10-19T17:06:45.886416",
-    "excel_version_hash": "6fab8ee6",
+    "config_timestamp": "2026-10-19T21:02:31.223148",
+    "excel_version_hash": "39007fea",
     "entry_status": false
 }

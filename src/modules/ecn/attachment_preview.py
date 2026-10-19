@@ -11,7 +11,9 @@ from fastapi import HTTPException
 from fastapi.responses import FileResponse
 from nicegui import app
 
+from ... import db_storage
 from ...ecn_access import get_active_ecn_actor_role
+from ...ecn_management_config import ECN_DATA_KEY
 from .attachments import resolve_attachment, resolve_staged_attachment, visible_attachments
 from .editing import ECNConflict
 
@@ -20,6 +22,7 @@ IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".
 PREVIEW_LIFETIME_SECONDS = 15 * 60
 _preview_tokens: dict[str, tuple[float, str, str, str, str, str, str, str]] = {}
 _pending_preview_tokens: dict[str, tuple[float, dict, str, str]] = {}
+_overview_preview_tokens: dict[str, tuple[float, str, str, str, str, str]] = {}
 
 
 def attachment_kind(name: str) -> str:
@@ -53,6 +56,29 @@ def issue_staged_attachment_preview_url(attachment: dict, user: str, role: str) 
     token = secrets.token_urlsafe(32)
     _pending_preview_tokens[token] = (now + PREVIEW_LIFETIME_SECONDS, copy.deepcopy(attachment), user, role)
     return f"/ecn_pending_attachment_preview/{token}"
+
+
+def issue_overview_scheme_preview_url(
+    ecn_id: str,
+    item_id: str,
+    file_id: str,
+    user: str,
+    role: str,
+) -> str:
+    """签发系统内资料方案归档的短时查看地址。"""
+    now = time.monotonic()
+    for expired in [key for key, value in _overview_preview_tokens.items() if value[0] <= now]:
+        _overview_preview_tokens.pop(expired, None)
+    token = secrets.token_urlsafe(32)
+    _overview_preview_tokens[token] = (
+        now + PREVIEW_LIFETIME_SECONDS,
+        ecn_id,
+        item_id,
+        file_id,
+        user,
+        role,
+    )
+    return f"/ecn_overview_scheme_preview/{token}"
 
 
 def _inline_response(path: Path, name: str) -> FileResponse:
@@ -111,3 +137,49 @@ def serve_ecn_pending_attachment_preview(token: str) -> FileResponse:
     if not path.is_file():
         raise HTTPException(status_code=404, detail="暂存附件不存在")
     return _inline_response(path, str(attachment.get("name") or "附件"))
+
+
+@app.get("/ecn_overview_scheme_preview/{token}")
+def serve_ecn_overview_scheme_preview(token: str) -> FileResponse:
+    """每次读取都复核方案作者、账号状态和最新单据中的文件引用。"""
+    request_info = _overview_preview_tokens.get(token)
+    if request_info is None or request_info[0] <= time.monotonic():
+        _overview_preview_tokens.pop(token, None)
+        raise HTTPException(status_code=404, detail="方案文件查看地址已失效")
+    _, ecn_id, item_id, file_id, user, role = request_info
+    service = getattr(app.state, "user_service", None)
+    if get_active_ecn_actor_role(user, role, user_service=service) is None:
+        raise HTTPException(status_code=404, detail="当前账号不可用")
+    record = db_storage.get_deep_item([ECN_DATA_KEY, ecn_id])
+    items = record.get("change_items", []) if isinstance(record, dict) else []
+    item = next(
+        (
+            entry
+            for entry in items
+            if isinstance(entry, dict) and str(entry.get("item_id") or "") == item_id
+        ),
+        None,
+    ) if isinstance(items, list) else None
+    upload = item.get("new_data", {}).get("overview_upload") if isinstance(item, dict) else None
+    if (
+        not isinstance(item, dict)
+        or item.get("author") != user
+        or not isinstance(upload, dict)
+        or str(upload.get("id") or "") != file_id
+    ):
+        raise HTTPException(status_code=404, detail="方案文件不存在或无权查看")
+    try:
+        path = resolve_attachment(upload)
+    except ECNConflict as exc:
+        raise HTTPException(status_code=404, detail="方案文件路径无效") from exc
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="方案文件不存在")
+    name = str(upload.get("name") or "附件")
+    if attachment_kind(name) in {"image", "pdf"}:
+        return _inline_response(path, name)
+    return FileResponse(
+        path,
+        filename=name,
+        content_disposition_type="attachment",
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )

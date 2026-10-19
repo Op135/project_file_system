@@ -1,101 +1,99 @@
 """对 NiceGUI 官方控件进行统一行为和样式调整的可复用组件。"""
 
+from __future__ import annotations
+
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from nicegui import events, ui
 from nicegui.elements.upload import Upload
 
-
 __all__ = ["CustomUploadRemovedEventArguments", "custom_upload"]
 
-
 _CUSTOM_UPLOAD_CSS = """
-    /* 隐藏标题栏左侧的原生“清除队列/清除已上传”按钮。 */
-    .custom-upload .q-uploader__header-content > .flex > .q-btn:has(~ .col) {
-        display: none !important;
+    .custom-upload-panel { display: grid; width: 100%; gap: 8px; align-items: start; }
+    .custom-upload-position-bottom { grid-template-areas: "action" "files"; }
+    .custom-upload-position-top { grid-template-areas: "files" "action"; }
+    .custom-upload-position-left {
+        grid-template-areas: "files action";
+        grid-template-columns: minmax(0, 1fr) auto;
     }
-    .custom-upload-container {
-        position: relative;
+    .custom-upload-position-right {
+        grid-template-areas: "action files";
+        grid-template-columns: auto minmax(0, 1fr);
     }
-    /* 多文件的“清空全部”放在右上角加号左侧。 */
-    .custom-upload-clear-all {
-        position: absolute !important;
-        right: 48px;
-        top: 6px;
-        z-index: 2;
+    .custom-upload-action { grid-area: action; min-width: 128px; }
+    .custom-upload-files { grid-area: files; width: 100%; }
+    .custom-upload-file-row {
+        width: 100%; min-height: 58px; padding: 6px 8px;
+        border: 1px solid #e2e8f0; border-radius: 8px; background: #fff;
     }
-    /* 文件行右侧按钮实际用于移除文件；上传完成后把默认勾号替换为红色叉号。 */
-    .custom-upload .q-uploader__file-header > .q-btn .q-icon {
-        color: var(--q-negative);
+    .custom-upload-thumbnail {
+        width: 44px !important; height: 44px !important; min-width: 44px;
+        border-radius: 6px; overflow: hidden; background: #f1f5f9;
+        object-fit: cover; cursor: pointer;
     }
-    .custom-upload .q-uploader__file--uploaded .q-uploader__file-header > .q-btn .q-icon {
-        font-size: 0 !important;
+    .custom-upload-file-icon {
+        width: 44px; height: 44px; min-width: 44px; border-radius: 6px;
+        background: #f1f5f9; cursor: pointer;
     }
-    .custom-upload .q-uploader__file--uploaded .q-uploader__file-header > .q-btn .q-icon::before {
-        content: "close";
-        font-family: "Material Icons";
-        font-size: 24px;
+    .custom-upload-native { display: none !important; }
+    @media (max-width: 640px) {
+        .custom-upload-position-left, .custom-upload-position-right {
+            grid-template-areas: "action" "files";
+            grid-template-columns: minmax(0, 1fr);
+        }
     }
 """
 
 _FILE_METADATA_JS = """
 files => {
-    const installSummarySync = () => {
-        const wrapper = getElement(__UPLOADER_ID__);
-        const qUploader = wrapper?.$refs?.qRef;
-        const element = wrapper?.$el;
-        const header = element?.querySelector('.q-uploader__header');
-        if (!element || !qUploader || !header) return;
-
-        const formatSize = bytes => {
-            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-            let value = Number(bytes) || 0;
-            let unitIndex = 0;
-            while (value >= 1024 && unitIndex < units.length - 1) {
-                value /= 1024;
-                unitIndex += 1;
-            }
-            return `${value.toFixed(1)}${units[unitIndex]}`;
-        };
-        const syncSummary = () => {
-            const currentFiles = Array.from(qUploader.files || []);
-            const totalSize = currentFiles.reduce((total, file) => total + (Number(file.size) || 0), 0);
-            const uploadedSize = currentFiles.reduce(
-                (total, file) => total + Math.min(Number(file.__uploaded) || 0, Number(file.size) || 0),
-                0,
-            );
-            const progress = totalSize > 0 ? uploadedSize / totalSize * 100 : 0;
-            const text = `${formatSize(totalSize)} / ${progress.toFixed(2)}%`;
-            const subtitle = element.querySelector('.q-uploader__subtitle');
-            if (subtitle && subtitle.textContent.trim() !== text) subtitle.textContent = text;
-        };
-
-        if (!wrapper.__customUploadSummaryObserver) {
-            wrapper.__customUploadSummaryObserver = new MutationObserver(() => requestAnimationFrame(syncSummary));
-            wrapper.__customUploadSummaryObserver.observe(header, {
-                childList: true,
-                characterData: true,
-                subtree: true,
-            });
+    const wrapper = getElement(__UPLOADER_ID__);
+    wrapper.__customUploadObjectUrls ||= {};
+    emit(files.map(file => {
+        const key = String(file.__key || `${file.name}:${file.size}:${file.lastModified}`);
+        if (!wrapper.__customUploadObjectUrls[key]) {
+            wrapper.__customUploadObjectUrls[key] = URL.createObjectURL(file);
         }
-        syncSummary();
-    };
-    setTimeout(installSummarySync, 0);
-    emit(files.map(file => ({
-        key: file.__key,
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        last_modified: file.lastModified,
-    })));
+        return {
+            key,
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            last_modified: file.lastModified,
+            preview_url: wrapper.__customUploadObjectUrls[key],
+        };
+    }));
 }
 """
 
 
 def _file_metadata_js(uploader_id: int) -> str:
     return _FILE_METADATA_JS.replace("__UPLOADER_ID__", str(uploader_id))
+
+
+def _format_size(size: object) -> str:
+    value = float(size) if isinstance(size, (int, float, str)) else 0.0
+    units = ("B", "KB", "MB", "GB", "TB")
+    unit_index = 0
+    while value >= 1024 and unit_index < len(units) - 1:
+        value /= 1024
+        unit_index += 1
+    return f"{value:.1f}{units[unit_index]}"
+
+
+def _file_kind(file_data: dict[str, Any]) -> str:
+    name = str(file_data.get("name") or "").lower()
+    content_type = str(file_data.get("type") or file_data.get("file_type") or "").lower()
+    if content_type.startswith("image/") or name.endswith(
+        (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".avif")
+    ):
+        return "image"
+    if content_type == "application/pdf" or name.endswith(".pdf"):
+        return "pdf"
+    return "file"
 
 
 @dataclass(kw_only=True, slots=True)
@@ -106,6 +104,19 @@ class CustomUploadRemovedEventArguments(events.UiEventArguments):
     clear_all: bool
 
 
+class _CompactUpload(Upload):
+    """保留 Upload 公共接口，并在外部 reset 时同步紧凑文件列表。"""
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._compact_reset_callback: Callable[[], None] | None = None
+        super().__init__(**kwargs)
+
+    def reset(self) -> None:
+        super().reset()
+        if self._compact_reset_callback is not None:
+            self._compact_reset_callback()
+
+
 def custom_upload(
     *,
     multiple: bool = False,
@@ -113,26 +124,30 @@ def custom_upload(
     on_upload: Callable[..., Any] | None = None,
     on_multi_upload: Callable[..., Any] | None = None,
     on_removed: Callable[..., Any] | None = None,
+    existing_files: list[dict[str, Any]] | None = None,
+    on_existing_removed: Callable[..., Any] | None = None,
     on_begin_upload: Callable[..., Any] | None = None,
     on_rejected: Callable[..., Any] | None = None,
     label: str = "",
     auto_upload: bool = True,
     max_file_size: int | None = None,
     max_total_size: int | None = None,
+    file_area_position: Literal["top", "bottom", "left", "right"] = "bottom",
+    show_thumbnails: bool = True,
 ) -> Upload:
-    """创建支持单选和多选、移除操作语义清晰的 NiceGUI 上传控件。
+    """创建紧凑的文件上传组件，并保持 NiceGUI Upload 的调用兼容性。"""
+    if file_area_position not in {"top", "bottom", "left", "right"}:
+        raise ValueError("file_area_position 必须是 top、bottom、left 或 right")
 
-    单文件模式通过 ``multiple=False`` 使用；未指定 ``max_files`` 时自动限制为
-    一个文件。多文件模式传入 ``multiple=True``，并可用 ``max_files`` 限制数量。
-    多文件模式会在标题栏右上角、加号左侧显示“清空全部”按钮。
-
-    ``on_removed`` 可以不接收参数，也可以接收
-    :class:`CustomUploadRemovedEventArguments`，其中包含移除的文件元数据和
-    ``clear_all`` 标志。
-    """
     effective_max_files = max_files if multiple or max_files is not None else 1
     selected_files: dict[str, dict[str, Any]] = {}
+    saved_files: dict[str, dict[str, Any]] = {}
     clear_all_button: Any = None
+    for index, item in enumerate(existing_files or []):
+        entry = dict(item)
+        key = str(entry.get("key") or entry.get("id") or f"existing-{index}")
+        entry.update(key=key, existing=True)
+        saved_files[key] = entry
 
     def file_key(file_data: dict[str, Any]) -> str:
         return str(
@@ -146,48 +161,12 @@ def custom_upload(
             value = value[0]
         return [dict(item) for item in value if isinstance(item, dict)] if isinstance(value, list) else []
 
-    def update_clear_all_button() -> None:
-        if clear_all_button is not None:
-            clear_all_button.set_visibility(bool(selected_files))
-
-    def emit_removed(files: list[dict[str, Any]], *, clear_all: bool) -> None:
-        if on_removed is None:
-            return
-        events.handle_event(
-            on_removed,
-            CustomUploadRemovedEventArguments(
-                sender=uploader,
-                client=uploader.client,
-                files=files,
-                clear_all=clear_all,
-            ),
-        )
-
-    def handle_added(event: events.GenericEventArguments) -> None:
-        for file_data in event_files(event):
-            selected_files[file_key(file_data)] = file_data
-        update_clear_all_button()
-
-    def handle_removed(event: events.GenericEventArguments) -> None:
-        removed_files = event_files(event)
-        for file_data in removed_files:
-            selected_files.pop(file_key(file_data), None)
-        if not selected_files:
-            # Quasar 逐项移除不会扣减累计大小；最后一个文件移除后完整复位。
-            uploader.reset()
-        update_clear_all_button()
-        emit_removed(removed_files, clear_all=False)
-
-    def clear_all() -> None:
-        removed_files = list(selected_files.values())
-        selected_files.clear()
-        uploader.reset()
-        update_clear_all_button()
-        emit_removed(removed_files, clear_all=True)
-
     ui.add_css(_CUSTOM_UPLOAD_CSS)
-    with ui.column().classes("w-full gap-1 custom-upload-container"):
-        uploader = ui.upload(
+    panel = ui.element("div").classes(f"custom-upload-panel custom-upload-position-{file_area_position}")
+    with panel:
+        action_area = ui.column().classes("custom-upload-action gap-1 items-start")
+        file_area = ui.column().classes("custom-upload-files gap-1")
+        uploader = _CompactUpload(
             multiple=multiple,
             max_files=effective_max_files,
             on_begin_upload=on_begin_upload,
@@ -198,17 +177,157 @@ def custom_upload(
             auto_upload=auto_upload,
             max_file_size=max_file_size,
             max_total_size=max_total_size,
-        ).classes("w-full custom-upload")
-        uploader.on("added", handle_added, js_handler=_file_metadata_js(uploader.id))
-        uploader.on("removed", handle_removed, js_handler=_file_metadata_js(uploader.id))
+        ).classes("custom-upload-native")
 
-        if multiple:
-            clear_all_button = (
-                ui.button(icon="delete_sweep", on_click=clear_all)
-                .props("flat round dense color=white")
-                .classes("custom-upload-clear-all")
+    def all_files() -> list[dict[str, Any]]:
+        return [*saved_files.values(), *selected_files.values()]
+
+    def update_action_state() -> None:
+        files = all_files()
+        total_size = sum(int(item.get("size") or 0) for item in files)
+        info_label.set_text("尚未选择文件" if not files else f"{len(files)}个文件，共{_format_size(total_size)}")
+        file_area.set_visibility(bool(files))
+        at_limit = effective_max_files is not None and len(files) >= effective_max_files
+        upload_button.set_enabled(not at_limit)
+        if clear_all_button is not None:
+            clear_all_button.set_visibility(bool(files))
+
+    def open_file(file_data: dict[str, Any]) -> None:
+        open_callback = file_data.get("on_open")
+        if callable(open_callback):
+            open_callback()
+            return
+        url = str(
+            file_data.get("preview_url")
+            or file_data.get("download_url")
+            or file_data.get("url_path")
+            or ""
+        )
+        if not url:
+            return
+        name = str(file_data.get("name") or "文件")
+        if _file_kind(file_data) in {"image", "pdf"}:
+            ui.run_javascript(f"window.open({json.dumps(url)}, '_blank');")
+        else:
+            ui.run_javascript(
+                "const a=document.createElement('a');"
+                f"a.href={json.dumps(url)};a.download={json.dumps(name)};"
+                "document.body.appendChild(a);a.click();a.remove();"
             )
-            clear_all_button.tooltip("清空全部")
-            clear_all_button.set_visibility(False)
 
+    def emit_removed(files: list[dict[str, Any]], *, clear_all: bool, existing: bool = False) -> None:
+        callback = on_existing_removed if existing else on_removed
+        if callback is None:
+            return
+        events.handle_event(
+            callback,
+            CustomUploadRemovedEventArguments(
+                sender=uploader,
+                client=uploader.client,
+                files=[dict(item) for item in files],
+                clear_all=clear_all,
+            ),
+        )
+
+    def remove_selected(file_data: dict[str, Any]) -> None:
+        key = file_key(file_data)
+        ui.run_javascript(
+            "(() => {"
+            f"const wrapper=getElement({uploader.id});"
+            "const q=wrapper?.$refs?.qRef;"
+            f"const file=Array.from(q?.files || []).find(item => String(item.__key) === {json.dumps(key)});"
+            "if (file) q.removeFile(file);"
+            "})()"
+        )
+
+    def remove_existing(file_data: dict[str, Any]) -> None:
+        removed = saved_files.pop(file_key(file_data), None)
+        if removed is None:
+            return
+        render_files()
+        emit_removed([removed], clear_all=False, existing=True)
+
+    def render_files() -> None:
+        file_area.clear()
+        with file_area:
+            for file_data in all_files():
+                existing = bool(file_data.get("existing"))
+                kind = _file_kind(file_data)
+                preview_url = str(file_data.get("preview_url") or "")
+                with ui.row().classes("custom-upload-file-row items-center gap-2 flex-nowrap"):
+                    if kind == "image" and show_thumbnails and preview_url:
+                        ui.image(preview_url).classes("custom-upload-thumbnail").on(
+                            "click", lambda _, entry=file_data: open_file(entry)
+                        )
+                    else:
+                        with ui.row().classes(
+                            "custom-upload-file-icon items-center justify-center shrink-0"
+                        ).on("click", lambda _, entry=file_data: open_file(entry)):
+                            ui.icon(
+                                "picture_as_pdf" if kind == "pdf" else "image" if kind == "image" else "attach_file",
+                                size="sm",
+                            ).classes("text-slate-600")
+                    with ui.column().classes("gap-0 flex-1 min-w-0"):
+                        ui.label(str(file_data.get("name") or "文件")).classes(
+                            "text-xs text-slate-800 break-all cursor-pointer hover:text-primary"
+                        ).on("click", lambda _, entry=file_data: open_file(entry))
+                        ui.label(_format_size(file_data.get("size"))).classes("text-[10px] text-slate-500")
+                    remove_handler = (
+                        (lambda _, entry=file_data: remove_existing(entry))
+                        if existing
+                        else (lambda _, entry=file_data: remove_selected(entry))
+                    )
+                    ui.button(icon="delete_outline", on_click=remove_handler).props(
+                        "flat round dense size=sm color=negative"
+                    ).tooltip("删除文件")
+        update_action_state()
+
+    def handle_added(event: events.GenericEventArguments) -> None:
+        for file_data in event_files(event):
+            selected_files[file_key(file_data)] = file_data
+        render_files()
+
+    def handle_removed(event: events.GenericEventArguments) -> None:
+        removed_files = event_files(event)
+        for file_data in removed_files:
+            selected_files.pop(file_key(file_data), None)
+        if not selected_files:
+            Upload.reset(uploader)
+        render_files()
+        emit_removed(removed_files, clear_all=False)
+
+    def clear_all() -> None:
+        removed_selected = list(selected_files.values())
+        removed_existing = list(saved_files.values())
+        selected_files.clear()
+        saved_files.clear()
+        Upload.reset(uploader)
+        render_files()
+        if removed_selected:
+            emit_removed(removed_selected, clear_all=True)
+        if removed_existing:
+            emit_removed(removed_existing, clear_all=True, existing=True)
+
+    def reset_display() -> None:
+        selected_files.clear()
+        render_files()
+
+    uploader._compact_reset_callback = reset_display
+    uploader.on("added", handle_added, js_handler=_file_metadata_js(uploader.id))
+    uploader.on("removed", handle_removed, js_handler=_file_metadata_js(uploader.id))
+
+    with action_area:
+        upload_button = ui.button(
+            label or "添加文件",
+            icon="upload_file",
+            on_click=lambda: uploader.run_method("pickFiles"),
+        ).props("outline dense no-caps color=primary")
+        info_label = ui.label().classes("text-[11px] text-slate-500")
+        if multiple:
+            clear_all_button = ui.button("清空全部", icon="delete_sweep", on_click=clear_all).props(
+                "flat dense no-caps color=negative"
+            ).classes("text-xs")
+
+    panel.bind_visibility_from(uploader, "visible")
+    render_files()
     return uploader
