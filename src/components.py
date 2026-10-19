@@ -2,6 +2,7 @@
 import ast
 import asyncio
 import copy
+import hashlib
 import io
 import itertools
 import json
@@ -19,7 +20,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Callable, DefaultDict, Dict, Final, Optional, Tuple
+from typing import Callable, DefaultDict, Dict, Final, Optional, Protocol, Tuple
 from urllib.parse import unquote
 
 import httpx
@@ -44,6 +45,8 @@ from .config import (
     UPLOADS_DIR,
 )
 from .custom_ui import custom_upload
+from .overview_file_choice import choose_overview_file
+from .overview_file_storage import validate_file_selection
 from .overview_batch_operations import (
     atomic_update_overview_with_row,
     get_table_child_state_violations,
@@ -104,6 +107,35 @@ from .utils import (
 # 获取一个以此模块命名的 logger
 # 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
 logger = logging.getLogger(__name__)
+
+
+class _CorrectionUploadFile(Protocol):
+    @property
+    def name(self) -> str: ...
+
+    async def read(self) -> bytes: ...
+
+
+class _CorrectionUploadEvent(Protocol):
+    @property
+    def file(self) -> _CorrectionUploadFile: ...
+
+
+async def _choose_correction_upload(e: _CorrectionUploadEvent, directory: str, project: str):
+    """上传时决定复用正式文件或暂存新文件；取消选择不产生暂存。"""
+    if not str(directory).strip() or not Path(directory).is_dir():
+        raise ValueError(f"正式上传目录不存在：{directory or '未配置'}")
+    content = await e.file.read()
+    selection = await choose_overview_file(
+        Path(directory), Path(e.file.name).name, hashlib.sha256(content).hexdigest(), [project]
+    )
+    if selection is None or selection["mode"] == "existing":
+        return selection, None
+    temp_dir = OVERVIEW_CORRECTION_STAGING_DIR / uuid.uuid4().hex
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    file_path = temp_dir / selection["name"]
+    await asyncio.to_thread(file_path.write_bytes, content)
+    return selection, file_path
 
 
 def _overview_add_config(config: dict, chip: dict) -> dict:
@@ -1840,6 +1872,9 @@ class InteractiveButton:
         self.new_filename_input = None
         self.new_content_input = None
         self.last_temp_upload_path = None
+        self.last_temp_upload_selection = None
+        self.change_upload_control = None
+        self.change_upload_status_label = None
         self.last_temp_upload_type = None
         self.last_temp_upload_name = None
         self.change_upload_fallback_filename = ""
@@ -2090,26 +2125,72 @@ class InteractiveButton:
     async def handle_change_upload(self, e: events.UploadEventArguments):
         """处理申请时的临时文件上传"""
         cleanup_correction_staged_files([str(self.last_temp_upload_path or "")])
-        temp_dir = OVERVIEW_CORRECTION_STAGING_DIR / uuid.uuid4().hex
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        file_path = temp_dir / Path(e.file.name).name
-        with open(file_path, "wb") as f:
-            f.write(await e.file.read())
-        self.last_temp_upload_path = str(file_path)
+        try:
+            selection, file_path = await _choose_correction_upload(e, self.upload_path, self.project)
+        except (OSError, ValueError) as ex:
+            self.last_temp_upload_path = None
+            self.last_temp_upload_selection = None
+            if self.change_upload_control is not None:
+                self.change_upload_control.reset()
+            if self.change_upload_status_label is not None:
+                self.change_upload_status_label.set_text("纠错文件选择失败，请重新选择")
+                self.change_upload_status_label.classes(remove="text-blue-800 text-green-700", add="text-red-700")
+            ui.notify(str(ex), type="negative")
+            return
+        self.last_temp_upload_selection = selection
+        self.last_temp_upload_path = str(file_path) if file_path is not None else None
+        if selection is None:
+            self.last_temp_upload_type = None
+            self.last_temp_upload_name = None
+            if self.new_filename_input is not None:
+                self.new_filename_input.value = self.change_upload_fallback_filename
+            if self.change_upload_control is not None:
+                self.change_upload_control.reset()
+            if self.change_upload_status_label is not None:
+                self.change_upload_status_label.set_text("未选择纠错文件")
+                self.change_upload_status_label.classes(
+                    remove="text-blue-800 text-green-700 text-red-700 font-bold", add="text-gray-500"
+                )
+            ui.notify("已取消纠错文件选择", type="info")
+            return
         self.last_temp_upload_type = str(e.file.content_type or "application/octet-stream")
-        self.last_temp_upload_name = e.file.name
+        self.last_temp_upload_name = selection["name"]
         if self.new_filename_input is not None:
-            self.new_filename_input.value = e.file.name
-            ui.notify(f"临时文件已上传：{e.file.name}", type="info")
+            self.new_filename_input.value = selection["name"]
+            if self.change_upload_status_label is not None:
+                if selection["mode"] == "existing":
+                    self.change_upload_status_label.set_text(
+                        f"✓ 已改用服务器已有文件；本次上传内容不会使用：{selection['name']}"
+                    )
+                    self.change_upload_status_label.classes(
+                        remove="text-gray-500 text-green-700 text-red-700", add="text-blue-800 font-bold"
+                    )
+                else:
+                    self.change_upload_status_label.set_text(f"将使用本次上传文件：{selection['name']}")
+                    self.change_upload_status_label.classes(
+                        remove="text-gray-500 text-blue-800 text-red-700 font-bold", add="text-green-700"
+                    )
+            if selection["mode"] == "existing" and self.change_upload_control is not None:
+                self.change_upload_control.reset()
+            ui.notify(
+                f"已选择服务器文件：{selection['name']}" if selection["mode"] == "existing"
+                else f"纠错文件已暂存：{selection['name']}", type="info"
+            )
 
     def handle_change_upload_removed(self, _event=None) -> None:
         """上传控件移除文件时同步清理本次新建的纠错暂存。"""
         cleanup_correction_staged_files([str(self.last_temp_upload_path or "")])
         self.last_temp_upload_path = None
+        self.last_temp_upload_selection = None
         self.last_temp_upload_type = None
         self.last_temp_upload_name = None
         if self.new_filename_input is not None:
             self.new_filename_input.value = self.change_upload_fallback_filename
+        if self.change_upload_status_label is not None:
+            self.change_upload_status_label.set_text("未选择纠错文件")
+            self.change_upload_status_label.classes(
+                remove="text-blue-800 text-green-700 text-red-700 font-bold", add="text-gray-500"
+            )
 
     def show_change_request_dialog(self, chip_info):
         """提交普通概述的原记录纠错/错误记录删除申请。"""
@@ -2157,6 +2238,7 @@ class InteractiveButton:
         stored_staged_path = str(payload.get("staged_file_path") or "")
         stored_uploaded_type = str(payload.get("uploaded_file_type") or "")
         self.last_temp_upload_path = None
+        self.last_temp_upload_selection = None
         self.last_temp_upload_type = None
         self.last_temp_upload_name = None
         self.change_upload_fallback_filename = str(
@@ -2237,12 +2319,15 @@ class InteractiveButton:
                         with ui.card().classes("w-full bg-purple-50/40 shadow-none border"):
                             self._render_test_fields_for_change(req_test_data)
                     elif chip_type in {"file", "image", "video"}:
-                        custom_upload(
+                        self.change_upload_control = custom_upload(
                             multiple=False,
                             max_files=1,
                             on_upload=self.handle_change_upload,
                             on_removed=self.handle_change_upload_removed,
                             label="选择纠错文件",
+                        )
+                        self.change_upload_status_label = ui.label("未选择纠错文件").classes(
+                            "text-xs text-gray-500"
                         )
                         self.new_filename_input = (
                             ui.input(
@@ -2287,6 +2372,12 @@ class InteractiveButton:
                             return
                         after_snapshot["content"] = Path(str(self.new_filename_input.value)).name
                         after_snapshot["url_path"] = f"{FILES_URL_DIR}/{after_snapshot['content']}"
+                        if (
+                            self.last_temp_upload_selection is not None
+                            and after_snapshot["content"] != self.last_temp_upload_selection["name"]
+                        ):
+                            ui.notify("文件名已改变，请重新上传并完成同名文件选择。", type="warning")
+                            return
                     else:
                         if self.new_content_input is None or not str(self.new_content_input.value or "").strip():
                             ui.notify("请填写纠正后的内容。", type="warning")
@@ -2342,8 +2433,19 @@ class InteractiveButton:
                             ui.notify("未上传新文件，且正式目录中不存在纠正后的文件名。", type="warning")
                             return
                 now_text = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                if self.last_temp_upload_selection is not None:
+                    try:
+                        validate_file_selection(
+                            self.last_temp_upload_selection, Path(str(config_snapshot.get("upload_path") or ""))
+                        )
+                    except (OSError, ValueError) as ex:
+                        ui.notify(str(ex), type="warning")
+                        return
                 request_staged_path = (
-                    "" if action_mode["val"] == "delete" else str(self.last_temp_upload_path or stored_staged_path)
+                    "" if action_mode["val"] == "delete" or (
+                        self.last_temp_upload_selection is not None
+                        and self.last_temp_upload_selection["mode"] == "existing"
+                    ) else str(self.last_temp_upload_path or stored_staged_path)
                 )
                 media_audit = {}
                 if action_mode["val"] == "correct" and chip_type in {"file", "image", "video"}:
@@ -5082,6 +5184,10 @@ class OverviewTableGroup:
         self.new_filename_input = None
         self.new_content_input = None
         self.last_temp_upload_path = None
+        self.last_temp_upload_selection = None
+        self.correction_upload_path = ""
+        self.change_upload_control = None
+        self.change_upload_status_label = None
         self.last_temp_upload_type = None
         self.last_temp_upload_name = None
         self.change_upload_fallback_filename = ""
@@ -8542,26 +8648,72 @@ class OverviewTableGroup:
 
     async def handle_change_upload(self, e: events.UploadEventArguments):
         cleanup_correction_staged_files([str(self.last_temp_upload_path or "")])
-        temp_dir = OVERVIEW_CORRECTION_STAGING_DIR / uuid.uuid4().hex
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        file_path = temp_dir / Path(e.file.name).name
-        with open(file_path, "wb") as f:
-            f.write(await e.file.read())
-        self.last_temp_upload_path = str(file_path)
+        try:
+            selection, file_path = await _choose_correction_upload(e, self.correction_upload_path, self.project)
+        except (OSError, ValueError) as ex:
+            self.last_temp_upload_path = None
+            self.last_temp_upload_selection = None
+            if self.change_upload_control is not None:
+                self.change_upload_control.reset()
+            if self.change_upload_status_label is not None:
+                self.change_upload_status_label.set_text("纠错文件选择失败，请重新选择")
+                self.change_upload_status_label.classes(remove="text-blue-800 text-green-700", add="text-red-700")
+            ui.notify(str(ex), type="negative")
+            return
+        self.last_temp_upload_selection = selection
+        self.last_temp_upload_path = str(file_path) if file_path is not None else None
+        if selection is None:
+            self.last_temp_upload_type = None
+            self.last_temp_upload_name = None
+            if self.new_filename_input is not None:
+                self.new_filename_input.value = self.change_upload_fallback_filename
+            if self.change_upload_control is not None:
+                self.change_upload_control.reset()
+            if self.change_upload_status_label is not None:
+                self.change_upload_status_label.set_text("未选择纠错文件")
+                self.change_upload_status_label.classes(
+                    remove="text-blue-800 text-green-700 text-red-700 font-bold", add="text-gray-500"
+                )
+            ui.notify("已取消纠错文件选择", type="info")
+            return
         self.last_temp_upload_type = str(e.file.content_type or "application/octet-stream")
-        self.last_temp_upload_name = e.file.name
+        self.last_temp_upload_name = selection["name"]
         if self.new_filename_input is not None:
-            self.new_filename_input.value = e.file.name
-            ui.notify(f"临时文件已上传：{e.file.name}", type="info")
+            self.new_filename_input.value = selection["name"]
+            if self.change_upload_status_label is not None:
+                if selection["mode"] == "existing":
+                    self.change_upload_status_label.set_text(
+                        f"✓ 已改用服务器已有文件；本次上传内容不会使用：{selection['name']}"
+                    )
+                    self.change_upload_status_label.classes(
+                        remove="text-gray-500 text-green-700 text-red-700", add="text-blue-800 font-bold"
+                    )
+                else:
+                    self.change_upload_status_label.set_text(f"将使用本次上传文件：{selection['name']}")
+                    self.change_upload_status_label.classes(
+                        remove="text-gray-500 text-blue-800 text-red-700 font-bold", add="text-green-700"
+                    )
+            if selection["mode"] == "existing" and self.change_upload_control is not None:
+                self.change_upload_control.reset()
+            ui.notify(
+                f"已选择服务器文件：{selection['name']}" if selection["mode"] == "existing"
+                else f"纠错文件已暂存：{selection['name']}", type="info"
+            )
 
     def handle_change_upload_removed(self, _event=None) -> None:
         """上传控件移除文件时同步清理本次新建的纠错暂存。"""
         cleanup_correction_staged_files([str(self.last_temp_upload_path or "")])
         self.last_temp_upload_path = None
+        self.last_temp_upload_selection = None
         self.last_temp_upload_type = None
         self.last_temp_upload_name = None
         if self.new_filename_input is not None:
             self.new_filename_input.value = self.change_upload_fallback_filename
+        if self.change_upload_status_label is not None:
+            self.change_upload_status_label.set_text("未选择纠错文件")
+            self.change_upload_status_label.classes(
+                remove="text-blue-800 text-green-700 text-red-700 font-bold", add="text-gray-500"
+            )
 
     def show_change_request_dialog(self, chip_info, config):
         """提交表格概述的原记录纠错/错误记录删除申请。"""
@@ -8611,6 +8763,7 @@ class OverviewTableGroup:
         stored_staged_path = str(payload.get("staged_file_path") or "")
         stored_uploaded_type = str(payload.get("uploaded_file_type") or "")
         self.last_temp_upload_path = None
+        self.last_temp_upload_selection = None
         self.last_temp_upload_type = None
         self.last_temp_upload_name = None
         self.change_upload_fallback_filename = str(
@@ -8618,6 +8771,7 @@ class OverviewTableGroup:
         )
         first_col_label = str(self.configs[0].get("label") or "") if self.configs else ""
         config_snapshot = copy.deepcopy(config)
+        self.correction_upload_path = str(config_snapshot.get("upload_path") or "")
         config_snapshot.update(
             {
                 "role": self.role,
@@ -8698,12 +8852,15 @@ class OverviewTableGroup:
                         with ui.card().classes("w-full bg-purple-50/40 shadow-none border"):
                             self._render_test_fields_for_change(req_test_data, config_snapshot)
                     elif chip_type in {"file", "image", "video"}:
-                        custom_upload(
+                        self.change_upload_control = custom_upload(
                             multiple=False,
                             max_files=1,
                             on_upload=self.handle_change_upload,
                             on_removed=self.handle_change_upload_removed,
                             label="选择纠错文件",
+                        )
+                        self.change_upload_status_label = ui.label("未选择纠错文件").classes(
+                            "text-xs text-gray-500"
                         )
                         self.new_filename_input = (
                             ui.input(
@@ -8748,6 +8905,12 @@ class OverviewTableGroup:
                             return
                         after_snapshot["content"] = Path(str(self.new_filename_input.value)).name
                         after_snapshot["url_path"] = f"{FILES_URL_DIR}/{after_snapshot['content']}"
+                        if (
+                            self.last_temp_upload_selection is not None
+                            and after_snapshot["content"] != self.last_temp_upload_selection["name"]
+                        ):
+                            ui.notify("文件名已改变，请重新上传并完成同名文件选择。", type="warning")
+                            return
                     else:
                         if self.new_content_input is None or not str(self.new_content_input.value or "").strip():
                             ui.notify("请填写纠正后的内容。", type="warning")
@@ -8803,8 +8966,19 @@ class OverviewTableGroup:
                             ui.notify("未上传新文件，且正式目录中不存在纠正后的文件名。", type="warning")
                             return
                 now_text = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                if self.last_temp_upload_selection is not None:
+                    try:
+                        validate_file_selection(
+                            self.last_temp_upload_selection, Path(str(config_snapshot.get("upload_path") or ""))
+                        )
+                    except (OSError, ValueError) as ex:
+                        ui.notify(str(ex), type="warning")
+                        return
                 request_staged_path = (
-                    "" if action_mode["val"] == "delete" else str(self.last_temp_upload_path or stored_staged_path)
+                    "" if action_mode["val"] == "delete" or (
+                        self.last_temp_upload_selection is not None
+                        and self.last_temp_upload_selection["mode"] == "existing"
+                    ) else str(self.last_temp_upload_path or stored_staged_path)
                 )
                 media_audit = {}
                 if action_mode["val"] == "correct" and chip_type in {"file", "image", "video"}:

@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from src import overview_batch_operations
+from src import components, overview_batch_operations
 from src.overview_file_storage import checked_filename, file_digest, make_file_selection, validate_file_selection
 from src.modules.ecn import attachments, overview_files
 from src.modules.ecn.editing import ECNConflict
@@ -20,6 +20,19 @@ class Upload:
         return len(b"new upload")
     async def save(self, path):
         Path(path).write_bytes(b"new upload")
+
+
+class CorrectionUpload:
+    name = "纠错图片.png"
+    content_type = "image/png"
+
+    async def read(self):
+        return b"correction upload"
+
+
+class CorrectionUploadEvent:
+    def __init__(self):
+        self.file = CorrectionUpload()
 
 
 class FileChoiceTests(unittest.IsolatedAsyncioTestCase):
@@ -45,6 +58,33 @@ class FileChoiceTests(unittest.IsolatedAsyncioTestCase):
         item = copy.deepcopy(self.item)
         item["new_data"]["file_selection"] = selection
         return overview_files.prepare_overview_upload(item, None, "ECN1", "owner")[0]
+
+    async def test_correction_upload_existing_choice_discards_uploaded_copy(self):
+        target = self.formal / CorrectionUpload.name
+        target.write_bytes(b"server copy")
+        selection = make_file_selection(self.formal, target.name, "existing", file_digest(target))
+        event = CorrectionUploadEvent()
+        with patch.object(components, "choose_overview_file", return_value=selection):
+            actual, staged = await components._choose_correction_upload(event, str(self.formal), "P1")
+        self.assertEqual(actual, selection)
+        self.assertIsNone(staged)
+        self.assertEqual(list(self.root.glob("**/纠错图片.png")), [target])
+
+    async def test_correction_upload_renamed_new_choice_uses_confirmed_name(self):
+        digest = hashlib.sha256(b"correction upload").hexdigest()
+        selection = make_file_selection(self.formal, "纠错图片-新版.png", "new", digest)
+        event = CorrectionUploadEvent()
+        staging = self.root / "correction-staging"
+        with (
+            patch.object(components, "OVERVIEW_CORRECTION_STAGING_DIR", staging),
+            patch.object(components, "choose_overview_file", return_value=selection),
+        ):
+            actual, staged = await components._choose_correction_upload(event, str(self.formal), "P1")
+        self.assertEqual(actual, selection)
+        self.assertIsNotNone(staged)
+        assert staged is not None
+        self.assertEqual(staged.name, "纠错图片-新版.png")
+        self.assertEqual(staged.read_bytes(), b"correction upload")
 
     async def test_checkpoint_recovery_validates_formal_file_without_restoring_it(self):
         selection = make_file_selection(self.formal, "recovery.pdf", "new", hashlib.sha256(b"new upload").hexdigest())

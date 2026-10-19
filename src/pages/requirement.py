@@ -3501,6 +3501,7 @@ async def requirement_page(
         selected_count_label: Any = None
         submit_button: Any = None
         submit_spinner: Any = None
+        batch_upload_control: Any = None
 
         def notify_batch_lines(
             lines: list[str],
@@ -3719,24 +3720,65 @@ async def requirement_page(
 
         async def handle_batch_file_upload(event, status_label):
             try:
+                state["file_data"] = None
+                config = get_config()
+                upload_path = Path(str((config or {}).get("upload_path") or ""))
+                if not upload_path.is_dir():
+                    raise ValueError(f"上传目录不存在：{upload_path}")
+                content = await event.file.read()
+                from ..overview_file_choice import choose_overview_file
+
+                selection = await choose_overview_file(
+                    upload_path, Path(event.file.name).name,
+                    hashlib.sha256(content).hexdigest(), list(state["projects"]),
+                )
+                if selection is None:
+                    status_label.text = "已取消文件选择"
+                    status_label.classes(remove="text-blue-800 text-green-700 font-bold", add="text-gray-500")
+                    if batch_upload_control is not None:
+                        batch_upload_control.reset()
+                    return
                 state["file_data"] = {
-                    "name": Path(event.file.name).name,
+                    "name": selection["name"],
                     "content_type": event.file.content_type,
-                    "content": await event.file.read(),
+                    "content": b"" if selection["mode"] == "existing" else content,
+                    "selection": selection,
                 }
-                status_label.text = f"已选择：{state['file_data']['name']}"
-                status_label.classes(remove="text-gray-500", add="text-green-700")
+                if selection["mode"] == "existing":
+                    status_label.text = (
+                        f"✓ 已改用服务器已有文件；本次上传内容不会使用：{selection['name']}"
+                    )
+                    status_label.classes(
+                        remove="text-gray-500 text-green-700", add="text-blue-800 font-bold"
+                    )
+                    if batch_upload_control is not None:
+                        batch_upload_control.reset()
+                else:
+                    status_label.text = f"将使用本次上传文件：{selection['name']}"
+                    status_label.classes(
+                        remove="text-gray-500 text-blue-800 font-bold", add="text-green-700"
+                    )
             except Exception as ex:
                 logger.error("读取批量概述上传文件失败", exc_info=True)
+                state["file_data"] = None
+                status_label.text = "文件选择失败，请重新选择"
+                status_label.classes(
+                    remove="text-gray-500 text-green-700 text-blue-800", add="text-red-700 font-bold"
+                )
+                if batch_upload_control is not None:
+                    batch_upload_control.reset()
                 ui.notify(f"读取上传文件失败：{ex}", type="negative")
 
         def handle_batch_file_removed(status_label):
             """同步清除待提交文件和状态提示。"""
             state["file_data"] = None
             status_label.text = "尚未选择文件"
-            status_label.classes(remove="text-green-700", add="text-gray-500")
+            status_label.classes(
+                remove="text-green-700 text-blue-800 text-red-700 font-bold", add="text-gray-500"
+            )
 
         def render_editor():
+            nonlocal batch_upload_control
             if editor_container is None:
                 return
             editor_container.clear()
@@ -3757,17 +3799,28 @@ async def requirement_page(
                             label="不需要提交文件时填写（选填）",
                             placeholder="无",
                         ).bind_value(state, "content").props("outlined dense").classes("w-full")
-                        upload_status = ui.label(
-                            f"已选择：{state['file_data']['name']}" if state["file_data"] else "尚未选择文件"
-                        ).classes("text-xs text-gray-500")
-                        custom_upload(
-                            multiple=True,
-                            max_files=5,
+                        selected_file = state.get("file_data") or {}
+                        selected_mode = (selected_file.get("selection") or {}).get("mode")
+                        if selected_mode == "existing":
+                            upload_status_text = (
+                                f"✓ 已改用服务器已有文件；本次上传内容不会使用：{selected_file['name']}"
+                            )
+                            upload_status_classes = "text-xs text-blue-800 font-bold"
+                        elif selected_file:
+                            upload_status_text = f"将使用本次上传文件：{selected_file['name']}"
+                            upload_status_classes = "text-xs text-green-700"
+                        else:
+                            upload_status_text = "尚未选择文件"
+                            upload_status_classes = "text-xs text-gray-500"
+                        upload_status = ui.label(upload_status_text).classes(upload_status_classes)
+                        batch_upload_control = custom_upload(
+                            multiple=False,
+                            max_files=1,
                             on_upload=lambda e, label=upload_status: handle_batch_file_upload(e, label),
                             on_removed=lambda: handle_batch_file_removed(upload_status),
                             label="选择要添加的文件",
                         ).classes("w-full")
-                        ui.label("服务器存在同名文件时将复用服务器已有文件，不会覆盖。\n").classes(
+                        ui.label("上传时如遇服务器同名文件，请选择复用已有文件或改名上传；不会覆盖。\n").classes(
                             "text-xs text-orange-700"
                         )
                     else:
@@ -4019,19 +4072,21 @@ async def requirement_page(
                             ui.notify(f"上传目录不存在：{upload_path}", type="warning")
                             return
                         staging_dir = BATCH_OVERVIEW_STAGING_DIR / request_id
-                        from ..overview_file_choice import choose_overview_file
                         from ..overview_file_storage import validate_file_selection
-                        selection = await choose_overview_file(upload_path, filename, hashlib.sha256(file_data["content"]).hexdigest(), list(selected_projects))
-                        if selection is None:
+                        selection = file_data.get("selection")
+                        if not isinstance(selection, dict) or selection.get("name") != filename:
+                            ui.notify("请重新上传文件并完成同名文件选择。", type="warning")
                             return
-                        filename = selection["name"]
-                        target = validate_file_selection(selection, upload_path)
-                        chosen_content = target.read_bytes() if selection["mode"] == "existing" else file_data["content"]
+                        target = await asyncio.to_thread(validate_file_selection, selection, upload_path)
+                        chosen_content = (
+                            await asyncio.to_thread(target.read_bytes)
+                            if selection["mode"] == "existing" else file_data["content"]
+                        )
                         if hashlib.sha256(chosen_content).hexdigest() != selection["sha256"]:
                             raise ValueError("文件在选择期间已变化，请重新提交")
-                        staging_dir.mkdir(parents=True, exist_ok=True)
+                        await asyncio.to_thread(staging_dir.mkdir, parents=True, exist_ok=True)
                         staging_path = staging_dir / filename
-                        staging_path.write_bytes(chosen_content)
+                        await asyncio.to_thread(staging_path.write_bytes, chosen_content)
                         staged_file_path = str(staging_path)
                         content = filename
                         extra_data.update({"file_type": file_type, "url_path": f"{FILES_URL_DIR}/{filename}", "file_selection": selection})

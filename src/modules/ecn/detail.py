@@ -148,6 +148,16 @@ def detail_requires_reopen(current_workflow: dict, fresh_workflow: dict) -> bool
     )
 
 
+def claim_stage_change_notice(
+    notice_state: dict[str, bool], *, action_in_progress: bool, detail_closed: bool
+) -> bool:
+    """本窗口操作已有结果提示；外部阶段变化只允许当前详情提示一次。"""
+    if action_in_progress or detail_closed or notice_state.get("stage_change", False):
+        return False
+    notice_state["stage_change"] = True
+    return True
+
+
 async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, refresh_list):
     access_snapshot = build_ecn_access_snapshot()
     if not can_view_ecn(current_role, current_user, access_snapshot=access_snapshot):
@@ -234,6 +244,9 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
     review_baseline = copy.deepcopy(ecn_data["review_info"])
     review_save_lock = asyncio.Lock()
     action_busy = {"value": False}
+    detail_lifecycle = {"closed": False}
+    detail_notice_state = {"stage_change": False}
+    root_dialog.on("close", lambda: detail_lifecycle.update(closed=True))
 
     wf = local_data["workflow"]
     basic = local_data["basic_info"]
@@ -1510,6 +1523,7 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                 )
                 if result.ok and result.record is not None:
                     ui.notify(f"操作成功：{result.record['ecn_id']}", type="positive")
+                    detail_lifecycle["closed"] = True
                     root_dialog.close()
                     refresh_list()
                 else:
@@ -1524,6 +1538,9 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
             协同同步方案编写阶段的核心函数，定期从数据库拉取最新数据并对比当前本地数据，智能更新界面以反映其他用户的修改
             """
             if ecn_id:
+                # 当前窗口提交、撤销或审批时，操作结果已经有明确提示；不要让轮询再为同一次变化弹提示。
+                if action_busy["value"] or detail_lifecycle["closed"]:
+                    return
                 current_stamp = db_storage.get_item(ECN_VERSION_KEY, 0.0)
                 if current_stamp == detail_version_tracker["stamp"]:
                     return
@@ -1578,9 +1595,15 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                         ui.notify("ECN等级已由其他页面调整，请重新打开详情。", type="info")
                         return
                     if state_or_phase_changed:
+                        show_stage_notice = claim_stage_change_notice(
+                            detail_notice_state,
+                            action_in_progress=action_busy["value"],
+                            detail_closed=detail_lifecycle["closed"],
+                        )
                         root_dialog.close()
                         refresh_list()
-                        ui.notify("ECN流程阶段已变化，请重新打开详情继续操作。", type="info")
+                        if show_stage_notice:
+                            ui.notify("ECN流程已由其他页面更新，请重新打开详情。", type="info")
                         return
                     current_identity_still_pending = current_user in get_ecn_pending_approval_roles(wf)
                     if was_current_role_pending and not current_identity_still_pending:
