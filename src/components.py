@@ -46,6 +46,7 @@ from .config import (
     UPLOADS_DIR,
 )
 from .custom_ui import custom_upload
+from .image_preview import build_contained_image_preview
 from .overview_file_choice import choose_overview_file
 from .overview_file_storage import validate_file_selection
 from .overview_batch_operations import (
@@ -590,24 +591,6 @@ def get_upload_local_path(file_url: str) -> str:
             return os.path.join(UPLOADS_DIR, os.path.basename(normalized_url))
         return os.path.join(UPLOADS_DIR, normalized_relative_path)
     return os.path.join(UPLOADS_DIR, os.path.basename(normalized_url))
-
-
-def build_contained_image_preview(image_url: str, on_close: Callable[[], None]):
-    """Render an image preview with stable viewport bounds."""
-    with ui.element("div").classes("fixed inset-0 bg-transparent flex items-center justify-center p-3 sm:p-4"):
-        with ui.element("div").classes(
-            "relative w-[95vw] h-[90vh] max-w-[95vw] max-h-[90vh] overflow-hidden flex items-center justify-center"
-        ):
-            image = (
-                ui.image(image_url)
-                .props("fit=contain no-spinner")
-                .classes("w-full h-full cursor-grab select-none")
-                .style("transform-origin: center center;")
-            )
-        ui.button(icon="close", on_click=on_close).props("flat round color=grey-8").classes(
-            "absolute top-3 right-3 z-10 bg-white/80 hover:bg-white shadow-sm"
-        )
-    return image
 
 
 def _is_deactivated_chip(chip_info: dict, req_max_ver: str) -> bool:

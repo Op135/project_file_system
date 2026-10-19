@@ -83,8 +83,7 @@ from .scheme_panel import (
 )
 from .approval_reassignment_ui import open_approval_reassignment_dialog
 from .task_labels import humanize_ecn_log_action
-from .attachment_preview import attachment_kind, issue_staged_attachment_preview_url
-from .attachment_ui import render_ecn_ecr_attachments, open_staged_ecn_attachment_file
+from .attachment_ui import render_ecn_ecr_attachments
 from .attachments import cleanup_staged, stage_upload
 
 
@@ -670,41 +669,6 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                         ui.label("申请附件:").classes("font-bold text-gray-700 w-20 shrink-0 pt-1")
                         with ui.column().classes("flex-1 min-w-0 gap-1"):
                             if is_new:
-                                pending_layout = ui.element("div").classes(
-                                    "w-full grid grid-cols-1 md:grid-cols-2 gap-5 items-start"
-                                )
-                                with pending_layout, ui.column().classes("w-full min-w-0 gap-2"):
-                                    ui.label("待保存附件（点击文件名预览或下载）").classes(
-                                        "text-xs font-semibold text-slate-600"
-                                    )
-                                    pending_list = ui.column().classes("w-full gap-3 max-h-[45vh] overflow-y-auto")
-
-                                def render_pending_files() -> None:
-                                    pending_list.clear()
-                                    with pending_list:
-                                        if not basic["attachments"]:
-                                            ui.label("暂无附件").classes("text-xs text-slate-400 py-2")
-                                        for attachment in basic["attachments"]:
-                                            with ui.row().classes(
-                                                "w-full min-h-[56px] items-center gap-2 rounded-lg "
-                                                "border border-slate-200 bg-white px-3 py-2"
-                                            ):
-                                                if attachment_kind(str(attachment.get("name") or "")) == "image":
-                                                    ui.image(issue_staged_attachment_preview_url(
-                                                        attachment, current_user, current_role,
-                                                    )).classes("w-10 h-10 object-cover rounded cursor-pointer shrink-0").on(
-                                                        "click", lambda _, entry=attachment: open_staged_ecn_attachment_file(
-                                                            entry, current_user, current_role,
-                                                        )
-                                                    )
-                                                else:
-                                                    ui.icon("attach_file", size="xs").classes("text-slate-500")
-                                                ui.label(f"{attachment.get('name', '附件')} · 待保存").classes(
-                                                    "text-xs text-indigo-700 break-all cursor-pointer hover:underline"
-                                                ).on("click", lambda _, entry=attachment: open_staged_ecn_attachment_file(
-                                                    entry, current_user, current_role,
-                                                ))
-
                                 async def upload_new_ecr_file(event) -> None:
                                     ecr_upload_busy["count"] += 1
                                     try:
@@ -718,7 +682,6 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                                         cleanup_staged([staged])
                                         return
                                     basic["attachments"].append(staged)
-                                    render_pending_files()
                                     ui.notify("附件已暂存，保存或提交 ECR 后归档", type="positive")
 
                                 def remove_new_ecr_file(event) -> None:
@@ -740,9 +703,8 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                                             removed.append(match)
                                     cleanup_staged(removed)
                                     basic["attachments"] = [entry for entry in basic["attachments"] if entry not in removed]
-                                    render_pending_files()
 
-                                with pending_layout, ui.column().classes("w-full min-w-0 gap-2"):
+                                with ui.column().classes("w-full min-w-0 gap-2"):
                                     ui.label("添加申请附件（可选）").classes(
                                         "text-xs font-semibold text-slate-600"
                                     )
@@ -752,7 +714,6 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                                         on_upload=upload_new_ecr_file,
                                         on_removed=remove_new_ecr_file,
                                     ).props("accept=*/*")
-                                render_pending_files()
                             else:
                                 render_ecn_ecr_attachments(
                                     str(ecn_id), current_user, current_role,

@@ -891,9 +891,7 @@ class IntensityDistributionTool:
                         multiple=True, auto_upload=True,
                         label="添加文件", max_file_size=MAX_UPLOAD_BYTES).props(
                         'accept=".csv,.cvs,.xlsx,.xlsm,.xls"').classes("w-full intensity-upload")
-                    ui.add_css(".intensity-upload .q-uploader__list {max-height:180px; overflow-y:auto;}")
                     ui.label("无表头二维数值矩阵；支持 Excel / CSV，单文件 50 MB。").classes("text-xs")
-                    self.render_files()
                 with ui.card().classes("w-full"):
                     ui.label("分析设置").classes("font-bold")
                     with ui.row().classes("w-full gap-3"):

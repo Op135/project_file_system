@@ -1,7 +1,6 @@
 # -*- encoding: utf-8 -*-
 import io
 import unittest
-from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -9,6 +8,7 @@ import pandas as pd
 from nicegui import ui
 from nicegui.events import ScrollEventArguments
 
+from src.custom_ui import CustomUploadRemovedEventArguments
 from src.tools.pixel_statistics import (
     AnalysisBatch,
     PixelStatisticsError,
@@ -366,37 +366,36 @@ class UploadStateTests(unittest.TestCase):
         tool._handle_outline_scroll(scroll_event)
         self.assertEqual(tool.outline_rendered_count, 7)
 
-    def test_refreshable_sections_are_registered_to_the_tool_instance(self):
+    def test_result_section_is_registered_to_the_tool_instance(self):
         tool = PixelStatisticsTool()
         dialog = ui.dialog()
 
         tool.show(dialog)
 
-        file_targets = tool.render_file_list.targets
         result_targets = tool.render_results.targets
-        self.assertTrue(any(target.instance is tool for target in file_targets))
         self.assertTrue(any(target.instance is tool for target in result_targets))
 
-    def test_custom_remove_clears_analysis_and_uploader_file(self):
+    def test_custom_remove_event_clears_analysis_data(self):
         tool = PixelStatisticsTool()
         tool.uploaded_files = {"输入.csv": b"1,2"}
-        client = MagicMock()
-        tool.upload_control = SimpleNamespace(id=17, client=client)
-        tool.render_file_list = MagicMock()
+        tool.batch = MagicMock()
         tool.render_results = MagicMock()
 
-        tool._remove_file("输入.csv")
+        tool._handle_upload_removed(CustomUploadRemovedEventArguments(
+            sender=MagicMock(),
+            client=MagicMock(),
+            files=[{"name": "输入.csv"}],
+            clear_all=False,
+        ))
 
         self.assertEqual(tool.uploaded_files, {})
-        script = client.run_javascript.call_args.args[0]
-        self.assertIn("removeFile", script)
-        self.assertIn("输入.csv", script)
+        self.assertIsNone(tool.batch)
+        tool.render_results.refresh.assert_called_once_with()
 
     def test_reset_clears_the_upload_control(self):
         tool = PixelStatisticsTool()
         tool.uploaded_files = {"输入.csv": b"1,2"}
         tool.upload_control = MagicMock()
-        tool.render_file_list = MagicMock()
         tool.render_results = MagicMock()
 
         tool._reset()

@@ -52,12 +52,10 @@ from .attachment_preview import (
     attachment_kind,
     issue_attachment_preview_url,
     issue_overview_scheme_preview_url,
-    issue_staged_attachment_preview_url,
 )
 from .attachment_ui import (
     open_ecn_attachment_file,
     open_overview_scheme_upload,
-    open_staged_ecn_attachment_file,
 )
 from .attachments import cleanup_staged, publish_pending, stage_upload, resolve_staged_attachment
 
@@ -1630,49 +1628,43 @@ def open_text_change_dialog(
                     attachment_list.clear()
                     actor_role = str(app.storage.user.get("current_role") or "")
                     with attachment_list:
-                        for attachment in [*existing_attachments, *staged_attachments]:
-                            pending = bool(attachment.get("pending_path"))
+                        if not existing_attachments:
+                            ui.label("暂无已保存附件").classes("text-xs text-slate-400 py-2")
+                        for attachment in existing_attachments:
                             file_id = str(attachment.get("id") or "")
                             name = str(attachment.get("name") or "附件")
 
-                            def open_list_file(entry=attachment, staged=pending, fid=file_id) -> None:
-                                if staged:
-                                    open_staged_ecn_attachment_file(entry, current_user, actor_role)
-                                else:
-                                    open_ecn_attachment_file(
-                                        str(ecn_data["ecn_id"]),
-                                        "scheme",
-                                        str(edit_data.get("item_id") or ""),
-                                        "",
-                                        fid,
-                                        current_user,
-                                        actor_role,
-                                    )
+                            def open_list_file(fid=file_id) -> None:
+                                open_ecn_attachment_file(
+                                    str(ecn_data["ecn_id"]),
+                                    "scheme",
+                                    str(edit_data.get("item_id") or ""),
+                                    "",
+                                    fid,
+                                    current_user,
+                                    actor_role,
+                                )
 
                             with ui.row().classes(
                                 "w-full min-h-[56px] items-center gap-2 rounded-lg "
                                 "border border-slate-200 bg-white px-3 py-2"
                             ):
                                 if attachment_kind(name) == "image":
-                                    image_url = (
-                                        issue_staged_attachment_preview_url(attachment, current_user, actor_role)
-                                        if pending
-                                        else issue_attachment_preview_url(
-                                            str(ecn_data["ecn_id"]),
-                                            "scheme",
-                                            str(edit_data.get("item_id") or ""),
-                                            "",
-                                            file_id,
-                                            current_user,
-                                            actor_role,
-                                        )
+                                    image_url = issue_attachment_preview_url(
+                                        str(ecn_data["ecn_id"]),
+                                        "scheme",
+                                        str(edit_data.get("item_id") or ""),
+                                        "",
+                                        file_id,
+                                        current_user,
+                                        actor_role,
                                     )
                                     ui.image(image_url).classes(
                                         "w-10 h-10 object-cover rounded cursor-pointer shrink-0"
                                     ).on("click", open_list_file)
                                 else:
                                     ui.icon("attach_file", size="xs").classes("text-slate-500")
-                                ui.label(f"{name}{' · 待保存' if pending else ''}").classes(
+                                ui.label(name).classes(
                                     "text-xs text-indigo-700 break-all cursor-pointer hover:underline"
                                 ).on("click", open_list_file)
 
@@ -1689,7 +1681,6 @@ def open_text_change_dialog(
                         cleanup_staged([staged])
                         return
                     staged_attachments.append(staged)
-                    render_attachment_list()
                     ui.notify("附件已暂存，保存方案后归档", type="positive")
 
                 def remove_document_upload(event) -> None:
@@ -1709,7 +1700,6 @@ def open_text_change_dialog(
                             removed.append(match)
                     cleanup_staged(removed)
                     staged_attachments[:] = [entry for entry in staged_attachments if entry not in removed]
-                    render_attachment_list()
 
                 with attachment_layout, ui.column().classes("w-full min-w-0 gap-2"):
                     ui.label("添加附件（可选）").classes("text-xs font-bold text-slate-700")

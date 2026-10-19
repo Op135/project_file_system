@@ -20,6 +20,8 @@ from nicegui import run, ui
 from nicegui.elements.table import Table
 from nicegui.events import ScrollEventArguments
 
+from src.custom_ui import CustomUploadRemovedEventArguments, custom_upload
+
 SUPPORTED_EXTENSIONS = {".xlsx", ".xlsm", ".xls", ".csv", ".cvs"}
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 MAX_OUTLINE_CHART_POINTS = 800
@@ -890,42 +892,26 @@ class PixelStatisticsTool:
             )
 
             with ui.card().classes(
-                "pixel-statistics-upload-card w-full h-full min-h-0 overflow-hidden p-4 border shadow-sm flex flex-col"
+                "pixel-statistics-upload-card w-full p-4 border shadow-sm"
             ) as upload_card:
-                ui.label("1. 上传数据").classes("font-bold text-gray-700")
-                self.upload_control = (
-                    ui.upload(
-                        on_upload=self._handle_upload,
-                        multiple=True,
-                        auto_upload=True,
-                        label="选择或添加文件",
+                with ui.column().classes("w-full min-w-0 gap-2 items-stretch flex-nowrap"):
+                    ui.label("1. 上传数据").classes("font-bold text-gray-700")
+                    self.upload_control = (
+                        custom_upload(
+                            on_upload=self._handle_upload,
+                            on_removed=self._handle_upload_removed,
+                            multiple=True,
+                            auto_upload=True,
+                            label="选择或添加文件",
+                            max_files=20,
+                            max_file_size=MAX_UPLOAD_BYTES,
+                        )
+                        .classes("w-full pixel-statistics-upload")
+                        .props('accept=".xlsx,.xlsm,.xls,.csv,.cvs"')
                     )
-                    .classes("w-full pixel-statistics-upload")
-                    .props('accept=".xlsx,.xlsm,.xls,.csv,.cvs" max-files="20" max-file-size="52428800"')
-                )
-                ui.add_css(
-                    """
-                    .pixel-statistics-upload .q-uploader__list {
-                        display: none !important;
-                    }
-                    .pixel-statistics-upload .q-uploader__file-status {
-                        display: none !important;
-                    }
-                    .pixel-statistics-upload .q-uploader__subtitle {
-                        display: none !important;
-                    }
-                    @media (min-width: 1280px) {
-                        .pixel-statistics-upload-card {
-                            contain: size;
-                        }
-                    }
-                    """
-                )
-                ui.label("支持 Excel、CSV（含 UTF-8/GBK）；按无表头二维数值矩阵读取，单文件上限 50 MB。").classes(
-                    "text-xs text-gray-500"
-                )
-                with ui.scroll_area().classes("w-full flex-1 min-h-0"):
-                    self.render_file_list()
+                    ui.label(
+                        "支持 Excel、CSV（含 UTF-8/GBK）；按无表头二维数值矩阵读取，单文件上限 50 MB。"
+                    ).classes("text-xs text-gray-500")
 
             with ui.card().classes("w-full h-full p-4 border shadow-sm") as settings_card:
                 ui.label("2. 常用分析设置").classes("font-bold text-gray-700")
@@ -1121,23 +1107,6 @@ class PixelStatisticsTool:
             self.render_results()
 
     @ui.refreshable_method
-    def render_file_list(self) -> None:
-        if not self.uploaded_files:
-            ui.label("尚未上传文件").classes("text-sm text-gray-400")
-            return
-        total_bytes = sum(len(content) for content in self.uploaded_files.values())
-        ui.label(f"当前 {len(self.uploaded_files)} 个文件，共 {total_bytes / 1024 / 1024:.2f} MB").classes(
-            "text-xs text-gray-500"
-        )
-        with ui.row().classes("w-full gap-2 flex-wrap content-start"):
-            for filename, content in self.uploaded_files.items():
-                with ui.chip(icon="description").props("outline color=primary"):
-                    ui.label(f"{filename}（{len(content) / 1024 / 1024:.2f} MB）")
-                    ui.icon("close", size="xs").classes("cursor-pointer").on(
-                        "click", lambda _=None, name=filename: self._remove_file(name)
-                    )
-
-    @ui.refreshable_method
     def render_results(self) -> None:
         self.outline_chart_grid = None
         self.outline_load_status = None
@@ -1326,28 +1295,18 @@ class PixelStatisticsTool:
             self.batch = None
             if self.export_button is not None:
                 self.export_button.disable()
-            self.render_file_list.refresh()
             self.render_results.refresh()
             ui.notify(f"已载入 {filename}", type="positive")
         except Exception as exc:
             ui.notify(f"上传失败：{exc}", type="negative")
 
-    def _remove_file(self, filename: str) -> None:
-        self.uploaded_files.pop(filename, None)
-        if self.upload_control is not None:
-            encoded_name = json.dumps(filename, ensure_ascii=False)
-            self.upload_control.client.run_javascript(
-                f"""
-                const wrapper = getElement({self.upload_control.id});
-                const uploader = wrapper?.$refs?.qRef;
-                const file = uploader?.files?.find(item => item.name === {encoded_name});
-                if (file) uploader.removeFile(file);
-                """
-            )
+    def _handle_upload_removed(self, event: CustomUploadRemovedEventArguments) -> None:
+        """同步移除上传组件中已删除的待分析文件。"""
+        for file_info in event.files:
+            self.uploaded_files.pop(str(file_info.get("name") or ""), None)
         self.batch = None
         if self.export_button is not None:
             self.export_button.disable()
-        self.render_file_list.refresh()
         self.render_results.refresh()
 
     def _settings_from_ui(self) -> PixelStatisticsSettings:
@@ -1428,6 +1387,5 @@ class PixelStatisticsTool:
         self.batch = None
         if self.export_button is not None:
             self.export_button.disable()
-        self.render_file_list.refresh()
         self.render_results.refresh()
         ui.notify("已清空上传文件和统计结果", type="info")

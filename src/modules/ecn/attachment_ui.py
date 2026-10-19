@@ -7,10 +7,10 @@ from typing import Any, Callable
 
 from nicegui import app, ui
 
-from ...components import build_contained_image_preview
 from ...custom_ui import custom_upload
 from ...ecn_access import get_active_ecn_actor_role
 from ...ecn_management_config import ECN_ATTACHMENT_CONFIG
+from ...image_preview import show_interactive_image_preview
 from .attachment_preview import (
     attachment_kind,
     issue_attachment_preview_url,
@@ -29,11 +29,7 @@ from .attachments import (
 
 
 def _show_image_preview(url: str) -> None:
-    preview = ui.dialog().props("maximized").classes("p-0")
-    with preview:
-        build_contained_image_preview(url, preview.close)
-    preview.on("close", preview.delete)
-    preview.open()
+    show_interactive_image_preview(url)
 
 
 def _open_pdf_in_new_tab(url: str) -> None:
@@ -175,11 +171,14 @@ def render_ecn_ecr_attachments(ecn_id: str, user: str, role: str, *, can_upload:
             staged = await stage_upload(event.file, user)
             result = await attach_existing(ecn_id, "ecr", "", "", staged, user, role, service)
             if not result.ok:
+                event.sender.reset()
                 ui.notify(result.message, type="warning")
                 return
+            event.sender.reset()
             ui.notify("附件上传成功", type="positive")
             render_list()
         except Exception as exc:
+            event.sender.reset()
             ui.notify(f"上传失败：{exc}", type="negative")
         finally:
             if staged is not None:
@@ -288,13 +287,16 @@ def open_ecn_attachment_dialog(
                         ecn_id, scope, item_id, task_key, staged, user, role, service
                     )
                     if not result.ok:
+                        event.sender.reset()
                         ui.notify(result.message, type="warning")
                         return
+                    event.sender.reset()
                     ui.notify("附件上传成功", type="positive")
                     render_list()
                     if on_updated is not None:
                         on_updated()
                 except Exception as exc:
+                    event.sender.reset()
                     ui.notify(f"上传失败：{exc}", type="negative")
                 finally:
                     if staged is not None:

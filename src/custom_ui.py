@@ -10,6 +10,8 @@ from typing import Any, Literal
 from nicegui import events, ui
 from nicegui.elements.upload import Upload
 
+from .image_preview import show_interactive_image_preview
+
 __all__ = ["CustomUploadRemovedEventArguments", "custom_upload"]
 
 _CUSTOM_UPLOAD_CSS = """
@@ -25,7 +27,12 @@ _CUSTOM_UPLOAD_CSS = """
         grid-template-columns: auto minmax(0, 1fr);
     }
     .custom-upload-action { grid-area: action; min-width: 128px; }
-    .custom-upload-files { grid-area: files; width: 100%; }
+    .custom-upload-files { grid-area: files; width: 100%; min-width: 0; }
+    .custom-upload-files-scroll {
+        max-height: 220px; overflow-x: hidden; overflow-y: auto;
+        overscroll-behavior: contain; padding-right: 4px;
+        scrollbar-gutter: stable;
+    }
     .custom-upload-file-row {
         width: 100%; min-height: 58px; padding: 6px 8px;
         border: 1px solid #e2e8f0; border-radius: 8px; background: #fff;
@@ -165,7 +172,10 @@ def custom_upload(
     panel = ui.element("div").classes(f"custom-upload-panel custom-upload-position-{file_area_position}")
     with panel:
         action_area = ui.column().classes("custom-upload-action gap-1 items-start")
-        file_area = ui.column().classes("custom-upload-files gap-1")
+        file_area_classes = "custom-upload-files gap-1"
+        if multiple:
+            file_area_classes += " custom-upload-files-scroll"
+        file_area = ui.column().classes(file_area_classes)
         uploader = _CompactUpload(
             multiple=multiple,
             max_files=effective_max_files,
@@ -206,7 +216,10 @@ def custom_upload(
         if not url:
             return
         name = str(file_data.get("name") or "文件")
-        if _file_kind(file_data) in {"image", "pdf"}:
+        kind = _file_kind(file_data)
+        if kind == "image":
+            show_interactive_image_preview(url)
+        elif kind == "pdf":
             ui.run_javascript(f"window.open({json.dumps(url)}, '_blank');")
         else:
             ui.run_javascript(

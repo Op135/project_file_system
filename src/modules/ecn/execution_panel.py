@@ -83,7 +83,6 @@ from .task_labels import compact_material_confirmation_label, material_confirmat
 from .attachment_ui import (
     open_ecn_attachment_dialog,
     open_ecn_attachment_file,
-    open_staged_ecn_attachment_file,
 )
 from .attachments import cleanup_staged, stage_upload
 from .execution_review import revoke_execution_confirmation, verify_execution_result
@@ -334,66 +333,41 @@ def build_execution_panel(
                     "撤销理由（必填）",
                     placeholder="请说明实际执行不到位的具体情况和需要重新处理的内容……",
                 ).props("outlined auto-grow rows=3").classes("w-full")
-                with ui.element("div").classes(
-                    "w-full grid grid-cols-1 md:grid-cols-2 gap-4 items-start"
-                ):
-                    with ui.column().classes("w-full gap-2"):
-                        ui.label("证明附件（可选）").classes("text-xs font-semibold text-slate-600")
-                        staged_host = ui.column().classes(
-                            "w-full gap-2 max-h-[220px] overflow-y-auto"
+                async def handle_review_upload(event: Any) -> None:
+                    try:
+                        staged = await stage_upload(event.file, current_user)
+                        staged_attachments.append(staged)
+                    except Exception as exc:
+                        ui.notify(f"上传失败：{exc}", type="negative")
+
+                def remove_review_upload(event: Any) -> None:
+                    removed = []
+                    for file_info in event.files:
+                        match = next(
+                            (
+                                entry
+                                for entry in staged_attachments
+                                if entry not in removed
+                                and entry.get("name") == file_info.get("name")
+                                and (file_info.get("size") is None or entry.get("size") == file_info.get("size"))
+                            ),
+                            None,
                         )
+                        if match is not None:
+                            removed.append(match)
+                    cleanup_staged(removed)
+                    staged_attachments[:] = [entry for entry in staged_attachments if entry not in removed]
 
-                        def render_staged() -> None:
-                            staged_host.clear()
-                            with staged_host:
-                                if not staged_attachments:
-                                    ui.label("暂无附件").classes("text-xs text-slate-400 py-2")
-                                for attachment in staged_attachments:
-                                    name = str(attachment.get("name") or "附件")
-                                    with ui.row().classes(
-                                        "w-full items-center gap-2 border border-slate-200 rounded px-3 py-2 bg-white"
-                                    ):
-                                        ui.icon("attach_file", size="xs").classes("text-slate-500")
-                                        ui.label(name).classes(
-                                            "flex-1 min-w-0 text-sm break-all cursor-pointer hover:underline"
-                                        ).on(
-                                            "click",
-                                            lambda _, current=attachment: open_staged_ecn_attachment_file(
-                                                current,
-                                                current_user,
-                                                current_role,
-                                            ),
-                                        )
-
-                                        def remove_staged(current=attachment) -> None:
-                                            cleanup_staged([current])
-                                            if current in staged_attachments:
-                                                staged_attachments.remove(current)
-                                            render_staged()
-
-                                        ui.button(icon="delete_outline", on_click=remove_staged).props(
-                                            "flat round dense size=sm color=red-5"
-                                        )
-
-                        render_staged()
-
-                    async def handle_review_upload(event: Any) -> None:
-                        try:
-                            staged = await stage_upload(event.file, current_user)
-                            staged_attachments.append(staged)
-                            render_staged()
-                        except Exception as exc:
-                            ui.notify(f"上传失败：{exc}", type="negative")
-
-                    with ui.column().classes("w-full gap-2"):
-                        ui.label("添加附件").classes("text-xs font-semibold text-slate-600")
-                        custom_upload(
-                            multiple=True,
-                            max_file_size=int(ECN_ATTACHMENT_CONFIG["max_file_size_mb"])
-                            * 1024
-                            * 1024,
-                            on_upload=handle_review_upload,
-                        ).props("accept=*/*")
+                with ui.column().classes("w-full gap-2"):
+                    ui.label("证明附件（可选）").classes("text-xs font-semibold text-slate-600")
+                    custom_upload(
+                        multiple=True,
+                        max_file_size=int(ECN_ATTACHMENT_CONFIG["max_file_size_mb"])
+                        * 1024
+                        * 1024,
+                        on_upload=handle_review_upload,
+                        on_removed=remove_review_upload,
+                    ).props("accept=*/*")
 
                 async def submit_revoke() -> None:
                     result = await revoke_execution_confirmation(
