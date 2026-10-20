@@ -43,18 +43,37 @@ class LocalDevRuntimePolicy:
             raw = json.loads(self.state_path.read_text(encoding="utf-8"))
         except (OSError, ValueError, TypeError):
             return DevRuntimeSettings()
+        if not isinstance(raw, dict):
+            return DevRuntimeSettings()
         allowed = set(allowed_wecom_recipients())
+        raw_recipients = raw.get("redirect_recipients", [])
+        if not isinstance(raw_recipients, list):
+            raw_recipients = []
         recipients = tuple(
             value
-            for value in (str(item).strip() for item in raw.get("redirect_recipients", []))
+            for value in (str(item).strip() for item in raw_recipients)
             if value and value in allowed
         )
+        raw_mode = raw.get("wecom_mode")
+        mode: WeComMode = (
+            raw_mode if raw_mode in {"blocked", "redirect", "live"} else "blocked"
+        )
+        live_until = str(raw.get("live_until") or "")
+        if mode == "redirect" and not recipients:
+            mode = "blocked"
+        if mode == "live":
+            try:
+                live_is_active = datetime.now() < datetime.fromisoformat(live_until)
+            except (TypeError, ValueError):
+                live_is_active = False
+            if not live_is_active:
+                mode = "blocked"
+                live_until = ""
         return DevRuntimeSettings(
-            # 每次进程启动都恢复安全默认，不继承上次的发送或后台任务开关。
-            wecom_mode="blocked",
+            wecom_mode=mode,
             redirect_recipients=recipients,
-            background_tasks_enabled=False,
-            live_until="",
+            background_tasks_enabled=raw.get("background_tasks_enabled") is True,
+            live_until=live_until,
         )
 
     def _save_locked(self) -> None:
@@ -68,6 +87,7 @@ class LocalDevRuntimePolicy:
 
     def snapshot(self) -> DevRuntimeSettings:
         with self._lock:
+            self._effective_mode_locked()
             return DevRuntimeSettings(**asdict(self._settings))
 
     def update(
@@ -103,7 +123,7 @@ class LocalDevRuntimePolicy:
             return self._settings.wecom_mode
         try:
             still_live = datetime.now() < datetime.fromisoformat(self._settings.live_until)
-        except ValueError:
+        except (TypeError, ValueError):
             still_live = False
         if still_live:
             return "live"

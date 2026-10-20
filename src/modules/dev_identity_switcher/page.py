@@ -188,7 +188,9 @@ def install_dev_identity_switcher(*, listen_host: str, state_path: Path | None =
                                         "w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-center font-bold"
                                     )
                                     ui.label("企业微信发送策略").classes("font-bold text-slate-800")
-                                ui.label("每次启动都会恢复为强制关闭。").classes("text-sm text-slate-500")
+                                ui.label("保存后跨重启保留；真实发送仍在 15 分钟后自动关闭。").classes(
+                                    "text-sm text-slate-500"
+                                )
                                 mode = ui.radio(
                                     {
                                         "blocked": "强制关闭｜只记录，不发送",
@@ -269,7 +271,7 @@ def install_dev_identity_switcher(*, listen_host: str, state_path: Path | None =
                     with ui.row().classes(
                         "w-full items-center justify-between gap-3 px-5 pb-5"
                     ):
-                        ui.label("选择只在当前本地进程生效，重启后恢复安全默认。").classes(
+                        ui.label("选择保存在本地配置中，重启调试服务后继续生效。").classes(
                             "text-sm text-slate-500"
                         )
                         ui.button("保存控制策略", icon="security", on_click=save_controls).props(

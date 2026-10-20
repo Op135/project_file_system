@@ -14,7 +14,7 @@
 - 登录态：页面通常从 `app.storage.user` 读取 `current_user`、`current_role`；ECN 未登录时跳转 `/login`。
 - 登录页会复用同一浏览器现有会话，并复核账号仍在职；ECN未登录跳转携带返回地址，登录成功后回到ECN。会话以浏览器Cookie识别，localhost、IP、域名或不同浏览器配置不自动共享；部署服务器本身不能解决地址或浏览器不一致的问题。通知地址应与员工日常登录入口统一。
 - 本地复制服务器数据调试时使用根目录 `run_local_debug.py`。该入口固定监听 `127.0.0.1`，注册 `/dev/identity-switcher`，允许在不修改密码哈希的前提下切换当前浏览器身份。目标用户的岗位、权限、待办和审批资格仍从身份库实时读取。
-- 本地调试模块默认拦截企业微信文本/卡片和后台通知任务，可在控制页切换为白名单转发或限时真实发送。运行时设置只保存于 Git 忽略的 `.local/dev_runtime_controls.json`，不修改业务 JSON 或数据库副本。正式入口不导入该模块，服务器部署时应排除模块和本地启动器。
+- 本地调试模块默认拦截企业微信文本/卡片和后台通知任务，可在控制页切换为白名单转发或限时真实发送。运行时设置只保存于 Git 忽略的 `.local/dev_runtime_controls.json`，不修改业务 JSON 或数据库副本；保存后跨本地调试进程重启恢复，其中真实发送仍只在原 15 分钟截止时间内有效。正式入口不导入该模块，服务器部署时应排除模块和本地启动器。
 - 本地运行时策略安装后，首页右下角显示“调试控制中心”悬浮按钮并进入 `/dev/identity-switcher`；正式入口未安装策略，因此不渲染该入口。
 - `ecn_management_config.json`、`error_management_config.json`、`sample_issue_collection_config.json`、`sample_order_dashboard_config.json` 始终保存服务器业务值，不再通过修改这些文件进入本地调试模式；本地外部副作用全部由运行时总闸门覆盖。
 - 本地命令行和 VS Code 的 NiceGUI 调试配置均默认启用热重载；watchfiles 强制使用 200ms 轮询，以可靠检测 VS Code 或 Codex 写入的 Python 文件。调试配置通过 `subProcess=true` 跟随 NiceGUI 重载后的子进程；开发模式浏览器重连等待为30秒，用于覆盖debugpy重启子进程约15秒的间隔，避免源码保存后被误判为永久断联。需要临时关闭热重载时可显式设置 `NICEGUI_RELOAD=false`。

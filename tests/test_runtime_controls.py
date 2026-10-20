@@ -210,7 +210,7 @@ class RuntimeControlTests(unittest.IsolatedAsyncioTestCase):
                 assert_local_dev_environment("0.0.0.0")
             assert_local_dev_environment("127.0.0.1")
 
-    def test_new_process_policy_always_restores_safe_defaults(self):
+    def test_new_process_policy_restores_saved_controls(self):
         state_path = Path(self.temp_dir.name) / "state.json"
         with patch.dict("os.environ", {"DEV_WECOM_RECIPIENT_ALLOWLIST": "developer-a"}):
             first = LocalDevRuntimePolicy(state_path)
@@ -220,9 +220,48 @@ class RuntimeControlTests(unittest.IsolatedAsyncioTestCase):
                 background_tasks_enabled=True,
             )
             restarted = LocalDevRuntimePolicy(state_path).snapshot()
-        self.assertEqual(restarted.wecom_mode, "blocked")
-        self.assertFalse(restarted.background_tasks_enabled)
+        self.assertEqual(restarted.wecom_mode, "redirect")
+        self.assertTrue(restarted.background_tasks_enabled)
         self.assertEqual(restarted.redirect_recipients, ("developer-a",))
+
+    def test_restart_does_not_extend_expired_live_sending(self):
+        state_path = Path(self.temp_dir.name) / "state.json"
+        state_path.write_text(
+            json.dumps(
+                {
+                    "wecom_mode": "live",
+                    "redirect_recipients": [],
+                    "background_tasks_enabled": True,
+                    "live_until": "2000-01-01T00:00:00",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        restarted = LocalDevRuntimePolicy(state_path).snapshot()
+
+        self.assertEqual(restarted.wecom_mode, "blocked")
+        self.assertEqual(restarted.live_until, "")
+        self.assertTrue(restarted.background_tasks_enabled)
+
+    def test_restart_rechecks_redirect_recipients_against_current_allowlist(self):
+        state_path = Path(self.temp_dir.name) / "state.json"
+        state_path.write_text(
+            json.dumps(
+                {
+                    "wecom_mode": "redirect",
+                    "redirect_recipients": ["removed-user"],
+                    "background_tasks_enabled": False,
+                    "live_until": "",
+                }
+            ),
+            encoding="utf-8",
+        )
+        with patch.dict("os.environ", {"DEV_WECOM_RECIPIENT_ALLOWLIST": "developer-a"}):
+            restarted = LocalDevRuntimePolicy(state_path).snapshot()
+
+        self.assertEqual(restarted.wecom_mode, "blocked")
+        self.assertEqual(restarted.redirect_recipients, ())
 
 
 if __name__ == "__main__":
