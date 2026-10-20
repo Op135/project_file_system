@@ -28,12 +28,14 @@ from ...ecn_management_config import (
     ECN_EXECUTION_STAGE_MATERIAL,
     ECN_EXECUTION_STAGE_OVERVIEW_FAILED,
     ECN_EXECUTION_STAGE_OVERVIEW_RUNNING,
+    ECN_EXECUTION_STAGE_READY_TO_CLOSE,
     get_ecn_scheme_target_projects,
     get_ecn_material_execution_specs,
     get_ecn_missing_material_code_items,
     get_ecn_level_code,
     get_ecn_validation_report,
     is_ecn_scheme_ready_for_review,
+    is_ecn_level_decided,
     get_ecn_special_confirmations,
     can_ecn_assistant_confirm_special,
     ECN_LEVEL_COMPLEX,
@@ -130,6 +132,11 @@ def pending_task_details(
     assignment_issues = get_ecn_execution_assignment_issues(
         record, user_service=service, access_snapshot=snapshot
     )
+    if state == ECNState.ECN_EXECUTING and stage == ECN_EXECUTION_STAGE_READY_TO_CLOSE:
+        return {
+            name: ["全部执行确认项已完成，请复核执行结果并手动关闭ECN"]
+            for name in pending
+        }
     if state == ECNState.ECN_EXECUTING:
         for key, confirmation in get_ecn_special_confirmations(execution).items():
             if not confirmation.get("review_revocation") or not can_ecn_assistant_confirm_special(execution, confirmation):
@@ -258,7 +265,11 @@ def pending_task_details(
     elif state in {ECNState.ECR_REVIEWING, ECNState.ECN_REVIEWING}:
         description = "处理当前审批节点"
     elif is_ecn_scheme_ready_for_review(record):
-        description = "所有参与人已确认且方案覆盖完整，请发起方案评审"
+        description = (
+            "请先选择ECN等级，再发起方案评审"
+            if not is_ecn_level_decided(record)
+            else "所有参与人已确认且方案覆盖完整，请发起方案评审"
+        )
     else:
         description = "完善影响评估或本人方案；被驳回方案请整改后重新确认"
 

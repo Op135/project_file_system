@@ -39,6 +39,7 @@ from ...ecn_management_config import (
     ECN_ITEM_STATUS_REVISED_CONFIRMED,
     ECN_ITEM_STATUS_REVISED_PENDING_CONFIRMATION,
     ECN_LEVEL_COMPLEX,
+    ECN_LEVEL_LABELS,
     ECN_OVERVIEW_ACTION_ADD,
     ECN_OVERVIEW_ACTION_DEACTIVATE,
     ECN_OVERVIEW_ACTION_LABELS,
@@ -53,6 +54,7 @@ from ...ecn_management_config import (
     ECNState,
     classify_ecn_change_item,
     get_ecn_level_code,
+    get_ecn_level_label,
     get_ecn_material_change_display,
     get_ecn_material_code_entries,
     get_ecn_missing_material_code_items,
@@ -69,6 +71,7 @@ from .actions import (
     edit_scheme,
     retain_scheme_after_association_change,
     set_participant_status,
+    set_ecn_level,
     set_trial_production_decision,
     update_material_codes,
 )
@@ -120,6 +123,7 @@ def build_scheme_panel(
     dashboard_updater,
     *,
     trial_saved_callback=None,
+    level_decision_callback=None,
     validation_saved_callback=None,
     panel_container=None,
 ):
@@ -273,8 +277,69 @@ def build_scheme_panel(
 
                                 with trial_card:
                                     with ui.row().classes("w-full items-center gap-2"):
-                                        ui.icon("science", color="blue-8").classes("text-2xl")
-                                        ui.label("是否需要试产").classes("text-xl font-bold text-blue-900")
+                                        ui.icon("fact_check", color="blue-8").classes("text-2xl")
+                                        ui.label("方案评审前判定").classes("text-xl font-bold text-blue-900")
+
+                                    with ui.row().classes(
+                                        "w-full items-center gap-3 flex-wrap border-b border-blue-200 pb-3"
+                                    ):
+                                        with ui.row().classes("items-center gap-2 min-w-[7rem]"):
+                                            ui.icon("speed", color="indigo-7").classes("text-lg")
+                                            ui.label("ECN等级").classes("text-base font-bold text-blue-900")
+
+                                        current_level = get_ecn_level_code(local_data)
+                                        if level_decision_callback is not None:
+                                            on_level_saved = level_decision_callback
+                                            level_snapshot = copy.deepcopy(local_data)
+
+                                            async def save_level_decision(event, expected=level_snapshot):
+                                                result = await set_ecn_level(
+                                                    str(local_data["ecn_id"]),
+                                                    expected,
+                                                    str(event.value),
+                                                    "before_scheme_review",
+                                                    current_user,
+                                                    current_role,
+                                                    user_service=app.state.user_service,
+                                                )
+                                                if not result.ok or result.record is None:
+                                                    ui.notify(result.message, type="warning")
+                                                    render_coverage_dashboard()
+                                                    return
+                                                result_workflow = result.record.get("workflow", {})
+                                                if isinstance(result_workflow, dict):
+                                                    wf["ecn_level"] = result_workflow.get("ecn_level", "")
+                                                    wf["ecn_level_decisions"] = copy.deepcopy(
+                                                        result_workflow.get("ecn_level_decisions", [])
+                                                    )
+                                                local_data["approval_log"] = copy.deepcopy(
+                                                    result.record.get("approval_log", [])
+                                                )
+                                                render_coverage_dashboard()
+                                                on_level_saved()
+
+                                            ui.radio(
+                                                ECN_LEVEL_LABELS,
+                                                value=(
+                                                    current_level
+                                                    if current_level in ECN_LEVEL_LABELS
+                                                    else None
+                                                ),
+                                                on_change=save_level_decision,
+                                            ).props("inline color=primary").classes(
+                                                "text-base font-semibold"
+                                            )
+                                        else:
+                                            ui.label(get_ecn_level_label(local_data)).classes(
+                                                "text-base font-semibold text-blue-800"
+                                            )
+
+                                    with ui.row().classes("w-full items-center gap-3 flex-wrap"):
+                                        with ui.row().classes("items-center gap-2 min-w-[7rem]"):
+                                            ui.icon("science", color="blue-8").classes("text-lg")
+                                            ui.label("是否需要试产").classes(
+                                                "text-base font-bold text-blue-900"
+                                            )
 
                                         decision = wf.get("trial_production", {})
                                         decision = decision if isinstance(decision, dict) else {}
@@ -315,15 +380,15 @@ def build_scheme_panel(
                                                 if isinstance(required, bool)
                                                 else None,
                                                 on_change=save_trial_decision,
-                                            ).props("inline color=primary").classes("text-xl font-bold")
-                                            if not isinstance(required, bool):
-                                                ui.label("发起评审前必选").classes("text-base text-red-600")
+                                            ).props("inline color=primary").classes(
+                                                "text-base font-semibold"
+                                            )
                                         else:
                                             ui.label(
                                                 ("需要试产" if required else "无需试产")
                                                 if isinstance(required, bool)
                                                 else "未判定"
-                                            ).classes("text-2xl font-bold text-blue-800")
+                                            ).classes("text-base font-semibold text-blue-800")
 
                         # 将渲染函数挂载到上方定义的字典中，以便借助自动刷新机制在数据变更时调用，同步更新覆盖率看板
                         dashboard_updater["refresh"] = render_coverage_dashboard

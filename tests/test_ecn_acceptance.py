@@ -17,7 +17,7 @@ from src.modules.ecn import validation_reports
 from src.modules.ecn import attachments
 from src.modules.ecn.models import generate_initial_ecn_data
 from src.modules.ecn.special_tasks import (
-    FINAL_EXECUTION_CONFIRMATION_REQUIRED,
+    close_ecn_execution,
     update_special_task,
 )
 from tests import test_approval_workflow as fixtures
@@ -125,6 +125,20 @@ class ECNAcceptanceTests(unittest.IsolatedAsyncioTestCase):
     async def ready(self):
         self.accept(await actions.set_participant_status(self.value["ecn_id"], self.value, "张三", "申请岗位", "confirmed", user_service=self.service, storage=self.storage))
         self.accept(await actions.set_trial_production_decision(self.value["ecn_id"], self.value, False, "张三", "申请岗位", user_service=self.service, storage=self.storage))
+        if not self.value.get("workflow", {}).get("ecn_level"):
+            self.accept(await actions.set_ecn_level(
+                self.value["ecn_id"], self.value, "general", "before_scheme_review",
+                "张三", "申请岗位", user_service=self.service, storage=self.storage,
+            ))
+
+    async def close(self, user="张三"):
+        self.accept(await close_ecn_execution(
+            self.value["ecn_id"],
+            username=user,
+            role="验收岗位",
+            service=self.service,
+            storage=self.storage,
+        ))
 
     async def review(self):
         await self.ready()
@@ -161,11 +175,11 @@ class ECNAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         await self.fresh()
         return namespace
 
-    async def material(self, key, user, *, confirmed=True, final=False):
-        blocked = {"reason": "", "requires_final_confirmation": False}
+    async def material(self, key, user, *, confirmed=True):
+        blocked = {"reason": ""}
         namespace = self.handler_namespace(user)
         namespace.update(item_id="material", confirmation_key=key, confirmed=confirmed,
-                         final_confirmation_acknowledged=final, blocked=blocked, completed_route={}, operation_time="2026-10-17 12:00:00")
+                         blocked=blocked, completed_route={}, operation_time="2026-10-17 12:00:00")
         handler = self.extract("update_confirmation", namespace)
         saved = await repository.atomic_ecn_deep_update(["ecn_management_data", self.value["ecn_id"]], handler)
         self.assertTrue(saved)
@@ -185,8 +199,8 @@ class ECNAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             "ordinary",
             "李四",
             confirmed=True,
-            final_confirmation_acknowledged=True,
         )
+        await self.close()
         self.assertEqual(self.value["workflow"]["current_state"], ECNState.CLOSED)
         self.accept(await execution_review.verify_execution_result(self.value["ecn_id"], "王五", "复核", user_service=self.service, storage=self.storage))
         confirmation = copy.deepcopy(self.value["execution_info"]["ordinary_confirmations"]["ordinary"])
@@ -196,8 +210,8 @@ class ECNAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             "ordinary",
             "李四",
             confirmed=True,
-            final_confirmation_acknowledged=True,
         )
+        await self.close()
         self.accept(await execution_review.verify_execution_result(self.value["ecn_id"], "王五", "复核", user_service=self.service, storage=self.storage))
         self.assertEqual(self.value["execution_info"]["verification"]["status"], "verified")
 
@@ -224,6 +238,7 @@ class ECNAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         await self.special("ordinary", confirmed=True)
         await self.special("__erp__", confirmed=True)
         await self.overview()
+        await self.close()
         self.assertEqual(self.value["workflow"]["current_state"], ECNState.CLOSED)
 
     async def test_material_codes_serial_execution_final_ack_and_reverification(self):
@@ -250,13 +265,14 @@ class ECNAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         first, second = list(tasks)
         self.assertTrue((await self.material(second, "王五"))["reason"])
         self.assertFalse((await self.material(first, "李四"))["reason"])
-        self.assertTrue((await self.material(second, "王五"))["requires_final_confirmation"])
-        self.assertFalse((await self.material(second, "王五", final=True))["reason"])
+        self.assertFalse((await self.material(second, "王五"))["reason"])
+        await self.close()
         self.assertEqual(self.value["workflow"]["current_state"], ECNState.CLOSED)
         self.accept(await execution_review.verify_execution_result(self.value["ecn_id"], "张三", "复核", user_service=self.service, storage=self.storage))
         confirmation = copy.deepcopy(self.value["execution_info"]["material_confirmations"]["material"]["traceability_tasks"][second])
         self.accept(await execution_review.revoke_execution_confirmation(self.value["ecn_id"], "material", "material", second, confirmation, "核对数量", [], "张三", "复核", user_service=self.service, storage=self.storage))
-        self.assertFalse((await self.material(second, "王五", final=True))["reason"])
+        self.assertFalse((await self.material(second, "王五"))["reason"])
+        await self.close()
         self.assertEqual(self.value["workflow"]["current_state"], ECNState.CLOSED)
 
     async def test_last_material_item_does_not_prompt_or_close_while_erp_is_pending(self):
@@ -298,12 +314,11 @@ class ECNAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         first, second = list(tasks)
         self.assertFalse((await self.material(first, "李四"))["reason"])
         last_material = await self.material(second, "王五")
-        self.assertFalse(last_material["requires_final_confirmation"])
         self.assertFalse(last_material["reason"])
         self.assertEqual(self.value["workflow"]["current_state"], ECNState.ECN_EXECUTING)
 
         erp = copy.deepcopy(self.value["execution_info"]["erp_confirmation"])
-        requires_confirmation = await update_special_task(
+        confirmed = await update_special_task(
             self.value["ecn_id"],
             "__erp__",
             erp,
@@ -313,22 +328,9 @@ class ECNAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             confirmed=True,
             storage=self.storage,
         )
-        self.assertFalse(requires_confirmation.ok)
-        self.assertEqual(requires_confirmation.message, FINAL_EXECUTION_CONFIRMATION_REQUIRED)
-        self.accept(
-            await update_special_task(
-                self.value["ecn_id"],
-                "__erp__",
-                erp,
-                username="李四",
-                role="验收岗位",
-                service=self.service,
-                confirmed=True,
-                final_confirmation_acknowledged=True,
-                storage=self.storage,
-            )
-        )
+        self.accept(confirmed)
         await self.fresh()
+        await self.close()
         self.assertEqual(self.value["workflow"]["current_state"], ECNState.CLOSED)
 
     async def test_erp_confirmation_immediately_refreshes_scheme_actions(self):
@@ -372,6 +374,7 @@ class ECNAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         await self.review()
         await self.special("__erp__", confirmed=True)
         await self.overview()
+        await self.close()
         self.assertEqual(self.value["workflow"]["current_state"], ECNState.CLOSED)
         data = await self.storage.get_fresh_item("P1_over_data", {})
         self.assertEqual(len(data["参数"]), 1)
@@ -429,8 +432,9 @@ class ECNAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(tasks), 14)
         for key, task in copy.deepcopy(tasks).items():
             user = "李四" if task["stage_index"] == 0 else "王五"
-            blocked = await self.material(key, user, final=True)
+            blocked = await self.material(key, user)
             self.assertFalse(blocked["reason"], blocked)
+        await self.close()
         self.assertEqual(self.value["workflow"]["current_state"], ECNState.CLOSED)
 
     async def test_simple_level_uses_simple_scheme_route_until_close(self):
@@ -444,4 +448,5 @@ class ECNAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         await self.special("ordinary", confirmed=True)
         await self.special("__erp__", confirmed=True)
         await self.overview()
+        await self.close()
         self.assertEqual(self.value["workflow"]["current_state"], ECNState.CLOSED)

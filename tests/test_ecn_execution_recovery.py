@@ -10,7 +10,7 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 from src.modules.ecn import execution_panel
-from src.ecn_management_config import ECNState
+from src.ecn_management_config import ECNState, ECN_EXECUTION_STAGE_READY_TO_CLOSE
 
 
 class ECNExecutionRecoveryTests(unittest.IsolatedAsyncioTestCase):
@@ -92,7 +92,8 @@ class ECNExecutionRecoveryTests(unittest.IsolatedAsyncioTestCase):
         await self.run_execution()
         self.executor.assert_awaited_once()
         self.assertFalse(self.active)
-        self.assertEqual(self.record["workflow"]["current_state"], ECNState.CLOSED)
+        self.assertEqual(self.record["workflow"]["current_state"], ECNState.ECN_EXECUTING)
+        self.assertEqual(self.record["execution_info"]["stage"], ECN_EXECUTION_STAGE_READY_TO_CLOSE)
 
     async def test_initial_render_failure_also_releases_active_marker(self):
         self.render.side_effect = RuntimeError("render failed")
@@ -111,4 +112,5 @@ class ECNExecutionRecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_successful_execution_releases_marker(self):
         await self.run_execution()
         self.assertFalse(self.active)
-        self.assertEqual(self.record["workflow"]["current_state"], ECNState.CLOSED)
+        self.assertEqual(self.record["workflow"]["current_state"], ECNState.ECN_EXECUTING)
+        self.assertEqual(self.record["execution_info"]["stage"], ECN_EXECUTION_STAGE_READY_TO_CLOSE)

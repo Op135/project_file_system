@@ -15,6 +15,7 @@ from src.ecn_management_config import (
     ECN_EXECUTION_VERIFICATION_VERIFIED,
     ECN_ITEM_STATUS_NEEDS_IMPROVEMENT,
     ECN_LEVEL_COMPLEX,
+    ECN_LEVEL_GENERAL,
     ECN_PARTICIPANT_STATUS_CONFIRMED,
     ECN_PARTICIPANT_STATUS_EDITING,
     ECNState,
@@ -53,7 +54,12 @@ def record(state=ECNState.ECN_SCHEMING):
     )
     value["basic_info"]["reasons"]["设计改善"] = True
     value["target_projects"] = ["P1"]
-    value["workflow"].update(current_state=state, current_phase="ECN_SCHEME_PHASE", approval_round="round-1")
+    value["workflow"].update(
+        current_state=state,
+        current_phase="ECN_SCHEME_PHASE",
+        approval_round="round-1",
+        ecn_level=ECN_LEVEL_GENERAL,
+    )
     value["change_items"] = [
         {
             "item_id": "S1",
@@ -324,6 +330,12 @@ class ECNConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.ok)
         self.assertIn("试产", result.message)
         self.assertEqual((await self.fresh())["workflow"]["current_state"], ECNState.ECN_SCHEMING)
+
+    def test_review_rejects_pending_ecn_level(self):
+        value = record()
+        value["workflow"]["ecn_level"] = ""
+        with self.assertRaisesRegex(ECNConflict, "先选择ECN等级"):
+            actions.validate_scheme_review(value)
 
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()

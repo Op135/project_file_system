@@ -33,6 +33,8 @@ from ...ecn_access import (
 from ...ecn_management_config import (
     ECN_ALLOWED_PROJECT_STATES,
     ECN_LEVEL_LABELS,
+    ECN_LEVEL_GENERAL,
+    ECN_LEVEL_PENDING,
     ECN_LEVEL_SIMPLE,
     ECN_REQUIRE_REJECTED_ITEM_SELECTION,
     ECN_WECOM_CONFIG,
@@ -43,6 +45,7 @@ from ...ecn_management_config import (
     get_ecn_material_code_entries,
     get_ecn_missing_material_code_items,
     get_ecn_level_code,
+    is_ecn_level_decided,
     get_ecn_scheme_coverage,
     is_ecn_scheme_ready_for_review,
     reject_ecn_scheme_items,
@@ -411,6 +414,8 @@ def validate_request(record, project_summary: dict | None = None):
 
 def validate_scheme_review(record, project_summary: dict | None = None):
     validate_impact_projects(record, project_summary)
+    if not is_ecn_level_decided(record):
+        raise ECNConflict("请先选择ECN等级，再发起方案评审。")
     decision = record.get("workflow", {}).get("trial_production")
     if not isinstance(decision, dict) or not isinstance(decision.get("required"), bool):
         raise ECNConflict("请先在方案右上角判定是否需要试产，再发起方案评审。")
@@ -682,7 +687,11 @@ def transition(
             result = start_ecr_approval(
                 current["ecn_id"],
                 current["basic_info"]["applicant"],
-                level_code=get_ecn_level_code(current),
+                level_code=(
+                    ECN_LEVEL_GENERAL
+                    if get_ecn_level_code(current) == ECN_LEVEL_PENDING
+                    else get_ecn_level_code(current)
+                ),
                 user_service=service,
             )
         else:

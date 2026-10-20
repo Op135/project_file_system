@@ -280,13 +280,6 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
     # 影响评估与方案编写是两个独立权限，避免为了填写方案而放开全部影响范围。
     is_impact_editor = is_scheming_phase and can_edit_impact
     is_scheme_writer = is_scheming_phase and can_edit_scheme
-    level_code = get_ecn_level_code(local_data)
-    level_chip_color = {
-        "simple": "green-7",
-        "general": "indigo-6",
-        "complex": "deep-orange-7",
-    }.get(level_code, "indigo-6")
-
     level_timing = (
         "ecr_review"
         if wf.get("current_state") == ECNState.ECR_REVIEWING
@@ -297,6 +290,20 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
         else ""
     )
 
+    @ui.refreshable
+    def render_level_chip() -> None:
+        level_code = get_ecn_level_code(local_data)
+        level_chip_color = {
+            "simple": "green-7",
+            "general": "indigo-6",
+            "complex": "deep-orange-7",
+        }.get(level_code, "grey-7")
+        ui.chip(
+            f"ECN等级：{get_ecn_level_label(local_data)}",
+            icon="speed",
+            color=level_chip_color,
+        ).props("dense square text-color=white").classes("font-bold shadow-sm")
+
     def open_level_dialog() -> None:
         if not level_timing:
             return
@@ -306,7 +313,7 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
         with level_dialog, ui.card().classes("w-[500px] max-w-[94vw] p-5 gap-3"):
             ui.label("判定 ECN 等级").classes("text-lg font-bold text-blue-950")
             ui.label(
-                "未判定的ECN按一般等级运行。简单等级将使用独立的精简审批流程；"
+                "ECN等级默认为待选，发起方案评审前必须选择。简单等级将使用独立的精简审批流程；"
                 "复杂等级在发起方案评审前还须完成指定方案的验证报告审批。"
             ).classes("text-sm text-slate-600 leading-relaxed")
             ui.radio(ECN_LEVEL_LABELS).bind_value(level_state, "code").props(
@@ -411,13 +418,7 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                         "text-lg font-mono font-bold text-gray-700"
                     )
                     if not is_new:
-                        ui.chip(
-                            f"ECN等级：{get_ecn_level_label(local_data)}",
-                            icon="speed",
-                            color=level_chip_color,
-                        ).props("dense square text-color=white").classes(
-                            "font-bold shadow-sm"
-                        )
+                        render_level_chip()
             ui.button(icon="close", on_click=root_dialog.close).props("flat round dense").classes("ml-15")
 
         # ui.tabs: NiceGUI框架用于创建选项卡导航容器的类
@@ -1006,6 +1007,11 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                 render_workflow_tab()
                 refresh_list()
 
+            def handle_scheme_level_saved() -> None:
+                render_level_chip.refresh()
+                render_workflow_tab()
+                refresh_list()
+
             def load_scheme_panel():
                 nonlocal render_parts, render_my_actions, render_items, render_coverage_dashboard
                 if lazy_panels["scheme"]:
@@ -1036,6 +1042,9 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                     handle_material_code_saved,
                     dashboard_updater,
                     trial_saved_callback=lambda: (render_workflow_tab(), refresh_list()),
+                    level_decision_callback=(
+                        handle_scheme_level_saved if level_timing == "before_scheme_review" else None
+                    ),
                     validation_saved_callback=refresh_list,
                     panel_container=scheme_panel_host,
                 )
@@ -1359,7 +1368,7 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                 ui.spinner(size="sm")
                 ui.label("正在处理，请稍候…").classes("text-sm font-medium")
             db_action_progress.set_visibility(False)
-            if level_timing:
+            if level_timing == "ecr_review":
                 ui.button("判定等级", icon="rule", on_click=open_level_dialog).props(
                     "outline color=indigo no-caps"
                 )

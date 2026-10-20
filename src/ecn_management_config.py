@@ -687,6 +687,7 @@ ECN_LEVEL_LABELS: dict[str, str] = dict(ECN_CONFIG["ecn_levels"])
 ECN_LEVEL_SIMPLE = "simple"
 ECN_LEVEL_GENERAL = "general"
 ECN_LEVEL_COMPLEX = "complex"
+ECN_LEVEL_PENDING = "pending"
 ECN_ALLOWED_PROJECT_STATES = ECN_CONFIG["allowed_project_states"]
 ECN_IMPACT_FOLLOWUP_STATES = ECN_CONFIG["reminders"]["impact_followup_states"]
 ECN_REQUIRE_REJECTED_ITEM_SELECTION = ECN_CONFIG["scheme_review"]["require_rejected_item_selection"]
@@ -724,6 +725,7 @@ ECN_EXECUTION_STAGE_ASSISTANT = "assistant_confirmation"
 ECN_EXECUTION_STAGE_OVERVIEW_RUNNING = "overview_execution"
 ECN_EXECUTION_STAGE_OVERVIEW_FAILED = "overview_failed"
 ECN_EXECUTION_STAGE_MATERIAL = "material_confirmation"
+ECN_EXECUTION_STAGE_READY_TO_CLOSE = "ready_to_close"
 ECN_EXECUTION_STAGE_COMPLETED = "completed"
 ECN_EXECUTION_VERIFICATION_PENDING = "pending"
 ECN_EXECUTION_VERIFICATION_CORRECTION_REQUIRED = "correction_required"
@@ -740,12 +742,12 @@ ECN_OVERVIEW_CONFLICT_AUTO_CLOSE_SECONDS = ECN_CONFIG["ui"]["overview_conflict_a
 
 
 def get_ecn_level_code(ecn_data: Any) -> str:
-    """返回稳定等级编码；未判定或异常值统一按一般等级处理。"""
+    """返回稳定等级编码；未判定或异常值显示为待选。"""
     if not isinstance(ecn_data, dict):
-        return ECN_LEVEL_GENERAL
+        return ECN_LEVEL_PENDING
     workflow = ecn_data.get("workflow", {})
     level_code = str(workflow.get("ecn_level") or "").strip() if isinstance(workflow, dict) else ""
-    return level_code if level_code in ECN_LEVEL_LABELS else ECN_LEVEL_GENERAL
+    return level_code if level_code in ECN_LEVEL_LABELS else ECN_LEVEL_PENDING
 
 
 def is_ecn_level_decided(ecn_data: Any) -> bool:
@@ -756,7 +758,8 @@ def is_ecn_level_decided(ecn_data: Any) -> bool:
 
 
 def get_ecn_level_label(ecn_data: Any) -> str:
-    return ECN_LEVEL_LABELS[get_ecn_level_code(ecn_data)]
+    level_code = get_ecn_level_code(ecn_data)
+    return ECN_LEVEL_LABELS.get(level_code, "待选")
 
 
 def get_ecn_validation_report(item: Any) -> dict[str, Any]:

@@ -405,10 +405,11 @@ def test_configured_optional_document_types_do_not_require_a_scheme():
         assert is_ecn_scheme_ready_for_review(record) is True
 
 
-def test_ecn_level_defaults_to_general_and_labels_are_configurable():
+def test_ecn_level_defaults_to_pending_and_labels_are_configurable():
     record = _ecn_record()
-    assert get_ecn_level_code(record) == ECN_LEVEL_GENERAL
-    assert get_ecn_level_label(record) == "一般"
+    record["workflow"]["ecn_level"] = ""
+    assert get_ecn_level_code(record) == "pending"
+    assert get_ecn_level_label(record) == "待选"
 
     with ECN_CONFIG_PATH.open("r", encoding="utf-8") as config_file:
         raw_config = json.load(config_file)

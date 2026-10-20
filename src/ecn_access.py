@@ -10,6 +10,7 @@ from .access_control import can
 from .ecn_management_config import (
     ECN_EXECUTION_STAGE_ASSISTANT,
     ECN_EXECUTION_STAGE_MATERIAL,
+    ECN_EXECUTION_STAGE_READY_TO_CLOSE,
     ECN_EXECUTION_STAGE_OVERVIEW_FAILED,
     ECN_EXECUTION_STAGE_OVERVIEW_RUNNING,
     ECN_IMPACT_FOLLOWUP_STATES,
@@ -35,6 +36,7 @@ from .permission_catalog import (
     ECN_DELETE_PERMISSION,
     ECN_ECR_APPROVE_PERMISSION,
     ECN_EXECUTION_ASSISTANT_PERMISSION,
+    ECN_EXECUTION_CLOSE_PERMISSION,
     ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION,
     ECN_EXECUTION_PMC_CONFIRM_PERMISSION,
     ECN_EXECUTION_PRODUCTION_CONFIRM_PERMISSION,
@@ -123,6 +125,7 @@ def build_ecn_access_snapshot(user_service=None) -> dict[str, Any]:
             ECN_APPROVAL_REASSIGN_PERMISSION,
             ECN_MATERIAL_CODE_EDIT_PERMISSION,
             ECN_EXECUTION_ASSISTANT_PERMISSION,
+            ECN_EXECUTION_CLOSE_PERMISSION,
             ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION,
             ECN_EXECUTION_PURCHASE_CONFIRM_PERMISSION,
             ECN_EXECUTION_PMC_CONFIRM_PERMISSION,
@@ -350,6 +353,11 @@ def can_classify_ecn_level_before_scheme_review(
         current_user,
         user_service=user_service,
         access_snapshot=access_snapshot,
+    ) or can_submit_ecn_scheme_review(
+        current_role,
+        current_user,
+        user_service=user_service,
+        access_snapshot=access_snapshot,
     )
 
 
@@ -410,6 +418,23 @@ def can_verify_ecn_execution(
 ) -> bool:
     return _can_ecn_permission(
         ECN_EXECUTION_VERIFY_PERMISSION,
+        current_role,
+        current_user,
+        user_service=user_service,
+        access_snapshot=access_snapshot,
+    )
+
+
+def can_close_ecn_execution(
+    current_role: object,
+    current_user: str,
+    *,
+    user_service=None,
+    access_snapshot: dict[str, Any] | None = None,
+) -> bool:
+    """判断是否可以手动关闭已完成全部执行项的 ECN。"""
+    return _can_ecn_permission(
+        ECN_EXECUTION_CLOSE_PERMISSION,
         current_role,
         current_user,
         user_service=user_service,
@@ -1109,6 +1134,13 @@ def is_ecn_pending_for_user(
         if not isinstance(execution_info, dict):
             return False
         stage = execution_info.get("stage")
+        if stage == ECN_EXECUTION_STAGE_READY_TO_CLOSE:
+            return can_close_ecn_execution(
+                current_role,
+                current_user,
+                user_service=user_service,
+                access_snapshot=access_snapshot,
+            )
         if any(
             confirmation.get("review_revocation")
             and can_ecn_assistant_confirm_special(execution_info, confirmation)

@@ -16,6 +16,7 @@ from ...ecn_access import (
     is_ecn_pending_for_user,
 )
 from ...ecn_management_config import (
+    ECN_EXECUTION_STAGE_READY_TO_CLOSE,
     ECN_PARTICIPANT_STATUS_CONFIRMED,
     ECN_PARTICIPANT_STATUS_NEEDS_RECONFIRMATION,
     ECN_TRACEABILITY_LEVELS,
@@ -23,6 +24,7 @@ from ...ecn_management_config import (
     get_ecn_execution_pending_usernames,
     get_ecn_execution_verification_label,
     get_ecn_level_label,
+    is_ecn_level_decided,
     get_ecn_missing_material_code_items,
     get_ecn_pending_approval_roles,
     get_ecn_scheme_coverage,
@@ -54,6 +56,12 @@ def get_ecn_list_progress_summary(ecn_data: Any) -> str:
         return f"等待审批：{'、'.join(pending_roles)}"
 
     if current_state == ECNState.ECN_EXECUTING:
+        execution_info = ecn_data.get("execution_info", {})
+        if (
+            isinstance(execution_info, dict)
+            and execution_info.get("stage") == ECN_EXECUTION_STAGE_READY_TO_CLOSE
+        ):
+            return "全部执行项已完成，待手动关闭"
         execution_assignees = [
             *get_ecn_execution_pending_usernames(ecn_data),
             *get_ecn_execution_pending_role_keywords(ecn_data),
@@ -131,7 +139,9 @@ def get_ecn_list_progress_summary(ecn_data: Any) -> str:
             if progress_parts
             else f"验证报告待处理：{'、'.join(sorted(validation_issues))}"
         )
-    return "方案已齐，待发起评审" if participants else "等待方案编写人员"
+    if participants:
+        return "方案已齐，待选择ECN等级" if not is_ecn_level_decided(ecn_data) else "方案已齐，待发起评审"
+    return "等待方案编写人员"
 
 
 def build_ecn_management_grid_row(
@@ -331,7 +341,12 @@ def get_ecn_management_grid_columns(include_delete: bool = False) -> list[dict[s
             "filter": text_filter,
             "width": 135,
             "tooltipField": "special_tasks_detail",
-            "cellStyle": {"color": "#2563eb", "cursor": "pointer"},
+            "cellStyle": {"cursor": "pointer"},
+            "cellClassRules": {
+                "ecn-special-completed": "value.startsWith('已完成')",
+                "ecn-special-pending": "value.startsWith('待确认')",
+                "ecn-special-na": "value == '—'",
+            },
         }
     )
     for index, level in enumerate(ECN_TRACEABILITY_LEVELS):

@@ -109,6 +109,9 @@ async def ecn_management_page(ecn_id: str | None = None):
             .ecn-management-grid .ecn-trace-pending { color: #c2410c; font-weight: 600; }
             .ecn-management-grid .ecn-trace-not-started { color: #64748b; }
             .ecn-management-grid .ecn-trace-na { color: #cbd5e1; }
+            .ecn-management-grid .ecn-special-completed { color: #15803d; font-weight: 600; }
+            .ecn-management-grid .ecn-special-pending { color: #2563eb; }
+            .ecn-management-grid .ecn-special-na { color: #cbd5e1; }
             .ecn-management-grid .ecn-verification-done { color: #15803d; font-weight: 600; }
             .ecn-management-grid .ecn-verification-failed { color: #dc2626; font-weight: 600; }
             .ecn-management-grid .ecn-verification-pending { color: #c2410c; font-weight: 600; }

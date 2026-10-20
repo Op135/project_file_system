@@ -12,6 +12,18 @@ from src.modules.ecn.editing import ECNResult
 
 
 class ECNLevelDialogTests(unittest.IsolatedAsyncioTestCase):
+    def test_scheme_phase_level_decision_is_grouped_with_trial_decision(self):
+        scheme_source = Path("src/modules/ecn/scheme_panel.py").read_text(encoding="utf-8-sig")
+        detail_source = Path(detail.__file__).read_text(encoding="utf-8-sig")
+
+        self.assertIn('ui.label("方案评审前判定")', scheme_source)
+        self.assertIn('ui.label("ECN等级")', scheme_source)
+        self.assertIn('ui.label("是否需要试产")', scheme_source)
+        self.assertNotIn("发起评审前必选", scheme_source)
+        self.assertIn('if level_timing == "ecr_review":', detail_source)
+        self.assertIn("level_decision_callback=(", detail_source)
+        self.assertIn("render_level_chip.refresh()", detail_source)
+
     def test_own_action_does_not_claim_reopen_notice(self):
         state = {"stage_change": False}
         self.assertFalse(

@@ -29,6 +29,7 @@ from ...config import (
 from ...custom_ui import custom_upload
 from ...ecn_access import (
     build_ecn_access_snapshot,
+    can_close_ecn_execution,
     can_confirm_ecn_material_spec,
     can_execute_ecn_assistant_stage,
     can_view_ecn,
@@ -47,6 +48,7 @@ from ...ecn_management_config import (
     ECN_EXECUTION_STAGE_MATERIAL,
     ECN_EXECUTION_STAGE_OVERVIEW_FAILED,
     ECN_EXECUTION_STAGE_OVERVIEW_RUNNING,
+    ECN_EXECUTION_STAGE_READY_TO_CLOSE,
     ECN_EXECUTION_VERIFICATION_VERIFIED,
     ECN_SCHEME_GROUP_MATERIAL,
     ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT,
@@ -84,11 +86,10 @@ from .overview_execution import (
 from .repository import (
     atomic_ecn_deep_update,
 )
-from .special_tasks import FINAL_EXECUTION_CONFIRMATION_REQUIRED, update_special_task
+from .special_tasks import close_ecn_execution, update_special_task
 from .special_tasks_ui import (
     open_material_transfer_dialog,
     render_transfer_button,
-    request_final_execution_confirmation,
 )
 from .task_labels import (
     compact_material_confirmation_label,
@@ -480,6 +481,41 @@ def build_execution_panel(
             confirm_dialog.on("close", confirm_dialog.delete)
             confirm_dialog.open()
 
+        def request_manual_close() -> None:
+            close_dialog = ui.dialog().props("persistent")
+            with close_dialog, ui.card().classes("w-[500px] max-w-[94vw] p-5 gap-3"):
+                ui.label("确认关闭 ECN？").classes("text-lg font-bold text-red-800")
+                ui.label(
+                    "全部执行确认项已完成。请再次核对执行结果；确认后 ECN 将正式关闭，"
+                    "如需纠正执行确认，应先返回检查。"
+                ).classes("text-sm text-slate-600 leading-relaxed")
+                ui.label("此操作会记录关闭人和关闭时间。").classes(
+                    "text-sm font-semibold text-orange-700 bg-orange-50 px-3 py-2 rounded"
+                )
+
+                async def submit_close() -> None:
+                    result = await close_ecn_execution(
+                        str(local_data.get("ecn_id") or ""),
+                        username=current_user,
+                        role=current_role,
+                        service=app.state.user_service,
+                    )
+                    if not result.ok or result.record is None:
+                        ui.notify(result.message, type="warning", multi_line=True)
+                        return
+                    close_dialog.close()
+                    sync_execution_local_data()
+                    render_execution_tab()
+                    refresh_list()
+                    execution_changed_callback()
+                    ui.notify("ECN已关闭。", type="positive")
+
+                with ui.row().classes("w-full justify-end gap-2"):
+                    ui.button("返回检查", on_click=close_dialog.close).props("flat color=grey")
+                    ui.button("确认关闭ECN", icon="lock", on_click=submit_close).props("color=negative")
+            close_dialog.on("close", close_dialog.delete)
+            close_dialog.open()
+
         def get_material_execution_runtime(item_id: str) -> tuple[dict, dict, list[dict], dict]:
             execution_info = local_data.get("execution_info", {})
             material_confirmations = (
@@ -591,39 +627,11 @@ def build_execution_panel(
                     )
                     progress_label.set_text(f"{completed_count}/{len(specs)}")
 
-        def is_last_pending_material_confirmation(item_id: str, confirmation_key: str) -> bool:
-            execution_info = local_data.get("execution_info", {})
-            if not is_ecn_special_execution_complete(execution_info):
-                return False
-            material_confirmations = (
-                execution_info.get("material_confirmations", {}) if isinstance(execution_info, dict) else {}
-            )
-            if not isinstance(material_confirmations, dict):
-                return False
-            pending_keys: list[tuple[str, str]] = []
-            for current_item_id, material_entry in material_confirmations.items():
-                if not isinstance(material_entry, dict) or material_entry.get("status") == "closed":
-                    continue
-                item = get_execution_change_items().get(str(current_item_id), {})
-                specs = get_ecn_material_execution_specs(
-                    item,
-                    material_entry,
-                )
-                tasks = material_entry.get("traceability_tasks", {})
-                tasks = tasks if isinstance(tasks, dict) else {}
-                for spec in specs:
-                    key = str(spec.get("key"))
-                    confirmation = tasks.get(key, {})
-                    if not isinstance(confirmation, dict) or confirmation.get("confirmed") is not True:
-                        pending_keys.append((str(current_item_id), key))
-            return pending_keys == [(str(item_id), str(confirmation_key))]
-
         async def update_assistant_execution_confirmation(
             confirmation_kind: str,
             item_id: str | None,
             confirmed: bool,
             baseline: dict,
-            final_confirmation_acknowledged: bool = False,
         ):
             event_client = ui.context.client
             scroll_state = await capture_execution_scroll_state(event_client)
@@ -636,26 +644,7 @@ def build_execution_panel(
                 role=current_role,
                 service=app.state.user_service,
                 confirmed=confirmed,
-                final_confirmation_acknowledged=final_confirmation_acknowledged,
             )
-            if (
-                confirmed
-                and not final_confirmation_acknowledged
-                and result.message == FINAL_EXECUTION_CONFIRMATION_REQUIRED
-            ):
-                if await request_final_execution_confirmation():
-                    await update_assistant_execution_confirmation(
-                        confirmation_kind,
-                        item_id,
-                        True,
-                        baseline,
-                        True,
-                    )
-                else:
-                    sync_execution_local_data()
-                    render_execution_tab()
-                await restore_execution_scroll_state(event_client, scroll_state)
-                return
             success = result.ok and result.record is not None
             blocked = {"reason": result.message}
             if success and not blocked["reason"]:
@@ -862,11 +851,9 @@ def build_execution_panel(
                             execution_info["stage"] = ECN_EXECUTION_STAGE_MATERIAL
                             action_text = "系统内资料执行完成，继续跟进物料及移交事项"
                         else:
-                            execution_info["stage"] = ECN_EXECUTION_STAGE_COMPLETED
-                            execution_info["completed_time"] = operation_time
-                            current_ecn.setdefault("workflow", {})["current_state"] = ECNState.CLOSED
-                            current_ecn["workflow"]["pending_roles"] = []
-                            action_text = "系统内资料执行完成，ECN关闭"
+                            execution_info["stage"] = ECN_EXECUTION_STAGE_READY_TO_CLOSE
+                            execution_info["ready_to_close_time"] = operation_time
+                            action_text = "系统内资料执行完成，ECN进入待关闭"
                     else:
                         execution_info["stage"] = ECN_EXECUTION_STAGE_OVERVIEW_FAILED
                         action_text = "系统内资料执行存在失败项"
@@ -919,14 +906,10 @@ def build_execution_panel(
             item_id: str,
             confirmation_key: str,
             confirmed: bool,
-            final_confirmation_acknowledged: bool = False,
         ):
             event_client = ui.context.client
             scroll_state = await capture_execution_scroll_state(event_client)
-            blocked: dict[str, Any] = {
-                "reason": "",
-                "requires_final_confirmation": False,
-            }
+            blocked: dict[str, Any] = {"reason": ""}
             completed_route: dict[str, Any] = {}
             operation_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -1000,25 +983,6 @@ def build_execution_panel(
                         user_service=app.state.user_service,
                     ):
                         blocked["reason"] = "当前用户没有该物料追溯责任项的执行权限。"
-                        return db_storage.ATOMIC_NO_UPDATE
-                    pending_task_count = sum(
-                        1
-                        for current_entry in material_confirmations.values()
-                        if isinstance(current_entry, dict)
-                        for current_task in (
-                            current_entry.get("traceability_tasks", {}).values()
-                            if isinstance(current_entry.get("traceability_tasks"), dict)
-                            else []
-                        )
-                        if isinstance(current_task, dict) and current_task.get("confirmed") is not True
-                    )
-                    if (
-                        pending_task_count == 1
-                        and is_ecn_special_execution_complete(execution_info)
-                        and not final_confirmation_acknowledged
-                    ):
-                        blocked["requires_final_confirmation"] = True
-                        blocked["reason"] = FINAL_EXECUTION_CONFIRMATION_REQUIRED
                         return db_storage.ATOMIC_NO_UPDATE
                 else:
                     if not can_confirm_ecn_material_spec(
@@ -1119,16 +1083,14 @@ def build_execution_panel(
                     and all(entry.get("status") == "closed" for entry in active_entries)
                     and is_ecn_special_execution_complete(execution_info)
                 ):
-                    execution_info["stage"] = ECN_EXECUTION_STAGE_COMPLETED
-                    execution_info["completed_time"] = operation_time
-                    current_wf["current_state"] = ECNState.CLOSED
-                    current_wf["pending_roles"] = []
+                    execution_info["stage"] = ECN_EXECUTION_STAGE_READY_TO_CLOSE
+                    execution_info["ready_to_close_time"] = operation_time
                     append_ecn_approval_log_once(
                         approval_log,
                         {
                             "user": current_user,
                             "role": actor_role,
-                            "action": "全部物料方案执行确认完成，ECN关闭",
+                            "action": "全部执行确认项已完成，ECN进入待关闭",
                             "time": operation_time,
                         },
                     )
@@ -1177,18 +1139,6 @@ def build_execution_panel(
                     refresh_material_execution_controls([str(item_id)])
                 else:
                     render_execution_tab()
-            elif blocked.get("requires_final_confirmation"):
-                sync_execution_local_data()
-                refresh_material_execution_controls([str(item_id)])
-                await restore_execution_scroll_state(event_client, scroll_state)
-                if await request_final_execution_confirmation():
-                    await update_material_execution_confirmation(
-                        item_id,
-                        confirmation_key,
-                        True,
-                        True,
-                    )
-                return
             else:
                 notify_execution_safely(
                     event_client,
@@ -1211,17 +1161,6 @@ def build_execution_panel(
                 if not isinstance(current_confirmation, dict) or current_confirmation.get("confirmed") is not True:
                     refresh_material_execution_controls([str(item_id)])
                     return
-            if confirmed and is_last_pending_material_confirmation(item_id, confirmation_key):
-                if await request_final_execution_confirmation():
-                    await update_material_execution_confirmation(
-                        item_id,
-                        confirmation_key,
-                        True,
-                        True,
-                    )
-                else:
-                    refresh_material_execution_controls([str(item_id)])
-                return
             await update_material_execution_confirmation(
                 item_id,
                 confirmation_key,
@@ -1251,6 +1190,7 @@ def build_execution_panel(
                     ECN_EXECUTION_STAGE_OVERVIEW_RUNNING: "系统内资料执行中",
                     ECN_EXECUTION_STAGE_OVERVIEW_FAILED: "系统内资料执行异常",
                     ECN_EXECUTION_STAGE_MATERIAL: "物料执行确认中",
+                    ECN_EXECUTION_STAGE_READY_TO_CLOSE: "待关闭",
                     ECN_EXECUTION_STAGE_COMPLETED: "执行完成",
                 }
                 stage_colors = {
@@ -1258,6 +1198,7 @@ def build_execution_panel(
                     ECN_EXECUTION_STAGE_OVERVIEW_RUNNING: "blue",
                     ECN_EXECUTION_STAGE_OVERVIEW_FAILED: "red",
                     ECN_EXECUTION_STAGE_MATERIAL: "purple",
+                    ECN_EXECUTION_STAGE_READY_TO_CLOSE: "orange",
                     ECN_EXECUTION_STAGE_COMPLETED: "green",
                 }
                 if (
@@ -1288,6 +1229,21 @@ def build_execution_panel(
                             f"执行核验：{verification_label}",
                             color=verification_color,
                         ).props("outline")
+                        if (
+                            stage == ECN_EXECUTION_STAGE_READY_TO_CLOSE
+                            and wf.get("current_state") == ECNState.ECN_EXECUTING
+                            and can_close_ecn_execution(
+                                current_role,
+                                current_user,
+                                user_service=app.state.user_service,
+                                access_snapshot=access_snapshot,
+                            )
+                        ):
+                            ui.button(
+                                "关闭ECN",
+                                icon="lock",
+                                on_click=request_manual_close,
+                            ).props("dense color=negative no-caps")
                         if (
                             can_review_execution
                             and wf.get("current_state") == ECNState.CLOSED
@@ -2152,7 +2108,7 @@ def build_execution_panel(
                                                 "progress": progress_label,
                                             }
                     else:
-                        ui.label("本单没有物料变更方案；系统内资料和所有特定事项完成后自动关闭ECN。 ").classes(
+                        ui.label("本单没有物料变更方案；系统内资料和所有特定事项完成后进入待关闭。 ").classes(
                             "w-full px-4 py-4 text-sm text-slate-400 bg-white"
                         )
 

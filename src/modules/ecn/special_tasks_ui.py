@@ -11,36 +11,9 @@ from ...ecn_access import (
     is_active_ecn_user,
 )
 from ...ecn_management_config import ECNState, get_ecn_special_confirmations
-from .special_tasks import FINAL_EXECUTION_CONFIRMATION_REQUIRED, update_special_task
+from .special_tasks import update_special_task
 from .task_labels import preferred_execution_responsibility_label
 from .material_tasks import update_material_task_assignee
-
-
-async def request_final_execution_confirmation() -> bool:
-    """在整张 ECN 最后一个执行勾选项提交前再次确认。"""
-    with (
-        ui.dialog().props("persistent") as confirm_dialog,
-        ui.card().classes("w-[440px] max-w-[92vw] p-5 gap-3"),
-    ):
-        with ui.row().classes("items-center gap-2"):
-            ui.icon("warning_amber", color="orange", size="sm")
-            ui.label("确认完成最后一项？").classes("text-lg font-bold text-slate-800")
-        ui.label(
-            "这是本 ECN 全部执行清单的最后一个待确认项。确认后将完成执行并关闭 ECN。"
-        ).classes("text-sm text-slate-600 leading-relaxed")
-        ui.label("请再次核对全部执行结果无误后再确认。").classes(
-            "text-sm font-semibold text-orange-700 bg-orange-50 px-3 py-2 rounded"
-        )
-        with ui.row().classes("w-full justify-end gap-2 mt-2"):
-            ui.button(
-                "返回检查", on_click=lambda: confirm_dialog.submit(False)
-            ).props("flat color=grey no-caps")
-            ui.button(
-                "确认并关闭ECN",
-                icon="check_circle",
-                on_click=lambda: confirm_dialog.submit(True),
-            ).props("color=positive no-caps")
-    return bool(await confirm_dialog)
 
 
 def _transfer_candidates(service, *, require_material_permission: bool = False) -> dict[str, tuple[str, str]]:
@@ -294,20 +267,6 @@ async def open_special_tasks_dialog(ecn_id: str, username: str, role: str, refre
                             service=app.state.user_service,
                             confirmed=True,
                         )
-                        if result.message == FINAL_EXECUTION_CONFIRMATION_REQUIRED:
-                            if not await request_final_execution_confirmation():
-                                render.refresh()
-                                return
-                            result = await update_special_task(
-                                ecn_id,
-                                key,
-                                baseline,
-                                username=username,
-                                role=role,
-                                service=app.state.user_service,
-                                confirmed=True,
-                                final_confirmation_acknowledged=True,
-                            )
                         if result.ok and result.record is not None:
                             render.refresh()
                             refresh_list()

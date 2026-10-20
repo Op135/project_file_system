@@ -21,6 +21,7 @@ from ...ecn_management_config import (
     ECN_EXECUTION_STAGE_COMPLETED,
     ECN_EXECUTION_STAGE_MATERIAL,
     ECN_EXECUTION_STAGE_OVERVIEW_RUNNING,
+    ECN_EXECUTION_STAGE_READY_TO_CLOSE,
     ECN_EXECUTION_VERIFICATION_CORRECTION_REQUIRED,
     ECN_EXECUTION_VERIFICATION_VERIFIED,
     ECNState,
@@ -269,9 +270,13 @@ async def revoke_execution_confirmation(
                 "time": now,
             }
 
-        if current_stage == ECN_EXECUTION_STAGE_COMPLETED or target_kind == "material":
+        if current_stage in {
+            ECN_EXECUTION_STAGE_COMPLETED,
+            ECN_EXECUTION_STAGE_READY_TO_CLOSE,
+        } or target_kind == "material":
             execution["stage"] = ECN_EXECUTION_STAGE_MATERIAL
         execution.pop("completed_time", None)
+        execution.pop("ready_to_close_time", None)
         workflow["current_state"] = ECNState.ECN_EXECUTING
         workflow["pending_roles"] = []
         append_ecn_approval_log_once(

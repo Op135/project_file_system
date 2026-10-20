@@ -13,13 +13,14 @@ from src.ecn_management_config import (
     ECN_EXECUTION_STAGE_ASSISTANT,
     ECN_EXECUTION_STAGE_MATERIAL,
     ECN_EXECUTION_STAGE_COMPLETED,
+    ECN_EXECUTION_STAGE_READY_TO_CLOSE,
     is_ecn_assistant_execution_ready,
     load_ecn_config,
 )
 from src.modules.ecn import notifications
 from src.modules.ecn.execution_review import revoke_execution_confirmation, verify_execution_result
 from src.modules.ecn.special_tasks import (
-    FINAL_EXECUTION_CONFIRMATION_REQUIRED,
+    close_ecn_execution,
     finish_if_complete,
     update_special_task,
 )
@@ -36,6 +37,12 @@ from tests.test_ecn_notifications import Users
 class SpecialUsers(Users):
     def get_user(self, username):
         return self.load_users().get(username, {})
+
+
+class NoCloseUsers(SpecialUsers):
+    def has_permission(self, username, permission_code, **kwargs):
+        del username, kwargs
+        return permission_code != "ecn.execution.close"
 
 
 class SpecialTasksTests(unittest.IsolatedAsyncioTestCase):
@@ -91,18 +98,19 @@ class SpecialTasksTests(unittest.IsolatedAsyncioTestCase):
         await self.material_stage()
         self.assertFalse(finish_if_complete(self.record, "manager", "研发经理", "now"))
         self.assertTrue(is_ecn_pending_for_user(self.record, "writer", "研发硬件", user_service=self.service))
-        requires_confirmation = await self.update(username="writer", confirmed=True)
-        self.assertFalse(requires_confirmation.ok)
-        self.assertEqual(requires_confirmation.message, FINAL_EXECUTION_CONFIRMATION_REQUIRED)
-        self.assertTrue(
-            (
-                await self.update(
-                    username="writer",
-                    confirmed=True,
-                    final_confirmation_acknowledged=True,
-                )
-            ).ok
+        self.assertTrue((await self.update(username="writer", confirmed=True)).ok)
+        self.assertEqual(self.record["workflow"]["current_state"], ECNState.ECN_EXECUTING)
+        self.assertEqual(self.record["execution_info"]["stage"], ECN_EXECUTION_STAGE_READY_TO_CLOSE)
+        closed = await close_ecn_execution(
+            "ECN-test",
+            username="manager",
+            role="研发经理",
+            service=self.service,
+            storage=self.storage,
         )
+        self.assertTrue(closed.ok, closed.message)
+        assert closed.record is not None
+        self.record = closed.record
         self.assertEqual(self.record["workflow"]["current_state"], ECNState.CLOSED)
 
     async def test_old_person_and_stale_window_cannot_confirm(self):
@@ -112,6 +120,42 @@ class SpecialTasksTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse((await self.update(baseline=old, username="writer", confirmed=True)).ok)
         self.assertFalse((await self.update(username="writer", confirmed=True)).ok)
         self.assertEqual(len(self.record["execution_info"]["transfer_notices"]), 1)
+
+    async def test_ready_to_close_requires_close_permission(self):
+        await self.update(assignee="writer")
+        await self.material_stage()
+        result = await self.update(
+            username="writer",
+            confirmed=True,
+        )
+        self.assertTrue(result.ok, result.message)
+        denied = await close_ecn_execution(
+            "ECN-test",
+            username="manager",
+            role="研发经理",
+            service=NoCloseUsers(),
+            storage=self.storage,
+        )
+        self.assertFalse(denied.ok)
+        fresh = await self.storage.get_fresh_item("ecn_management_data", {})
+        self.assertEqual(fresh["ECN-test"]["execution_info"]["stage"], ECN_EXECUTION_STAGE_READY_TO_CLOSE)
+        target = fresh["ECN-test"]["execution_info"]["ordinary_confirmations"]["A"]
+        revoked = await revoke_execution_confirmation(
+            "ECN-test",
+            "special",
+            "A",
+            "",
+            copy.deepcopy(target),
+            "关闭前复核发现仍需整改",
+            [],
+            "manager",
+            "研发经理",
+            user_service=self.service,
+            storage=self.storage,
+        )
+        self.assertTrue(revoked.ok, revoked.message)
+        assert revoked.record is not None
+        self.assertEqual(revoked.record["execution_info"]["stage"], ECN_EXECUTION_STAGE_MATERIAL)
 
     async def test_invalid_recipient_and_late_recall_are_rejected(self):
         self.assertFalse((await self.update(assignee="inactive")).ok)
@@ -157,13 +201,21 @@ class SpecialTasksTests(unittest.IsolatedAsyncioTestCase):
                 stale = copy.deepcopy(target)
                 result = await update_special_task(
                     "ECN-test", key, copy.deepcopy(target), username="manager", role="研发经理",
-                    service=self.service, confirmed=True, final_confirmation_acknowledged=True,
+                    service=self.service, confirmed=True,
                     storage=self.storage,
                 )
                 self.assertTrue(result.ok, result.message)
                 assert result.record is not None
                 self.record = result.record
-                self.assertEqual(self.record["workflow"]["current_state"], ECNState.CLOSED)
+                self.assertEqual(self.record["workflow"]["current_state"], ECNState.ECN_EXECUTING)
+                self.assertEqual(self.record["execution_info"]["stage"], ECN_EXECUTION_STAGE_READY_TO_CLOSE)
+                closed = await close_ecn_execution(
+                    "ECN-test", username="manager", role="研发经理",
+                    service=self.service, storage=self.storage,
+                )
+                self.assertTrue(closed.ok, closed.message)
+                assert closed.record is not None
+                self.record = closed.record
                 self.assertEqual(self.record["execution_info"]["overview_results"], {"overview-1": {"status": "success"}})
                 self.assertNotIn("manager", notifications.collect_pending_users(self.record, self.service))
                 repeated = await update_special_task(
@@ -221,6 +273,13 @@ class SpecialTasksTests(unittest.IsolatedAsyncioTestCase):
         fields = [column["field"] for column in columns]
         self.assertLess(fields.index("special_tasks"), fields.index("traceability_0"))
         self.assertEqual(fields[-2:], ["closed_date", "execution_verification"])
+        special_column = next(column for column in columns if column["field"] == "special_tasks")
+        special_rules = special_column.get("cellClassRules")
+        assert isinstance(special_rules, dict)
+        self.assertEqual(
+            special_rules["ecn-special-completed"],
+            "value.startsWith('已完成')",
+        )
 
     async def test_complex_validation_report_progress_is_visible_in_grid_summary(self):
         record = {

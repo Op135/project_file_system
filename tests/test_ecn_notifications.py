@@ -6,7 +6,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from src.ecn_management_config import ECN_LEVEL_COMPLEX, ECNState, load_ecn_config, ECN_EXECUTION_STAGE_MATERIAL
+from src.ecn_management_config import (
+    ECN_LEVEL_COMPLEX,
+    ECNState,
+    load_ecn_config,
+    ECN_EXECUTION_STAGE_MATERIAL,
+    ECN_EXECUTION_STAGE_READY_TO_CLOSE,
+)
 from src.modules.ecn import notifications
 from src.modules.ecn.notification_links import build_ecn_detail_path, build_ecn_detail_url
 from src.modules.ecn.models import get_ecn_template
@@ -129,6 +135,25 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
             self.sender.call_args.kwargs["link_url"],
             "https://example.test/ecn_management?ecn_id=ECN-test",
         )
+
+    async def test_ready_to_close_notifies_close_permission_users(self):
+        self.record["workflow"].update(
+            current_state=ECNState.ECN_EXECUTING,
+            current_phase="ECN_EXECUTION_PHASE",
+            scheme_participants={},
+        )
+        self.record["execution_info"] = {
+            "stage": ECN_EXECUTION_STAGE_READY_TO_CLOSE,
+            "ordinary_confirmations": {},
+            "erp_confirmation": {"confirmed": True},
+            "material_confirmations": {},
+        }
+        pending = notifications.collect_pending_users(self.record, self.service)
+        self.assertEqual(pending, {"writer": "研发硬件", "manager": "研发经理"})
+        details = notifications.pending_task_details(self.record, pending, self.service)
+        self.assertIn("手动关闭ECN", details["manager"][0])
+        await self.save_record()
+        self.assertEqual(await self.check(), (2, 0))
 
     async def test_same_named_parallel_nodes_keep_individual_tokens(self):
         tasks = self.configure_same_named_material_nodes(parallel=True)

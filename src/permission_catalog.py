@@ -602,6 +602,7 @@ ECN_EXECUTION_PURCHASE_CONFIRM_PERMISSION = "ecn.execution.purchase.confirm"
 ECN_EXECUTION_PMC_CONFIRM_PERMISSION = "ecn.execution.pmc.confirm"
 ECN_EXECUTION_PRODUCTION_CONFIRM_PERMISSION = "ecn.execution.production.confirm"
 ECN_EXECUTION_SALES_SUPERVISOR_CONFIRM_PERMISSION = "ecn.execution.sales_supervisor.confirm"
+ECN_EXECUTION_CLOSE_PERMISSION = "ecn.execution.close"
 ECN_EXECUTION_VERIFY_PERMISSION = "ecn.execution.verify"
 ECN_DELETE_PERMISSION = "ecn.delete"
 
@@ -751,6 +752,12 @@ ECN_PERMISSIONS = (
         "执行 — 销售管理追溯责任项",
         "工程变更 · 执行",
         "允许确认客户/在途范围的销售管理责任节点，并在项目销售未识别时兜底确认",
+    ),
+    PermissionDefinition(
+        ECN_EXECUTION_CLOSE_PERMISSION,
+        "关闭 — ECN执行单据",
+        "工程变更 · 执行",
+        "允许在全部执行确认项完成后复核并手动关闭ECN；待关闭单据会进入本人待办提醒",
     ),
     PermissionDefinition(
         ECN_EXECUTION_VERIFY_PERMISSION,

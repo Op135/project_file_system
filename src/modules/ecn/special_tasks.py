@@ -3,12 +3,18 @@
 import uuid
 from datetime import datetime
 
-from ...ecn_access import can_execute_ecn_assistant_stage, can_view_ecn, get_active_ecn_actor_role
+from ...ecn_access import (
+    can_close_ecn_execution,
+    can_execute_ecn_assistant_stage,
+    can_view_ecn,
+    get_active_ecn_actor_role,
+)
 from ...ecn_management_config import (
     ECNState,
     ECN_EXECUTION_STAGE_ASSISTANT,
     ECN_EXECUTION_STAGE_MATERIAL,
     ECN_EXECUTION_STAGE_COMPLETED,
+    ECN_EXECUTION_STAGE_READY_TO_CLOSE,
     ECN_EXECUTION_STAGE_OVERVIEW_RUNNING,
     ECN_EXECUTION_STAGE_OVERVIEW_FAILED,
     get_ecn_special_confirmations,
@@ -20,43 +26,69 @@ from .repository import mutate_record
 from .task_labels import special_task_label
 
 
-FINAL_EXECUTION_CONFIRMATION_REQUIRED = "这是全部执行清单的最后一个待确认项，需要二次确认。"
-
-
-def is_final_pending_special_confirmation(record: dict, key: str) -> bool:
-    """判断当前特定事项是否为整张 ECN 最后一个执行勾选项。"""
-    execution = record.get("execution_info", {})
-    if not isinstance(execution, dict) or execution.get("stage") != ECN_EXECUTION_STAGE_MATERIAL:
-        return False
-    special = get_ecn_special_confirmations(execution)
-    target = special.get(key)
-    if not isinstance(target, dict) or target.get("confirmed") is True:
-        return False
-    if any(
-        item.get("confirmed") is not True
-        for current_key, item in special.items()
-        if current_key != key
-    ):
-        return False
-    material = execution.get("material_confirmations", {})
-    return isinstance(material, dict) and all(
-        isinstance(item, dict) and item.get("status") == "closed"
-        for item in material.values()
-    )
-
-
 def finish_if_complete(record: dict, username: str, role: str, now: str) -> bool:
+    """全部执行项完成后进入待关闭状态；关闭动作由独立权限人员执行。"""
     execution = record.get("execution_info", {})
     if execution.get("stage") != ECN_EXECUTION_STAGE_MATERIAL or not is_ecn_special_execution_complete(execution):
         return False
-    if any(item.get("status") != "closed" for item in execution.get("material_confirmations", {}).values()):
+    material = execution.get("material_confirmations", {})
+    if not isinstance(material, dict) or any(
+        not isinstance(item, dict) or item.get("status") != "closed"
+        for item in material.values()
+    ):
         return False
-    execution.update(stage=ECN_EXECUTION_STAGE_COMPLETED, completed_time=now)
-    record["workflow"].update(current_state=ECNState.CLOSED, pending_roles=[])
+    execution.update(stage=ECN_EXECUTION_STAGE_READY_TO_CLOSE, ready_to_close_time=now)
     record.setdefault("approval_log", []).append(
-        {"user": username, "role": role, "time": now, "action": "全部特定事项及物料执行完成，ECN关闭"}
+        {"user": username, "role": role, "time": now, "action": "全部执行确认项已完成，ECN进入待关闭"}
     )
     return True
+
+
+async def close_ecn_execution(
+    ecn_id: str,
+    *,
+    username: str,
+    role: str,
+    service,
+    storage=None,
+):
+    """由具备关闭权限的在职用户复核并手动关闭待关闭 ECN。"""
+
+    async def operation(record, connection):
+        del connection
+        workflow = record.get("workflow", {})
+        execution = record.get("execution_info", {})
+        if not isinstance(workflow, dict) or not isinstance(execution, dict):
+            raise ECNConflict("ECN执行数据异常，请刷新后重试。")
+        actor_role = get_active_ecn_actor_role(username, role, user_service=service)
+        if (
+            actor_role is None
+            or not can_view_ecn(actor_role, username, user_service=service)
+            or not can_close_ecn_execution(actor_role, username, user_service=service)
+        ):
+            raise ECNConflict("当前用户没有关闭ECN的权限。")
+        if (
+            workflow.get("current_state") != ECNState.ECN_EXECUTING
+            or execution.get("stage") != ECN_EXECUTION_STAGE_READY_TO_CLOSE
+        ):
+            raise ECNConflict("该ECN尚未达到待关闭状态，或已被其他人处理，请刷新。")
+        if not is_ecn_special_execution_complete(execution):
+            raise ECNConflict("仍有特定事项或资料未确认完成，不能关闭ECN。")
+        material = execution.get("material_confirmations", {})
+        if not isinstance(material, dict) or any(
+            not isinstance(item, dict) or item.get("status") != "closed"
+            for item in material.values()
+        ):
+            raise ECNConflict("仍有物料执行项未确认完成，不能关闭ECN。")
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        execution.update(stage=ECN_EXECUTION_STAGE_COMPLETED, completed_time=now)
+        workflow.update(current_state=ECNState.CLOSED, pending_roles=[])
+        record.setdefault("approval_log", []).append(
+            {"user": username, "role": actor_role, "time": now, "action": "复核全部执行项完成，手动关闭ECN"}
+        )
+        return record
+
+    return await mutate_record(ecn_id, operation, storage=storage)
 
 
 async def update_special_task(
@@ -69,7 +101,6 @@ async def update_special_task(
     service,
     assignee: str | None = None,
     confirmed: bool | None = None,
-    final_confirmation_acknowledged: bool = False,
     storage=None,
 ):
     """assignee为空字符串表示收回；移交及确认采用同一事项的窗口快照防止覆盖。"""
@@ -142,12 +173,6 @@ async def update_special_task(
                 raise ECNConflict("当前用户或阶段不允许确认未移交事项。")
             if not old and execution.get("stage") != ECN_EXECUTION_STAGE_ASSISTANT and confirmed is not True:
                 raise ECNConflict("后续阶段的复核退回项只能重新确认完成。")
-            if (
-                confirmed is True
-                and not final_confirmation_acknowledged
-                and is_final_pending_special_confirmation(record, key)
-            ):
-                raise ECNConflict(FINAL_EXECUTION_CONFIRMATION_REQUIRED)
             item.update(confirmed=confirmed, user=username, role=actor_role, time=now)
             if confirmed:
                 item.pop("review_revocation", None)
