@@ -20,6 +20,31 @@ from .repository import mutate_record
 from .task_labels import special_task_label
 
 
+FINAL_EXECUTION_CONFIRMATION_REQUIRED = "这是全部执行清单的最后一个待确认项，需要二次确认。"
+
+
+def is_final_pending_special_confirmation(record: dict, key: str) -> bool:
+    """判断当前特定事项是否为整张 ECN 最后一个执行勾选项。"""
+    execution = record.get("execution_info", {})
+    if not isinstance(execution, dict) or execution.get("stage") != ECN_EXECUTION_STAGE_MATERIAL:
+        return False
+    special = get_ecn_special_confirmations(execution)
+    target = special.get(key)
+    if not isinstance(target, dict) or target.get("confirmed") is True:
+        return False
+    if any(
+        item.get("confirmed") is not True
+        for current_key, item in special.items()
+        if current_key != key
+    ):
+        return False
+    material = execution.get("material_confirmations", {})
+    return isinstance(material, dict) and all(
+        isinstance(item, dict) and item.get("status") == "closed"
+        for item in material.values()
+    )
+
+
 def finish_if_complete(record: dict, username: str, role: str, now: str) -> bool:
     execution = record.get("execution_info", {})
     if execution.get("stage") != ECN_EXECUTION_STAGE_MATERIAL or not is_ecn_special_execution_complete(execution):
@@ -44,6 +69,7 @@ async def update_special_task(
     service,
     assignee: str | None = None,
     confirmed: bool | None = None,
+    final_confirmation_acknowledged: bool = False,
     storage=None,
 ):
     """assignee为空字符串表示收回；移交及确认采用同一事项的窗口快照防止覆盖。"""
@@ -116,6 +142,12 @@ async def update_special_task(
                 raise ECNConflict("当前用户或阶段不允许确认未移交事项。")
             if not old and execution.get("stage") != ECN_EXECUTION_STAGE_ASSISTANT and confirmed is not True:
                 raise ECNConflict("后续阶段的复核退回项只能重新确认完成。")
+            if (
+                confirmed is True
+                and not final_confirmation_acknowledged
+                and is_final_pending_special_confirmation(record, key)
+            ):
+                raise ECNConflict(FINAL_EXECUTION_CONFIRMATION_REQUIRED)
             item.update(confirmed=confirmed, user=username, role=actor_role, time=now)
             if confirmed:
                 item.pop("review_revocation", None)

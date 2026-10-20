@@ -84,8 +84,12 @@ from .overview_execution import (
 from .repository import (
     atomic_ecn_deep_update,
 )
-from .special_tasks import update_special_task
-from .special_tasks_ui import open_material_transfer_dialog, render_transfer_button
+from .special_tasks import FINAL_EXECUTION_CONFIRMATION_REQUIRED, update_special_task
+from .special_tasks_ui import (
+    open_material_transfer_dialog,
+    render_transfer_button,
+    request_final_execution_confirmation,
+)
 from .task_labels import (
     compact_material_confirmation_label,
     material_confirmation_tooltip_text,
@@ -619,6 +623,7 @@ def build_execution_panel(
             item_id: str | None,
             confirmed: bool,
             baseline: dict,
+            final_confirmation_acknowledged: bool = False,
         ):
             event_client = ui.context.client
             scroll_state = await capture_execution_scroll_state(event_client)
@@ -631,7 +636,26 @@ def build_execution_panel(
                 role=current_role,
                 service=app.state.user_service,
                 confirmed=confirmed,
+                final_confirmation_acknowledged=final_confirmation_acknowledged,
             )
+            if (
+                confirmed
+                and not final_confirmation_acknowledged
+                and result.message == FINAL_EXECUTION_CONFIRMATION_REQUIRED
+            ):
+                if await request_final_execution_confirmation():
+                    await update_assistant_execution_confirmation(
+                        confirmation_kind,
+                        item_id,
+                        True,
+                        baseline,
+                        True,
+                    )
+                else:
+                    sync_execution_local_data()
+                    render_execution_tab()
+                await restore_execution_scroll_state(event_client, scroll_state)
+                return
             success = result.ok and result.record is not None
             blocked = {"reason": result.message}
             if success and not blocked["reason"]:
@@ -891,32 +915,6 @@ def build_execution_panel(
             finally:
                 ACTIVE_ECN_OVERVIEW_EXECUTIONS.discard(execution_ecn_id)
 
-        async def request_final_material_confirmation() -> bool:
-            with (
-                ui.dialog().props("persistent") as confirm_dialog,
-                ui.card().classes("w-[440px] max-w-[92vw] p-5 gap-3"),
-            ):
-                with ui.row().classes("items-center gap-2"):
-                    ui.icon("warning_amber", color="orange", size="sm")
-                    ui.label("确认完成最后一项？").classes("text-lg font-bold text-slate-800")
-                ui.label("这是本ECN物料执行阶段最后一个待确认项。确认后将完成物料执行并触发后续关闭处理。").classes(
-                    "text-sm text-slate-600 leading-relaxed"
-                )
-                ui.label("请再次核对实际执行结果无误后再确认。 ").classes(
-                    "text-sm font-semibold text-orange-700 bg-orange-50 px-3 py-2 rounded"
-                )
-                with ui.row().classes("w-full justify-end gap-2 mt-2"):
-                    ui.button(
-                        "返回检查",
-                        on_click=lambda: confirm_dialog.submit(False),
-                    ).props("flat color=grey no-caps")
-                    ui.button(
-                        "确认最后一项",
-                        icon="check_circle",
-                        on_click=lambda: confirm_dialog.submit(True),
-                    ).props("color=positive no-caps")
-            return bool(await confirm_dialog)
-
         async def update_material_execution_confirmation(
             item_id: str,
             confirmation_key: str,
@@ -1014,9 +1012,13 @@ def build_execution_panel(
                         )
                         if isinstance(current_task, dict) and current_task.get("confirmed") is not True
                     )
-                    if pending_task_count == 1 and not final_confirmation_acknowledged:
+                    if (
+                        pending_task_count == 1
+                        and is_ecn_special_execution_complete(execution_info)
+                        and not final_confirmation_acknowledged
+                    ):
                         blocked["requires_final_confirmation"] = True
-                        blocked["reason"] = "这是最后一个待确认项，需要二次确认。"
+                        blocked["reason"] = FINAL_EXECUTION_CONFIRMATION_REQUIRED
                         return db_storage.ATOMIC_NO_UPDATE
                 else:
                     if not can_confirm_ecn_material_spec(
@@ -1179,7 +1181,7 @@ def build_execution_panel(
                 sync_execution_local_data()
                 refresh_material_execution_controls([str(item_id)])
                 await restore_execution_scroll_state(event_client, scroll_state)
-                if await request_final_material_confirmation():
+                if await request_final_execution_confirmation():
                     await update_material_execution_confirmation(
                         item_id,
                         confirmation_key,
@@ -1210,7 +1212,7 @@ def build_execution_panel(
                     refresh_material_execution_controls([str(item_id)])
                     return
             if confirmed and is_last_pending_material_confirmation(item_id, confirmation_key):
-                if await request_final_material_confirmation():
+                if await request_final_execution_confirmation():
                     await update_material_execution_confirmation(
                         item_id,
                         confirmation_key,

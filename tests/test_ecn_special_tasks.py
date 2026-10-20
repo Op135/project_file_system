@@ -18,7 +18,11 @@ from src.ecn_management_config import (
 )
 from src.modules.ecn import notifications
 from src.modules.ecn.execution_review import revoke_execution_confirmation, verify_execution_result
-from src.modules.ecn.special_tasks import update_special_task, finish_if_complete
+from src.modules.ecn.special_tasks import (
+    FINAL_EXECUTION_CONFIRMATION_REQUIRED,
+    finish_if_complete,
+    update_special_task,
+)
 from src.modules.ecn.transfer_notifications import send_transfer_cancellations, STATE_KEY
 from src.modules.ecn.list_view import (
     build_ecn_management_grid_row,
@@ -87,7 +91,18 @@ class SpecialTasksTests(unittest.IsolatedAsyncioTestCase):
         await self.material_stage()
         self.assertFalse(finish_if_complete(self.record, "manager", "研发经理", "now"))
         self.assertTrue(is_ecn_pending_for_user(self.record, "writer", "研发硬件", user_service=self.service))
-        self.assertTrue((await self.update(username="writer", confirmed=True)).ok)
+        requires_confirmation = await self.update(username="writer", confirmed=True)
+        self.assertFalse(requires_confirmation.ok)
+        self.assertEqual(requires_confirmation.message, FINAL_EXECUTION_CONFIRMATION_REQUIRED)
+        self.assertTrue(
+            (
+                await self.update(
+                    username="writer",
+                    confirmed=True,
+                    final_confirmation_acknowledged=True,
+                )
+            ).ok
+        )
         self.assertEqual(self.record["workflow"]["current_state"], ECNState.CLOSED)
 
     async def test_old_person_and_stale_window_cannot_confirm(self):
@@ -142,7 +157,8 @@ class SpecialTasksTests(unittest.IsolatedAsyncioTestCase):
                 stale = copy.deepcopy(target)
                 result = await update_special_task(
                     "ECN-test", key, copy.deepcopy(target), username="manager", role="研发经理",
-                    service=self.service, confirmed=True, storage=self.storage,
+                    service=self.service, confirmed=True, final_confirmation_acknowledged=True,
+                    storage=self.storage,
                 )
                 self.assertTrue(result.ok, result.message)
                 assert result.record is not None

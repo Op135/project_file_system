@@ -16,7 +16,10 @@ from src.modules.ecn import actions, execution_panel, execution_review, overview
 from src.modules.ecn import validation_reports
 from src.modules.ecn import attachments
 from src.modules.ecn.models import generate_initial_ecn_data
-from src.modules.ecn.special_tasks import update_special_task
+from src.modules.ecn.special_tasks import (
+    FINAL_EXECUTION_CONFIRMATION_REQUIRED,
+    update_special_task,
+)
 from tests import test_approval_workflow as fixtures
 from tests.test_error_management_concurrency import load_isolated_db_storage
 
@@ -178,13 +181,23 @@ class ECNAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         await self.special("__erp__", confirmed=True)
         await self.overview()
         self.assertEqual(self.value["workflow"]["current_state"], ECNState.ECN_EXECUTING)
-        await self.special("ordinary", "李四", confirmed=True)
+        await self.special(
+            "ordinary",
+            "李四",
+            confirmed=True,
+            final_confirmation_acknowledged=True,
+        )
         self.assertEqual(self.value["workflow"]["current_state"], ECNState.CLOSED)
         self.accept(await execution_review.verify_execution_result(self.value["ecn_id"], "王五", "复核", user_service=self.service, storage=self.storage))
         confirmation = copy.deepcopy(self.value["execution_info"]["ordinary_confirmations"]["ordinary"])
         self.accept(await execution_review.revoke_execution_confirmation(self.value["ecn_id"], "special", "ordinary", "", confirmation, "需重新落实", [], "王五", "复核", user_service=self.service, storage=self.storage))
         self.assertEqual(self.value["workflow"]["current_state"], ECNState.ECN_EXECUTING)
-        await self.special("ordinary", "李四", confirmed=True)
+        await self.special(
+            "ordinary",
+            "李四",
+            confirmed=True,
+            final_confirmation_acknowledged=True,
+        )
         self.accept(await execution_review.verify_execution_result(self.value["ecn_id"], "王五", "复核", user_service=self.service, storage=self.storage))
         self.assertEqual(self.value["execution_info"]["verification"]["status"], "verified")
 
@@ -244,6 +257,78 @@ class ECNAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         confirmation = copy.deepcopy(self.value["execution_info"]["material_confirmations"]["material"]["traceability_tasks"][second])
         self.accept(await execution_review.revoke_execution_confirmation(self.value["ecn_id"], "material", "material", second, confirmation, "核对数量", [], "张三", "复核", user_service=self.service, storage=self.storage))
         self.assertFalse((await self.material(second, "王五", final=True))["reason"])
+        self.assertEqual(self.value["workflow"]["current_state"], ECNState.CLOSED)
+
+    async def test_last_material_item_does_not_prompt_or_close_while_erp_is_pending(self):
+        await self.scheming()
+        material = ordinary_scheme()
+        material.update(
+            item_id="material",
+            scheme_category="material",
+            change_type="新增",
+            traceability_levels=["文件"],
+            material_change={"material_name": "验收器件", "quantity": 1, "unit": "pcs"},
+        )
+        await self.save_scheme(material)
+        await self.review()
+        self.accept(
+            await actions.update_material_codes(
+                self.value["ecn_id"],
+                self.value["change_items"][0],
+                {"main:material_code": "AUDIT-002"},
+                "张三",
+                "助理",
+                user_service=self.service,
+                storage=self.storage,
+            )
+        )
+        self.accept(
+            await actions.confirm_material_codes_and_enter_execution(
+                self.value["ecn_id"],
+                self.value,
+                "张三",
+                "助理",
+                user_service=self.service,
+                storage=self.storage,
+            )
+        )
+        await self.special("__erp__", assignee="李四")
+        await self.overview()
+        tasks = self.value["execution_info"]["material_confirmations"]["material"]["traceability_tasks"]
+        first, second = list(tasks)
+        self.assertFalse((await self.material(first, "李四"))["reason"])
+        last_material = await self.material(second, "王五")
+        self.assertFalse(last_material["requires_final_confirmation"])
+        self.assertFalse(last_material["reason"])
+        self.assertEqual(self.value["workflow"]["current_state"], ECNState.ECN_EXECUTING)
+
+        erp = copy.deepcopy(self.value["execution_info"]["erp_confirmation"])
+        requires_confirmation = await update_special_task(
+            self.value["ecn_id"],
+            "__erp__",
+            erp,
+            username="李四",
+            role="验收岗位",
+            service=self.service,
+            confirmed=True,
+            storage=self.storage,
+        )
+        self.assertFalse(requires_confirmation.ok)
+        self.assertEqual(requires_confirmation.message, FINAL_EXECUTION_CONFIRMATION_REQUIRED)
+        self.accept(
+            await update_special_task(
+                self.value["ecn_id"],
+                "__erp__",
+                erp,
+                username="李四",
+                role="验收岗位",
+                service=self.service,
+                confirmed=True,
+                final_confirmation_acknowledged=True,
+                storage=self.storage,
+            )
+        )
+        await self.fresh()
         self.assertEqual(self.value["workflow"]["current_state"], ECNState.CLOSED)
 
     async def test_erp_confirmation_immediately_refreshes_scheme_actions(self):
