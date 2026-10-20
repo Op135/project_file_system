@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 from src.ecn_management_config import ECN_LEVEL_COMPLEX, ECNState, load_ecn_config, ECN_EXECUTION_STAGE_MATERIAL
 from src.modules.ecn import notifications
+from src.modules.ecn.notification_links import build_ecn_detail_path, build_ecn_detail_url
 from src.modules.ecn.models import get_ecn_template
 from src.permission_catalog import ECN_EXECUTION_PURCHASE_CONFIRM_PERMISSION
 from tests.test_error_management_concurrency import load_isolated_db_storage
@@ -121,6 +122,13 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.sender.call_args.args[0], first_message)
         self.assertNotIn("供应商::verify", first_message)
         self.assertEqual(await self.check(), (0, 0))
+
+    async def test_card_link_opens_current_ecn_detail(self):
+        self.assertEqual(await self.check(), (1, 0))
+        self.assertEqual(
+            self.sender.call_args.kwargs["link_url"],
+            "https://example.test/ecn_management?ecn_id=ECN-test",
+        )
 
     async def test_same_named_parallel_nodes_keep_individual_tokens(self):
         tasks = self.configure_same_named_material_nodes(parallel=True)
@@ -477,6 +485,18 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ECNWecomConfigTests(unittest.TestCase):
+    def test_detail_link_encodes_ecn_id_and_empty_values_fall_back_safely(self):
+        self.assertEqual(
+            build_ecn_detail_path(" ECN 2026/01 "),
+            "/ecn_management?ecn_id=ECN+2026%2F01",
+        )
+        self.assertEqual(build_ecn_detail_path(""), "/ecn_management")
+        self.assertEqual(
+            build_ecn_detail_url("https://example.test/", "ECN001"),
+            "https://example.test/ecn_management?ecn_id=ECN001",
+        )
+        self.assertEqual(build_ecn_detail_url("", "ECN001"), "")
+
     def test_default_uses_bound_recipients_and_invalid_interval_keeps_default(self):
         config = load_ecn_config({"wecom": {"enabled": False, "check_interval_seconds": -1}})[
             "wecom"

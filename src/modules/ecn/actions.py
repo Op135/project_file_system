@@ -97,6 +97,7 @@ from .attachments import (
 from .scheme_notifications import send_scheme_sales_completion_notifications
 from .task_labels import scheme_log_label
 from .overview_files import prepare_overview_upload
+from .notification_links import build_ecn_detail_url
 
 
 def require_permission(check, role, user, service):
@@ -883,7 +884,7 @@ async def execute_action(
                 title = str(result.record.get("basic_info", {}).get("title") or "—")
                 event_name = "ECR申请审批" if completed_phase == "ECR_PHASE" else "ECN方案评审"
                 link_url = (
-                    f"{ECN_WECOM_CONFIG['public_base_url']}/ecn_management"
+                    build_ecn_detail_url(ECN_WECOM_CONFIG["public_base_url"], ecn_id)
                     if ECN_WECOM_CONFIG["public_base_url"]
                     else ""
                 )

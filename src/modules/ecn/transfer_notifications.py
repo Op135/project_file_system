@@ -6,6 +6,7 @@ import uuid
 
 from ...ecn_management_config import get_ecn_special_confirmations
 from ...notification_recipients import is_system_admin_username
+from .notification_links import build_ecn_detail_url
 from .special_task_messages import get_special_message_item, build_special_card
 
 logger = logging.getLogger(__name__)
@@ -84,7 +85,9 @@ async def send_transfer_cancellations(ecn_id: str, record: dict, settings: dict,
                         description,
                         recipient,
                         title="🔧【ECN工程变更】移交任务取消",
-                        link_url=f"{settings['public_base_url']}/ecn_management",
+                        link_url=build_ecn_detail_url(
+                            settings["public_base_url"], ecn_id
+                        ),
                         module="ecn_management",
                         business_key=f"{ecn_id}:transfer:{event_id}",
                         message_type="transfer_cancel",

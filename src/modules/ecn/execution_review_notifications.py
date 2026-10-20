@@ -9,6 +9,7 @@ from typing import Any
 
 from ...notification_content import build_textcard_description, truncate_notification_text
 from ...notification_recipients import is_system_admin_username
+from .notification_links import build_ecn_detail_url
 
 logger = logging.getLogger(__name__)
 STATE_KEY = "ecn_execution_review_notification_state"
@@ -141,7 +142,7 @@ async def send_execution_review_notices(
             success = False
             try:
                 link_url = (
-                    f"{settings.get('public_base_url', '').rstrip('/')}/ecn_management"
+                    build_ecn_detail_url(settings.get("public_base_url"), ecn_id)
                     if settings.get("public_base_url")
                     else ""
                 )

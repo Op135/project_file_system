@@ -49,6 +49,7 @@ from ...issue_workflow_utils import is_scheduled_wecom_reminder_time
 from ...runtime_controls import allows_background_task
 from .special_task_messages import get_special_message_item, get_special_message_items, build_special_card
 from .task_labels import compact_material_confirmation_label, execution_scheme_no
+from .notification_links import build_ecn_detail_url
 
 logger = logging.getLogger(__name__)
 NOTIFICATION_STATE_KEY = "ecn_wecom_notification_state"
@@ -670,7 +671,9 @@ async def check_and_send_ecn_reminders(
                                 description,
                                 recipient,
                                 title=title,
-                                link_url=f"{settings['public_base_url']}/ecn_management",
+                                link_url=build_ecn_detail_url(
+                                    settings["public_base_url"], ecn_id
+                                ),
                                 module="ecn_management",
                                 business_key=f"{ecn_id}:{name}:{fingerprint}",
                             )

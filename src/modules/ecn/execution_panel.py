@@ -91,6 +91,7 @@ from .task_labels import (
     material_confirmation_tooltip_text,
     preferred_execution_responsibility_label,
 )
+from .notification_links import build_ecn_detail_url
 
 logger = logging.getLogger(__name__)
 ACTIVE_ECN_OVERVIEW_EXECUTIONS: set[str] = set()
@@ -1152,7 +1153,9 @@ def build_execution_panel(
                                 "结果：该执行流程全部节点已确认",
                             ),
                             link_url=(
-                                f"{ECN_WECOM_CONFIG['public_base_url']}/ecn_management"
+                                build_ecn_detail_url(
+                                    ECN_WECOM_CONFIG["public_base_url"], ecn_id
+                                )
                                 if ECN_WECOM_CONFIG["public_base_url"]
                                 else ""
                             ),

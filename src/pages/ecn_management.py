@@ -2,6 +2,7 @@
 from typing import (
     Any,
 )
+from urllib.parse import urlencode
 
 from nicegui import (
     app,
@@ -57,6 +58,7 @@ from ..modules.ecn.models import (
 from ..modules.ecn.models import (
     get_ecn_template as get_ecn_template,
 )
+from ..modules.ecn.notification_links import build_ecn_detail_path
 from ..modules.ecn.overview_execution import (
     build_overview_activation_state as build_overview_activation_state,
 )
@@ -86,7 +88,7 @@ from ..modules.ecn.special_tasks_ui import open_special_tasks_dialog
 
 
 @ui.page("/ecn_management")
-async def ecn_management_page():
+async def ecn_management_page(ecn_id: str | None = None):
     # --- 调用全局活跃跟踪组件 ---
     setup_global_activity_tracking("ecn_management")
 
@@ -121,7 +123,8 @@ async def ecn_management_page():
         </style>
     """)
     if not app.storage.user.get("current_user"):
-        ui.navigate.to("/login?redirect_to=%2Fecn_management")
+        redirect_target = build_ecn_detail_path(ecn_id)
+        ui.navigate.to(f"/login?{urlencode({'redirect_to': redirect_target})}")
         return
 
     current_user = app.storage.user.get("current_user", "未知用户")
@@ -405,3 +408,6 @@ async def ecn_management_page():
                     apply_execution_focus(True)
 
             refresh_list()
+            requested_ecn_id = str(ecn_id or "").strip()
+            if requested_ecn_id:
+                await open_ecn_detail_dialog(requested_ecn_id)

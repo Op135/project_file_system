@@ -13,6 +13,7 @@ from ...wecom_service import (
     send_wecom_text_message,
     send_wecom_textcard_message,
 )
+from .notification_links import build_ecn_detail_url
 
 logger = logging.getLogger(__name__)
 
@@ -218,7 +219,7 @@ async def send_scheme_sales_completion_notifications(
         return 0, 0
 
     link_url = (
-        f"{settings.get('public_base_url', '').rstrip('/')}/ecn_management"
+        build_ecn_detail_url(settings.get("public_base_url"), record.get("ecn_id"))
         if settings.get("public_base_url")
         else ""
     )
