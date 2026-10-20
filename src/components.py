@@ -88,6 +88,7 @@ from .overview_operation import (
     get_first_overview_record,
     get_latest_overview_operator,
     get_latest_overview_reason,
+    get_latest_overview_tooltip_reason,
     get_latest_overview_record,
     get_overview_reason_labels,
     get_overview_timestamp_items,
@@ -368,7 +369,7 @@ def _overview_tooltip_audit_html(chip_info: dict, extra_html: str = "") -> str:
     """统一生成概述 tooltip 的审计信息；注释只取最近一次操作原因。"""
     latest_time, _record = get_latest_overview_record(chip_info)
     latest_time_display = format_overview_timestamp(latest_time)
-    reason = get_latest_overview_reason(chip_info).replace("\n", "<br>")
+    reason = get_latest_overview_tooltip_reason(chip_info).replace("\n", "<br>")
     extra = f"<br>{extra_html}" if extra_html else ""
     reason_html = f"<br>最近操作注释:<br>●{reason}" if reason else ""
     return (

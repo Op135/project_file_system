@@ -4,11 +4,38 @@ from src.overview_operation import (
     append_overview_timestamp,
     get_latest_overview_operator,
     get_latest_overview_reason,
+    get_latest_overview_tooltip_reason,
     resolve_overview_reason,
 )
 
 
 class OverviewOperationTests(unittest.TestCase):
+    def test_tooltip_reason_includes_explicit_ecn_number(self):
+        chip = {
+            "timestamp": {
+                "2026-10-20 10:00:00": {
+                    "creator": "方案人",
+                    "reason": "ECN替换新增",
+                    "source_id": "ECN2026102001",
+                }
+            }
+        }
+        self.assertEqual(
+            get_latest_overview_tooltip_reason(chip),
+            "ECN2026102001：替换新增",
+        )
+
+    def test_tooltip_reason_keeps_non_ecn_comment_unchanged(self):
+        chip = {
+            "timestamp": {
+                "2026-10-20 10:00:00": {
+                    "reason": "需求影响待确认",
+                    "source_id": "REQ-001",
+                }
+            }
+        }
+        self.assertEqual(get_latest_overview_tooltip_reason(chip), "需求影响待确认")
+
     def test_resolve_overview_reason_keeps_label_and_expands_other(self):
         self.assertEqual(resolve_overview_reason("需求变更"), "需求变更")
         self.assertEqual(resolve_overview_reason("其他", "客户指定"), "其他：客户指定")

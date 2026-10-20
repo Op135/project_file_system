@@ -91,6 +91,17 @@ def get_latest_overview_reason(chip: Mapping, *, legacy_fallback: bool = True) -
     return str(chip.get("notes") or "").strip()
 
 
+def get_latest_overview_tooltip_reason(chip: Mapping) -> str:
+    """生成概述 tooltip 的最近操作注释，并明确标识 ECN 编号。"""
+    reason = get_latest_overview_reason(chip)
+    _time_text, record = get_latest_overview_record(chip)
+    source_id = str(record.get("source_id") or "").strip()
+    if not source_id.upper().startswith("ECN"):
+        return reason
+    action_text = reason[3:].strip() if reason.startswith("ECN") else reason
+    return f"{source_id}：{action_text}" if action_text else source_id
+
+
 def get_latest_overview_operator(chip: Mapping) -> str:
     _time_text, record = get_latest_overview_record(chip)
     return str(record.get("creator") or chip.get("creator") or "未知").strip()
