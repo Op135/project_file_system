@@ -7,10 +7,17 @@ import asyncio
 import logging
 import math
 import re
-from collections.abc import Mapping, Sequence
-from typing import Any
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any, ParamSpec, TypeVar
 
-from nicegui import run, ui
+from nicegui import app, run, ui
+
+from ..access_control import can_use_tool
+from .optical_curve_manager import (
+    RELATIVE_SPD_Y_AXIS_NAME,
+    _curve_legend_label,
+    get_optical_curve_records,
+)
 
 from .spectral_analysis import (
     COORDINATE_SYSTEMS,
@@ -23,7 +30,7 @@ from .spectral_analysis import (
     SpectrumResult,
     ThreeSpectrumMixSolution,
     analyze_cct_reference,
-    analyze_spectral_text,
+    analyze_spectrum,
     analyze_standard_illuminant,
     analyze_standard_illuminant_chromaticity,
     calculate_power_limited_mix,
@@ -33,11 +40,25 @@ from .spectral_analysis import (
     macadam_ellipse_points,
     mix_spectra_by_peak_ratio,
     parse_chromaticity_text,
-    solve_three_spectrum_mix,
+    parse_spectral_text,
+    solve_spectrum_mix_targets,
     spectral_example_text,
 )
 
 logger = logging.getLogger(__name__)
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+
+async def _run_spectral_calculation(
+    callback: Callable[_P, _R],
+    *args: _P.args,
+    **kwargs: _P.kwargs,
+) -> _R:
+    """在线程池运行计算，避免 Windows 进程池把应用入口当作 ``__mp_main__`` 重载。"""
+
+    return await run.io_bound(callback, *args, **kwargs)
 
 CHART_COLORS = [
     "#2563eb",
@@ -480,7 +501,7 @@ def _bind_cie_pointer_events(chart: Any, coordinate_system: str) -> None:
             return
         if not math.isfinite(first) or not math.isfinite(second):
             return
-        marker_series = await run.cpu_bound(
+        marker_series = await _run_spectral_calculation(
             _cie_clicked_point_series,
             first,
             second,
@@ -679,7 +700,76 @@ MixingSpectrumResult = SpectrumResult | SpectrumChromaticityResult
 def _spectrum_input_from_result(result: MixingSpectrumResult) -> SpectrumInput:
     """把原始或中间混合结果转换为可继续参与混合的光谱输入。"""
 
-    return SpectrumInput(result.name, result.wavelengths, result.values)
+    return SpectrumInput(
+        result.name,
+        result.wavelengths,
+        result.values,
+        zero_outside_range=(
+            result.zero_outside_range if isinstance(result, SpectrumResult) else False
+        ),
+    )
+
+
+def _library_spectrum_inputs(
+    records: Sequence[Mapping[str, Any]],
+    selected_ids: Sequence[str],
+) -> tuple[SpectrumInput, ...]:
+    """把资料库中选定的相对光谱功率密度记录转换为计算输入。"""
+
+    record_lookup = {
+        str(record.get("id", "") or ""): record
+        for record in records
+        if str(record.get("id", "") or "")
+    }
+    inputs: list[SpectrumInput] = []
+    names: set[str] = set()
+    for record_id in dict.fromkeys(str(value) for value in selected_ids):
+        record = record_lookup.get(record_id)
+        if record is None:
+            raise SpectralAnalysisError("已选择的资料库光谱不存在或已被删除，请重新选择")
+        if str(record.get("y_axis_name", "") or "").strip().casefold() != RELATIVE_SPD_Y_AXIS_NAME.casefold():
+            raise SpectralAnalysisError("资料库记录不属于“相对光谱功率密度”")
+        x_data = record.get("x_data")
+        y_data = record.get("y_data")
+        if not isinstance(x_data, list) or not isinstance(y_data, list) or len(x_data) != len(y_data):
+            raise SpectralAnalysisError(f"资料库光谱“{_curve_legend_label(dict(record))}”数据结构无效")
+        try:
+            wavelengths = tuple(float(value) for value in x_data)
+            values = tuple(float(value) for value in y_data)
+        except (TypeError, ValueError) as exc:
+            raise SpectralAnalysisError(
+                f"资料库光谱“{_curve_legend_label(dict(record))}”包含非数字数据"
+            ) from exc
+        name = _curve_legend_label(dict(record)).strip() or "资料库光谱"
+        if (
+            len(wavelengths) < 2
+            or any(not math.isfinite(value) for value in (*wavelengths, *values))
+            or any(right <= left for left, right in zip(wavelengths, wavelengths[1:]))
+            or any(value < 0 for value in values)
+            or not any(value > 0 for value in values)
+        ):
+            raise SpectralAnalysisError(f"资料库光谱“{name}”没有有效的非负光谱数据")
+        if name in names:
+            name = f"{name} · {record_id[:8]}"
+        if name in names:
+            raise SpectralAnalysisError(f"资料库光谱名称重复：{name}")
+        names.add(name)
+        inputs.append(SpectrumInput(name, wavelengths, values, zero_outside_range=True))
+    return tuple(inputs)
+
+
+def _analyze_spectrum_inputs(spectra: tuple[SpectrumInput, ...]) -> list[SpectrumResult]:
+    """在 CPU 工作进程中分析粘贴与资料库合并后的光谱。"""
+
+    return [analyze_spectrum(spectrum) for spectrum in spectra]
+
+
+def _spectral_subprocess_message(exc: Exception) -> str | None:
+    """提取 NiceGUI 工作进程包装后的光谱业务错误。"""
+
+    if isinstance(exc, run.SubprocessException) and exc.original_type == SpectralAnalysisError.__name__:
+        return str(exc.original_message)
+    return None
 
 
 def _mixing_nodes_and_active_ids(
@@ -1333,6 +1423,7 @@ class SpectralAnalyzerTool:
             "data_text": "",
             "normalized": True,
             "reference_source": "none",
+            "library_spectrum_ids": [],
         }
         self.coordinate_state: dict[str, Any] = {
             "data_text": "",
@@ -1347,8 +1438,12 @@ class SpectralAnalyzerTool:
         self.mixing_state: dict[str, Any] = {
             "source_a": "",
             "source_b": "",
+            "target_xy_enabled": True,
+            "target_cri_enabled": False,
             "target_x": 0.3127,
             "target_y": 0.3290,
+            "target_ra": 90.0,
+            **{f"target_r{index}": 90.0 if index <= 8 else 0.0 for index in range(1, 16)},
         }
         self.chart_state: dict[str, Any] = {
             "spectrum_x_interval": 20.0,
@@ -1384,6 +1479,18 @@ class SpectralAnalyzerTool:
         mixing_solve_error = ""
         cie_charts: dict[str, Any] = {}
         active_analysis_cie_system = "xy"
+
+        def can_read_curve_library() -> bool:
+            """复核当前账号是否可以通过资料库入口读取曲线。"""
+
+            current_user = app.storage.user.get("current_user", "")
+            current_role = app.storage.user.get("current_role", "")
+            return isinstance(current_user, str) and can_use_tool(
+                app.state.user_service,
+                current_user,
+                "optical_curve_manager",
+                legacy_role=str(current_role or ""),
+            )
 
         @ui.refreshable
         def render_spectrum_chart() -> None:
@@ -1985,9 +2092,9 @@ class SpectralAnalyzerTool:
                     cct = self.spectrum_results[index].cct
                     if cct is None:
                         raise SpectralAnalysisError("所选光谱没有有效 CCT，无法生成等色温标准源")
-                    return await run.cpu_bound(analyze_cct_reference, cct)
+                    return await _run_spectral_calculation(analyze_cct_reference, cct)
                 illuminant_key = source_id.split(":", 1)[1]
-                return await run.cpu_bound(analyze_standard_illuminant, illuminant_key)
+                return await _run_spectral_calculation(analyze_standard_illuminant, illuminant_key)
 
             first_result = await resolve(source_a)
             second_result = await resolve(source_b)
@@ -2014,7 +2121,10 @@ class SpectralAnalyzerTool:
                 selected = ()
             self.coordinate_state["standard_illuminants"] = list(selected)
             try:
-                results = [await run.cpu_bound(analyze_standard_illuminant_chromaticity, key) for key in selected]
+                results = [
+                    await _run_spectral_calculation(analyze_standard_illuminant_chromaticity, key)
+                    for key in selected
+                ]
             except Exception as exc:
                 logger.error("载入色坐标图内置标准光源失败", exc_info=True)
                 ui.notify(f"载入内置标准光源失败：{exc}", type="negative")
@@ -2045,7 +2155,10 @@ class SpectralAnalyzerTool:
                 cct = self.spectrum_results[index].cct
                 if cct is None:
                     raise SpectralAnalysisError("所选光谱没有有效 CCT")
-                self.spectrum_reference_result = await run.cpu_bound(analyze_cct_reference, cct)
+                self.spectrum_reference_result = await _run_spectral_calculation(
+                    analyze_cct_reference,
+                    cct,
+                )
             except Exception as exc:
                 logger.error("生成等色温标准光源失败", exc_info=True)
                 ui.notify(f"生成等色温标准源失败：{exc}", type="negative")
@@ -2120,7 +2233,7 @@ class SpectralAnalyzerTool:
                     )
             if self.mixing_solution is None:
                 if not mixing_solve_pending:
-                    ui.label("修改目标色坐标后会自动计算最终配比和光参数。").classes("text-sm text-blue-700")
+                    ui.label("修改已启用的目标后会自动计算最终配比和光参数。").classes("text-sm text-blue-700")
                 ui.element("div").classes("w-full min-h-[320px]")
                 return
             solution = self.mixing_solution
@@ -2144,7 +2257,7 @@ class SpectralAnalyzerTool:
                 ui.label("绝对光功率结果不可用，请重新执行目标配比求解。").classes("text-sm text-amber-700")
                 return
             metrics = [
-                ("目标混合 xy", f"{result.xy[0]:.6f}, {result.xy[1]:.6f}"),
+                ("混合 xy", f"{result.xy[0]:.6f}, {result.xy[1]:.6f}"),
                 ("混合光谱峰值波长", f"{result.peak_wavelength:.1f} nm"),
                 ("混合光谱主波长", _dominant_wavelength_metric(result)),
                 ("CCT", "—" if result.cct is None else f"{result.cct:.0f} K"),
@@ -2161,6 +2274,34 @@ class SpectralAnalyzerTool:
                     with ui.card().classes("w-full p-1 gap-0 bg-slate-50 shadow-none border"):
                         ui.label(label).classes("text-xs text-slate-500")
                         ui.label(value).classes("text-base font-bold text-slate-800")
+
+            if bool(self.mixing_state.get("target_cri_enabled", False)):
+                actual_cri = {
+                    "Ra": result.ra,
+                    **{f"R{index}": dict(result.ri).get(index) for index in range(1, 16)},
+                }
+                cri_rows = []
+                for label, actual in actual_cri.items():
+                    state_key = f"target_{label.lower()}"
+                    target = _nonnegative_number(self.mixing_state.get(state_key), 90.0)
+                    cri_rows.append(
+                        {
+                            "metric": label,
+                            "target": f"≥ {target:.2f}",
+                            "actual": _metric(actual, 2),
+                            "status": "达标" if actual is not None and actual + 0.05 >= target else "未达标",
+                        }
+                    )
+                ui.table(
+                    columns=[
+                        {"name": "metric", "label": "CRI 指标", "field": "metric", "align": "left"},
+                        {"name": "target", "label": "目标", "field": "target", "align": "right"},
+                        {"name": "actual", "label": "实际", "field": "actual", "align": "right"},
+                        {"name": "status", "label": "状态", "field": "status", "align": "center"},
+                    ],
+                    rows=cri_rows,
+                    pagination={"rowsPerPage": 16},
+                ).props("dense flat bordered hide-bottom").classes("w-full mt-2")
 
             limiting_indices = set(power_result.limiting_source_indices)
             power_rows = []
@@ -2218,7 +2359,12 @@ class SpectralAnalyzerTool:
                 mixing_series_styles[name].update(self.series_styles[name])
             target_x = _nonnegative_number(self.mixing_state.get("target_x"), -1.0)
             target_y = _nonnegative_number(self.mixing_state.get("target_y"), -1.0)
-            if target_x > 0 and target_y > 0 and target_x + target_y < 1:
+            if (
+                bool(self.mixing_state.get("target_xy_enabled", True))
+                and target_x > 0
+                and target_y > 0
+                and target_x + target_y < 1
+            ):
                 try:
                     coordinate_results.extend(parse_chromaticity_text(f"目标色坐标\t{target_x}\t{target_y}", "xy"))
                 except SpectralAnalysisError:
@@ -2303,7 +2449,7 @@ class SpectralAnalyzerTool:
             mixing_solve_task = asyncio.create_task(run_scheduled_solve())
 
         def update_mixing_target(_=None) -> None:
-            """目标坐标变化时实时移动目标点并自动重新求解。"""
+            """目标设置变化时实时更新图表并自动重新求解。"""
 
             schedule_dynamic_mixing_solve()
 
@@ -2397,26 +2543,45 @@ class SpectralAnalyzerTool:
             render_mixing_workspace.refresh()
 
         async def solve_target_mixing(generation: int) -> None:
-            """对最终三条活动光谱自动反求目标 xy 配比，并丢弃过期计算。"""
+            """对最终三条活动光谱按启用的目标反求配比，并丢弃过期计算。"""
 
             nonlocal mixing_solve_task, mixing_solve_pending, mixing_solve_error
             try:
                 nodes, active_ids, source_coefficients = current_mixing_graph_details()
                 if len(active_ids) != 3:
                     raise SpectralAnalysisError("必须先组合到恰好剩余三条光谱")
-                target_x = _nonnegative_number(self.mixing_state.get("target_x"), -1.0)
-                target_y = _nonnegative_number(self.mixing_state.get("target_y"), -1.0)
-                if target_x <= 0 or target_y <= 0 or target_x + target_y >= 1:
-                    raise SpectralAnalysisError("目标 xy 色坐标无效")
+                xy_enabled = bool(self.mixing_state.get("target_xy_enabled", True))
+                cri_enabled = bool(self.mixing_state.get("target_cri_enabled", False))
+                if not xy_enabled and not cri_enabled:
+                    raise SpectralAnalysisError("请至少启用色坐标或 CRI 目标")
+                target_xy: tuple[float, float] | None = None
+                if xy_enabled:
+                    target_x = _nonnegative_number(self.mixing_state.get("target_x"), -1.0)
+                    target_y = _nonnegative_number(self.mixing_state.get("target_y"), -1.0)
+                    if target_x <= 0 or target_y <= 0 or target_x + target_y >= 1:
+                        raise SpectralAnalysisError("目标 xy 色坐标无效")
+                    target_xy = (target_x, target_y)
+                cri_targets: tuple[float, ...] | None = None
+                if cri_enabled:
+                    cri_targets = tuple(
+                        _nonnegative_number(
+                            self.mixing_state.get("target_ra" if index == 0 else f"target_r{index}"),
+                            -1.0,
+                        )
+                        for index in range(16)
+                    )
+                    if any(value < 0 or value > 100 for value in cri_targets):
+                        raise SpectralAnalysisError("CRI 各项目标必须位于 0–100")
                 spectra = (
                     _spectrum_input_from_result(nodes[active_ids[0]]),
                     _spectrum_input_from_result(nodes[active_ids[1]]),
                     _spectrum_input_from_result(nodes[active_ids[2]]),
                 )
-                solution = await run.cpu_bound(
-                    solve_three_spectrum_mix,
+                solution = await _run_spectral_calculation(
+                    solve_spectrum_mix_targets,
                     spectra,
-                    (target_x, target_y),
+                    target_xy=target_xy,
+                    cri_targets=cri_targets,
                 )
                 final_source_coefficients = tuple(
                     sum(
@@ -2433,7 +2598,7 @@ class SpectralAnalyzerTool:
                     )
                     for index in range(len(self.spectrum_results))
                 )
-                power_result = await run.cpu_bound(
+                power_result = await _run_spectral_calculation(
                     calculate_power_limited_mix,
                     source_inputs,
                     final_source_coefficients,
@@ -2450,9 +2615,11 @@ class SpectralAnalyzerTool:
             except Exception as exc:
                 if generation != mixing_solve_generation:
                     return
-                logger.error("三光谱目标配比自动求解失败", exc_info=True)
+                business_message = _spectral_subprocess_message(exc)
+                if business_message is None:
+                    logger.error("多目标光谱配比自动求解失败", exc_info=True)
                 mixing_solve_pending = False
-                mixing_solve_error = str(exc)
+                mixing_solve_error = business_message or str(exc)
                 mixing_solve_task = None
                 refresh_mixing_outputs()
                 return
@@ -2593,9 +2760,18 @@ class SpectralAnalyzerTool:
 
                         with ui.card().classes("w-full min-h-[520px] p-3 rounded-xl shadow-sm"):
                             ui.label("最终三光谱目标求解").classes("text-lg font-bold text-slate-800")
-                            ui.label("活动节点剩余三条时，任何比例、坐标或功率上限变化都会自动重新求解。").classes(
+                            ui.label("色坐标与 CRI 可单独或同时启用；活动节点剩余三条时自动重新求解。").classes(
                                 "text-xs text-slate-500"
                             )
+                            with ui.row().classes("w-full items-center gap-5 flex-wrap mt-1"):
+                                ui.switch("色坐标目标").bind_value(
+                                    self.mixing_state,
+                                    "target_xy_enabled",
+                                ).on_value_change(update_mixing_target)
+                                ui.switch("CRI 目标").bind_value(
+                                    self.mixing_state,
+                                    "target_cri_enabled",
+                                ).on_value_change(update_mixing_target)
                             with ui.row().classes("w-full items-center gap-2 flex-wrap mt-1"):
                                 ui.number(
                                     "目标 x",
@@ -2613,6 +2789,21 @@ class SpectralAnalyzerTool:
                                 ).bind_value(self.mixing_state, "target_y").props(
                                     "outlined dense input-class=text-right"
                                 ).classes("w-36").on_value_change(update_mixing_target)
+                            ui.label("CRI 各项均作为最低目标；Ra、R1–R8 默认 90，R9–R15 默认 0。").classes(
+                                "text-xs text-slate-500 mt-2"
+                            )
+                            with ui.grid().classes("w-full grid-cols-4 xl:grid-cols-8 gap-2 mt-1"):
+                                for index in range(16):
+                                    label = "Ra" if index == 0 else f"R{index}"
+                                    state_key = "target_ra" if index == 0 else f"target_r{index}"
+                                    ui.number(
+                                        label,
+                                        min=0,
+                                        max=100,
+                                        step=0.1,
+                                    ).bind_value(self.mixing_state, state_key).props(
+                                        "outlined dense input-class=text-right"
+                                    ).classes("w-full").on_value_change(update_mixing_target)
                             render_mixing_solution()
 
             with splitter.after:
@@ -2635,6 +2826,11 @@ class SpectralAnalyzerTool:
                 "xy",
             )
             coordinate_text = str(self.coordinate_state.get("data_text") or "").strip()
+            selected_library_ids = [
+                str(value)
+                for value in self.spectral_state.get("library_spectrum_ids", [])
+                if isinstance(value, str) and value
+            ]
             previous_power_limits = {
                 result.name: _nonnegative_number(
                     self.mixing_power_limits.get(f"source:{index}"),
@@ -2643,10 +2839,31 @@ class SpectralAnalyzerTool:
                 for index, result in enumerate(self.spectrum_results)
             }
             try:
-                if not data_text and not coordinate_text:
+                if not data_text and not coordinate_text and not selected_library_ids:
                     raise SpectralAnalysisError("请至少输入一组光谱数据或一组具体色坐标")
+                pasted_inputs = tuple(parse_spectral_text(data_text)) if data_text else ()
+                library_inputs: tuple[SpectrumInput, ...] = ()
+                if selected_library_ids:
+                    if not can_read_curve_library():
+                        raise SpectralAnalysisError("当前账号没有读取研发光学曲线资料库的权限")
+                    library_inputs = _library_spectrum_inputs(
+                        get_optical_curve_records(y_axis_name=RELATIVE_SPD_Y_AXIS_NAME),
+                        selected_library_ids,
+                    )
+                spectra = (*pasted_inputs, *library_inputs)
+                spectrum_names = [spectrum.name for spectrum in spectra]
+                duplicate_name = next(
+                    (name for index, name in enumerate(spectrum_names) if name in spectrum_names[:index]),
+                    None,
+                )
+                if duplicate_name is not None:
+                    raise SpectralAnalysisError(f"粘贴数据与资料库中的光谱名称重复：{duplicate_name}")
                 coordinates = parse_chromaticity_text(coordinate_text, coordinate_system) if coordinate_text else []
-                results = await run.cpu_bound(analyze_spectral_text, data_text) if data_text else []
+                results = (
+                    await _run_spectral_calculation(_analyze_spectrum_inputs, spectra)
+                    if spectra
+                    else []
+                )
                 self.spectrum_results = results
                 self.coordinate_results = coordinates
                 previous_styles = self.series_styles
@@ -2672,14 +2889,19 @@ class SpectralAnalyzerTool:
                     schedule_dynamic_mixing_solve()
                 workspace_tabs.set_value(analysis_tab)
                 ui.notify(
-                    f"已完成 {len(results)} 条光谱与 {len(coordinates)} 个手工色坐标的联合计算",
+                    f"已完成 {len(results)} 条光谱（资料库 {len(library_inputs)} 条）与 "
+                    f"{len(coordinates)} 个手工色坐标的联合计算",
                     type="positive",
                 )
             except SpectralAnalysisError as exc:
                 ui.notify(str(exc), type="warning")
             except Exception as exc:
-                logger.error("光谱分析失败", exc_info=True)
-                ui.notify(f"光谱分析失败：{exc}", type="negative")
+                business_message = _spectral_subprocess_message(exc)
+                if business_message is not None:
+                    ui.notify(business_message, type="warning")
+                else:
+                    logger.error("光谱分析失败", exc_info=True)
+                    ui.notify(f"光谱分析失败：{exc}", type="negative")
             finally:
                 waiting_notification.dismiss()
                 calculate_button.props(remove="loading disable")
@@ -2696,6 +2918,7 @@ class SpectralAnalyzerTool:
         def clear_spectra() -> None:
             self.spectral_state["data_text"] = ""
             self.spectral_state["reference_source"] = "none"
+            self.spectral_state["library_spectrum_ids"] = []
             self.spectrum_results = []
             self.spectrum_reference_result = None
             self.cri_comparison_results = None
@@ -2703,6 +2926,7 @@ class SpectralAnalyzerTool:
             clear_mixing_solution()
             self.mixing_power_limits.clear()
             spectral_textarea.update()
+            render_library_selection.refresh()
             render_spectrum_results.refresh()
             render_mixing_workspace.refresh()
 
@@ -2754,6 +2978,100 @@ class SpectralAnalyzerTool:
                                     ui.label("显色计算至少覆盖 380–780 nm；曲线图仅显示该可见光范围。").classes(
                                         "text-xs text-amber-700"
                                     )
+
+                                    @ui.refreshable
+                                    def render_library_selection() -> None:
+                                        selected_ids = [
+                                            str(value)
+                                            for value in self.spectral_state.get("library_spectrum_ids", [])
+                                            if isinstance(value, str) and value
+                                        ]
+                                        if not selected_ids:
+                                            ui.label("尚未选择资料库光谱").classes("text-xs text-slate-500")
+                                            return
+                                        if not can_read_curve_library():
+                                            ui.label("当前账号没有读取资料库的权限").classes(
+                                                "text-xs text-rose-600"
+                                            )
+                                            return
+                                        records = get_optical_curve_records(
+                                            y_axis_name=RELATIVE_SPD_Y_AXIS_NAME
+                                        )
+                                        labels = {
+                                            str(record.get("id", "") or ""): _curve_legend_label(record)
+                                            for record in records
+                                        }
+                                        with ui.row().classes("w-full gap-1 flex-wrap"):
+                                            for record_id in selected_ids:
+                                                ui.badge(
+                                                    labels.get(record_id, f"已失效记录 · {record_id[:8]}"),
+                                                    color="cyan-8" if record_id in labels else "red-7",
+                                                ).props("outline")
+
+                                    def open_curve_library_selector() -> None:
+                                        if not can_read_curve_library():
+                                            ui.notify("当前账号没有读取研发光学曲线资料库的权限", type="negative")
+                                            return
+                                        records = get_optical_curve_records(
+                                            y_axis_name=RELATIVE_SPD_Y_AXIS_NAME
+                                        )
+                                        if not records:
+                                            ui.notify("资料库中暂无“相对光谱功率密度”数据", type="warning")
+                                            return
+                                        options = {
+                                            str(record.get("id", "") or ""): _curve_legend_label(record)
+                                            for record in records
+                                            if str(record.get("id", "") or "")
+                                        }
+                                        current_ids = [
+                                            str(value)
+                                            for value in self.spectral_state.get("library_spectrum_ids", [])
+                                            if isinstance(value, str) and value in options
+                                        ]
+                                        selector_dialog = ui.dialog().props("persistent")
+                                        selector_dialog.on("close", lambda: selector_dialog.delete())
+                                        with selector_dialog, ui.card().classes("w-[760px] max-w-[95vw] p-4 gap-3"):
+                                            ui.label("选择资料库光谱").classes("text-lg font-bold text-slate-800")
+                                            ui.label(
+                                                "仅显示 Y 轴表征名为“相对光谱功率密度”的记录；可多选。"
+                                            ).classes("text-xs text-slate-500")
+                                            library_select = ui.select(
+                                                options,
+                                                value=current_ids,
+                                                label="相对光谱功率密度",
+                                                multiple=True,
+                                            ).props(
+                                                "outlined use-input use-chips options-dense input-debounce=0"
+                                            ).classes("w-full")
+
+                                            def apply_library_selection() -> None:
+                                                values = library_select.value
+                                                selected_values = values if isinstance(values, list) else []
+                                                self.spectral_state["library_spectrum_ids"] = [
+                                                    str(value)
+                                                    for value in selected_values
+                                                    if isinstance(value, str) and value in options
+                                                ]
+                                                render_library_selection.refresh()
+                                                selector_dialog.close()
+
+                                            with ui.row().classes("w-full justify-end gap-2"):
+                                                ui.button("取消", on_click=selector_dialog.close).props("flat no-caps")
+                                                ui.button(
+                                                    "使用所选光谱",
+                                                    icon="library_add_check",
+                                                    on_click=apply_library_selection,
+                                                ).props("unelevated no-caps color=cyan-8")
+                                        selector_dialog.open()
+
+                                    with ui.row().classes("w-full items-center gap-2 mt-2 flex-wrap"):
+                                        ui.button(
+                                            "从研发光学曲线资料库选择",
+                                            icon="storage",
+                                            on_click=open_curve_library_selector,
+                                        ).props("outline no-caps color=cyan-8")
+                                        ui.label("可与上方粘贴数据合并计算").classes("text-xs text-slate-500")
+                                    render_library_selection()
 
                                 with ui.card().classes("lg:col-span-5 w-full h-full p-4 rounded-xl shadow-sm"):
                                     ui.label("2. 具体色坐标（可选）").classes("text-lg font-bold text-slate-800")

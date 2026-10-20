@@ -1,9 +1,13 @@
 """光谱分析界面配置的回归测试。"""
 
+import asyncio
 import sys
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
+
+from nicegui import run
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
@@ -17,6 +21,7 @@ from src.tools.spectral_analysis import (  # noqa: E402
     spectral_example_text,
 )
 from src.tools.spectral_analyzer import (  # noqa: E402
+    SpectralAnalyzerTool,
     _chromaticity_chart_options,
     _chromaticity_result_key,
     _cie_clicked_point_series,
@@ -29,8 +34,11 @@ from src.tools.spectral_analyzer import (  # noqa: E402
     _mixing_graph_details,
     _mixing_node_options,
     _mixing_nodes_and_active_ids,
+    _library_spectrum_inputs,
     _option_text,
+    _run_spectral_calculation,
     _series_style,
+    _spectral_subprocess_message,
     _sdcm_key,
     _sdcm_orders,
     _spectrum_group_key,
@@ -53,6 +61,66 @@ class SpectralAnalyzerOptionsTests(unittest.TestCase):
         self.assertEqual(_option_text(None), "")
         self.assertEqual(_option_text(" xy ", {"xy", "uv"}, "uv"), "xy")
         self.assertEqual(_option_text("错误", {"xy", "uv"}, "uv"), "uv")
+
+    def test_mixing_targets_keep_xy_enabled_and_apply_cri_defaults(self):
+        tool = SpectralAnalyzerTool()
+        self.assertTrue(tool.mixing_state["target_xy_enabled"])
+        self.assertFalse(tool.mixing_state["target_cri_enabled"])
+        self.assertEqual(tool.mixing_state["target_ra"], 90.0)
+        self.assertEqual(
+            [tool.mixing_state[f"target_r{index}"] for index in range(1, 9)],
+            [90.0] * 8,
+        )
+        self.assertEqual(
+            [tool.mixing_state[f"target_r{index}"] for index in range(9, 16)],
+            [0.0] * 7,
+        )
+        self.assertEqual(tool.spectral_state["library_spectrum_ids"], [])
+
+    def test_library_relative_spd_records_convert_to_spectrum_inputs(self):
+        records = [
+            {
+                "id": "spd-1",
+                "title": "白光 LED",
+                "y_axis_name": "相对光谱功率密度",
+                "conditions": [{"name": "电流", "value": "350 mA"}],
+                "x_data": [360, 500, 780],
+                "y_data": [0.1, 1.0, 0.2],
+            }
+        ]
+        inputs = _library_spectrum_inputs(records, ["spd-1"])
+        self.assertEqual(len(inputs), 1)
+        self.assertEqual(inputs[0].name, "白光 LED & 350 mA")
+        self.assertEqual(inputs[0].wavelengths, (360.0, 500.0, 780.0))
+        self.assertEqual(inputs[0].values, (0.1, 1.0, 0.2))
+        self.assertTrue(inputs[0].zero_outside_range)
+
+        with self.assertRaisesRegex(ValueError, "不存在或已被删除"):
+            _library_spectrum_inputs(records, ["missing"])
+        invalid_axis = [{**records[0], "y_axis_name": "透过率"}]
+        with self.assertRaisesRegex(ValueError, "不属于"):
+            _library_spectrum_inputs(invalid_axis, ["spd-1"])
+
+    def test_subprocess_spectral_errors_are_restored_as_business_messages(self):
+        wrapped = run.SubprocessException(
+            "SpectralAnalysisError",
+            "640nmLED 的资料库范围外按 0 处理失败",
+            "traceback",
+        )
+        self.assertEqual(
+            _spectral_subprocess_message(wrapped),
+            "640nmLED 的资料库范围外按 0 处理失败",
+        )
+        self.assertIsNone(_spectral_subprocess_message(RuntimeError("unexpected")))
+
+    def test_spectral_calculations_use_thread_pool_instead_of_process_pool(self):
+        with patch(
+            "src.tools.spectral_analyzer.run.io_bound",
+            new=AsyncMock(return_value=7),
+        ) as io_bound:
+            result = asyncio.run(_run_spectral_calculation(pow, 2, 3))
+        self.assertEqual(result, 7)
+        io_bound.assert_awaited_once_with(pow, 2, 3)
         self.assertEqual(_sdcm_orders([5, "3", 5, 2, None]), (3, 5))
 
     def test_cie_interaction_uses_pixel_level_crosshair_and_emits_clicked_coordinate(self):

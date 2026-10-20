@@ -3,6 +3,7 @@
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
@@ -10,6 +11,7 @@ if str(ROOT_DIR) not in sys.path:
 
 from src.tools.optical_curve_manager import (  # noqa: E402
     OpticalCurveManagerTool,
+    RELATIVE_SPD_Y_AXIS_NAME,
     _build_curve_tree,
     _chart_options,
     _clipboard_click_handler,
@@ -21,6 +23,7 @@ from src.tools.optical_curve_manager import (  # noqa: E402
     _prepare_curve_data,
     _prepare_formula_data,
     _select_textarea_script,
+    get_optical_curve_records,
 )
 from src.tools.optical_curve_data import CurveDataError  # noqa: E402
 
@@ -149,6 +152,21 @@ class OpticalCurveManagerTests(unittest.TestCase):
         self.assertEqual(manager.edit_record_id, "curve-1")
         self.assertEqual(manager.edit_form["normalize_data_text"], "")
         self.assertEqual(manager.edit_form["preserve_data_text"], "400\t0.0\n500\t1.0")
+
+    def test_records_can_be_read_with_an_exact_y_axis_filter(self):
+        stored = {
+            "curve-1": self.records[0],
+            "curve-2": {
+                **self.records[0],
+                "id": "curve-2",
+                "title": "白光 LED",
+                "y_axis_name": RELATIVE_SPD_Y_AXIS_NAME,
+                "created_at": "2026-10-20T10:00:00",
+            },
+        }
+        with patch("src.tools.optical_curve_manager.db_storage.get_item", return_value=stored):
+            records = get_optical_curve_records(y_axis_name=RELATIVE_SPD_Y_AXIS_NAME)
+        self.assertEqual([record["id"] for record in records], ["curve-2"])
 
     def test_axis_intervals_and_fonts_are_applied(self):
         options = _chart_options(

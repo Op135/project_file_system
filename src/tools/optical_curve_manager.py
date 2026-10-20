@@ -25,6 +25,7 @@ from .optical_curve_data import (
 )
 
 OPTICAL_CURVE_DATA_KEY = "optical_curve_records"
+RELATIVE_SPD_Y_AXIS_NAME = "相对光谱功率密度"
 CURVE_COLOR_PALETTE = [
     "#0891b2",
     "#2563eb",
@@ -99,6 +100,25 @@ def _curve_data_text(record: dict[str, Any]) -> str:
     if not isinstance(x_data, list) or not isinstance(y_data, list) or len(x_data) != len(y_data):
         return ""
     return "\n".join(f"{x_value}\t{y_value}" for x_value, y_value in zip(x_data, y_data))
+
+
+def get_optical_curve_records(*, y_axis_name: str | None = None) -> list[dict[str, Any]]:
+    """读取最新曲线资料库快照，可按 Y 轴表征名精确筛选。"""
+
+    stored = db_storage.get_item(OPTICAL_CURVE_DATA_KEY, {})
+    if not isinstance(stored, dict):
+        return []
+    expected_axis = str(y_axis_name or "").strip().casefold()
+    records = [
+        record
+        for record in stored.values()
+        if isinstance(record, dict)
+        and (
+            not expected_axis
+            or str(record.get("y_axis_name", "") or "").strip().casefold() == expected_axis
+        )
+    ]
+    return sorted(records, key=lambda item: str(item.get("created_at", "")), reverse=True)
 
 
 def _clipboard_click_handler(text: str) -> str:
@@ -476,11 +496,7 @@ class OpticalCurveManagerTool:
 
     @staticmethod
     def _all_records() -> list[dict[str, Any]]:
-        stored = db_storage.get_item(OPTICAL_CURVE_DATA_KEY, {})
-        if not isinstance(stored, dict):
-            return []
-        records = [record for record in stored.values() if isinstance(record, dict)]
-        return sorted(records, key=lambda item: str(item.get("created_at", "")), reverse=True)
+        return get_optical_curve_records()
 
     @staticmethod
     def _set_row_value(rows: list[dict[str, str]], index: int, key: str, value: Any) -> None:

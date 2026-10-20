@@ -15,6 +15,7 @@ from itertools import combinations
 from typing import Any
 
 import numpy as np
+from scipy.optimize import minimize
 
 colour: Any | None = None
 
@@ -58,6 +59,7 @@ class SpectrumInput:
     name: str
     wavelengths: tuple[float, ...]
     values: tuple[float, ...]
+    zero_outside_range: bool = False
 
 
 @dataclass(frozen=True)
@@ -99,6 +101,7 @@ class SpectrumResult:
     cri_samples: tuple[CRIColorSampleResult, ...]
     rf: float | None
     warnings: tuple[str, ...]
+    zero_outside_range: bool = False
 
 
 @dataclass(frozen=True)
@@ -148,10 +151,10 @@ class SpectrumChromaticityResult:
 
 @dataclass(frozen=True)
 class ThreeSpectrumMixSolution:
-    """三个峰值归一化光谱反求目标色坐标的结果。"""
+    """峰值归一化光谱按目标反求配比的结果。"""
 
     result: SpectrumResult
-    peak_ratios: tuple[float, float, float]
+    peak_ratios: tuple[float, ...]
     luminous_flux: float
 
 
@@ -652,12 +655,19 @@ def analyze_spectrum(spectrum: SpectrumInput) -> SpectrumResult:
     colour_module = _require_colour()
     wavelengths = np.asarray(spectrum.wavelengths, dtype=float)
     values = np.asarray(spectrum.values, dtype=float)
-    if wavelengths[0] > MIN_REQUIRED_START_NM or wavelengths[-1] < CALCULATION_END_NM:
+    lacks_required_range = (
+        wavelengths[0] > MIN_REQUIRED_START_NM or wavelengths[-1] < CALCULATION_END_NM
+    )
+    if lacks_required_range and not spectrum.zero_outside_range:
         raise SpectralAnalysisError(
             f"{spectrum.name} 的波长范围至少应覆盖 {MIN_REQUIRED_START_NM}–{CALCULATION_END_NM} nm"
         )
 
     warnings: list[str] = []
+    if lacks_required_range:
+        warnings.append(
+            f"资料库记录仅覆盖 {wavelengths[0]:g}–{wavelengths[-1]:g} nm，范围外按 0 处理"
+        )
     if wavelengths[0] > CALCULATION_START_NM:
         warnings.append(
             f"输入从 {wavelengths[0]:.0f} nm 开始，较短波段按 0 补齐到 {CALCULATION_START_NM} nm"
@@ -761,6 +771,7 @@ def analyze_spectrum(spectrum: SpectrumInput) -> SpectrumResult:
         cri_samples=cri_samples,
         rf=rf,
         warnings=tuple(dict.fromkeys(warnings)),
+        zero_outside_range=spectrum.zero_outside_range,
     )
 
 
@@ -778,7 +789,9 @@ def _aligned_peak_spectra(
         values = np.asarray(spectrum.values, dtype=float)
         if len(wavelengths) < 2 or len(wavelengths) != len(values):
             raise SpectralAnalysisError(f"{spectrum.name} 没有有效的光谱数据")
-        if wavelengths[0] > MIN_REQUIRED_START_NM or wavelengths[-1] < CALCULATION_END_NM:
+        if (
+            wavelengths[0] > MIN_REQUIRED_START_NM or wavelengths[-1] < CALCULATION_END_NM
+        ) and not spectrum.zero_outside_range:
             raise SpectralAnalysisError(
                 f"{spectrum.name} 的波长范围至少应覆盖 {MIN_REQUIRED_START_NM}–{CALCULATION_END_NM} nm"
             )
@@ -973,6 +986,187 @@ def solve_three_spectrum_mix(
     return ThreeSpectrumMixSolution(
         result=result,
         peak_ratios=(float(ratios[0]), float(ratios[1]), float(ratios[2])),
+        luminous_flux=luminous_flux,
+    )
+
+
+def _validate_cri_targets(cri_targets: tuple[float, ...]) -> np.ndarray:
+    """校验按 Ra、R1–R15 排列的 CRI 下限。"""
+
+    if len(cri_targets) != 16:
+        raise SpectralAnalysisError("CRI 目标必须依次提供 Ra、R1–R15 共 16 项")
+    targets = np.asarray(cri_targets, dtype=float)
+    if not np.all(np.isfinite(targets)) or np.any(targets < 0) or np.any(targets > 100):
+        raise SpectralAnalysisError("CRI 各项目标必须位于 0–100")
+    return targets
+
+
+def _cri_metrics_for_mixed_values(
+    calculation_grid: np.ndarray,
+    mixed_values: np.ndarray,
+) -> np.ndarray:
+    """快速计算优化目标所需的 Ra、R1–R15。"""
+
+    colour_module = _require_colour()
+    sd = colour_module.SpectralDistribution(
+        dict(zip(calculation_grid.tolist(), mixed_values.tolist())),
+        name="CRI 目标混合光谱",
+    )
+    try:
+        specification = colour_module.colour_rendering_index(
+            sd,
+            additional_data=True,
+            method="CIE 2024",
+        )
+        ri_by_index = {int(index): float(item.Q_a) for index, item in specification.Q_as.items()}
+        metrics = np.asarray(
+            [float(specification.Q_a), *(ri_by_index[index] for index in range(1, 16))],
+            dtype=float,
+        )
+    except Exception as exc:
+        raise SpectralAnalysisError(f"混合光谱无法计算完整 CRI：{exc}") from exc
+    if not np.all(np.isfinite(metrics)):
+        raise SpectralAnalysisError("混合光谱无法计算完整 CRI")
+    return metrics
+
+
+def solve_spectrum_mix_targets(
+    spectra: tuple[SpectrumInput, ...],
+    *,
+    target_xy: tuple[float, float] | None = None,
+    cri_targets: tuple[float, ...] | None = None,
+    name: str = "目标混合光谱",
+) -> ThreeSpectrumMixSolution:
+    """按可独立启用的 xy 与 CRI 下限目标反求峰值配比。
+
+    三光谱 xy 目标继续复用原有线性精确解；只启用 CRI 时使用有界非线性
+    优化。三光谱同时启用两类目标时，xy 已唯一确定配比，因此在精确 xy 解上
+    校验全部 CRI 下限，避免以牺牲色坐标的方式静默满足显色目标。
+    """
+
+    if target_xy is None and cri_targets is None:
+        raise SpectralAnalysisError("请至少启用色坐标或 CRI 目标")
+    if len(spectra) != 3:
+        raise SpectralAnalysisError("目标求解要求恰好三条活动光谱")
+
+    targets = _validate_cri_targets(cri_targets) if cri_targets is not None else None
+    if target_xy is not None:
+        solution = solve_three_spectrum_mix(
+            (spectra[0], spectra[1], spectra[2]),
+            target_xy,
+            name=name,
+        )
+        if targets is None:
+            return solution
+        actual = np.asarray(
+            [
+                solution.result.ra if solution.result.ra is not None else float("nan"),
+                *(dict(solution.result.ri).get(index, float("nan")) for index in range(1, 16)),
+            ],
+            dtype=float,
+        )
+        unmet = [
+            ("Ra" if index == 0 else f"R{index}", float(target), float(value))
+            for index, (target, value) in enumerate(zip(targets, actual))
+            if not math.isfinite(float(value)) or value + 0.05 < target
+        ]
+        if unmet:
+            summary = "、".join(
+                f"{label}={value:.2f}（目标≥{target:.2f}）"
+                for label, target, value in unmet[:5]
+            )
+            if len(unmet) > 5:
+                summary += f" 等 {len(unmet)} 项"
+            raise SpectralAnalysisError(f"精确色坐标配比无法同时满足 CRI 下限：{summary}")
+        return solution
+
+    assert targets is not None
+    calculation_grid, basis_values = _aligned_peak_spectra(spectra)
+    basis_matrix = np.vstack(basis_values)
+    metric_cache: dict[tuple[float, ...], np.ndarray] = {}
+
+    def metrics_for(weights: np.ndarray) -> np.ndarray:
+        normalized = np.maximum(np.asarray(weights, dtype=float), 0)
+        total = float(np.sum(normalized))
+        if total <= 0:
+            raise SpectralAnalysisError("无法得到有效的光谱配比")
+        normalized /= total
+        key = tuple(float(round(value, 10)) for value in normalized)
+        cached = metric_cache.get(key)
+        if cached is None:
+            cached = _cri_metrics_for_mixed_values(
+                calculation_grid,
+                normalized @ basis_matrix,
+            )
+            metric_cache[key] = cached
+        return cached
+
+    def objective(weights: np.ndarray) -> float:
+        try:
+            metrics = metrics_for(weights)
+        except SpectralAnalysisError:
+            return 1e9
+        shortfall = np.maximum(targets - metrics, 0.0)
+        # 达标前优先消除最差项；达标后以很小权重继续偏向整体更高的 CRI。
+        return float(np.sum(shortfall * shortfall) - 1e-5 * np.mean(metrics))
+
+    source_count = len(spectra)
+    starts = [np.full(source_count, 1 / source_count, dtype=float)]
+    starts.extend(np.eye(source_count, dtype=float))
+    best_weights: np.ndarray | None = None
+    best_objective = math.inf
+    for start in starts:
+        optimization = minimize(
+            objective,
+            start,
+            method="SLSQP",
+            bounds=[(0.0, 1.0)] * source_count,
+            constraints={"type": "eq", "fun": lambda weights: float(np.sum(weights) - 1.0)},
+            options={"maxiter": 120, "ftol": 1e-10},
+        )
+        candidate = np.maximum(np.asarray(optimization.x, dtype=float), 0)
+        candidate_sum = float(np.sum(candidate))
+        if candidate_sum <= 0:
+            continue
+        candidate /= candidate_sum
+        candidate_objective = objective(candidate)
+        if candidate_objective < best_objective:
+            best_objective = candidate_objective
+            best_weights = candidate
+    if best_weights is None:
+        raise SpectralAnalysisError("无法得到有效的 CRI 目标配比")
+
+    best_metrics = metrics_for(best_weights)
+    unmet = [
+        ("Ra" if index == 0 else f"R{index}", float(target), float(value))
+        for index, (target, value) in enumerate(zip(targets, best_metrics))
+        if value + 0.05 < target
+    ]
+    if unmet:
+        summary = "、".join(
+            f"{label}={value:.2f}（目标≥{target:.2f}）"
+            for label, target, value in unmet[:5]
+        )
+        if len(unmet) > 5:
+            summary += f" 等 {len(unmet)} 项"
+        raise SpectralAnalysisError(f"当前三条光谱无法满足全部 CRI 下限；最优结果：{summary}")
+
+    mixed_values = best_weights @ basis_matrix
+    mixed_input = SpectrumInput(
+        name=name,
+        wavelengths=tuple(float(value) for value in calculation_grid),
+        values=tuple(float(value) for value in mixed_values),
+    )
+    result = analyze_spectrum(mixed_input)
+    colour_module = _require_colour()
+    mixed_sd = colour_module.SpectralDistribution(
+        dict(zip(calculation_grid.tolist(), mixed_values.tolist())),
+        name=name,
+    )
+    luminous_flux = float(colour_module.luminous_flux(mixed_sd))
+    return ThreeSpectrumMixSolution(
+        result=result,
+        peak_ratios=tuple(float(value) for value in best_weights),
         luminous_flux=luminous_flux,
     )
 

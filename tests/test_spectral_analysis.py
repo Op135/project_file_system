@@ -13,6 +13,7 @@ if str(ROOT_DIR) not in sys.path:
 from src.tools.spectral_analysis import (  # noqa: E402
     SpectralAnalysisError,
     SpectrumInput,
+    analyze_spectrum,
     analyze_spectrum_chromaticity,
     analyze_cct_reference,
     analyze_spectral_text,
@@ -28,6 +29,7 @@ from src.tools.spectral_analysis import (  # noqa: E402
     parse_chromaticity_text,
     parse_spectral_text,
     spectral_example_text,
+    solve_spectrum_mix_targets,
     solve_three_spectrum_mix,
 )
 
@@ -128,6 +130,19 @@ class SpectralCalculationTests(unittest.TestCase):
     def test_calculation_requires_visible_range_coverage(self):
         with self.assertRaisesRegex(SpectralAnalysisError, "至少应覆盖"):
             analyze_spectral_text("波长\t样品\n400\t1\n780\t1")
+
+    def test_explicit_library_spectrum_can_treat_unrecorded_range_as_zero(self):
+        result = analyze_spectrum(
+            SpectrumInput(
+                "640nm LED",
+                (600.0, 640.0, 680.0),
+                (0.0, 1.0, 0.0),
+                zero_outside_range=True,
+            )
+        )
+        self.assertEqual(result.peak_wavelength, 640.0)
+        self.assertTrue(result.zero_outside_range)
+        self.assertTrue(any("范围外按 0" in warning for warning in result.warnings))
 
     def test_macadam_ellipse_has_true_sdcm_scale_and_upvp_projection(self):
         center = (0.305, 0.323)
@@ -246,6 +261,48 @@ class SpectralCalculationTests(unittest.TestCase):
         self.assertGreater(solution.luminous_flux, 0)
         with self.assertRaisesRegex(SpectralAnalysisError, "可混合范围之外"):
             solve_three_spectrum_mix(sources, (0.70, 0.20))
+
+    def test_multi_target_solver_keeps_xy_only_result_and_supports_cri_only(self):
+        source_results = tuple(
+            analyze_standard_illuminant(key) for key in ("A", "D65", "LED-B3")
+        )
+        sources = tuple(
+            SpectrumInput(result.name, result.wavelengths, result.values)
+            for result in source_results
+        )
+
+        xy_only = solve_spectrum_mix_targets(sources, target_xy=source_results[1].xy)
+        self.assertAlmostEqual(xy_only.result.xy[0], source_results[1].xy[0], places=6)
+        self.assertAlmostEqual(xy_only.result.xy[1], source_results[1].xy[1], places=6)
+
+        cri_only = solve_spectrum_mix_targets(sources, cri_targets=(90.0,) * 16)
+        self.assertIsNotNone(cri_only.result.ra)
+        assert cri_only.result.ra is not None
+        self.assertGreaterEqual(cri_only.result.ra, 89.95)
+        self.assertTrue(all(value >= 89.95 for _, value in cri_only.result.ri))
+        self.assertAlmostEqual(sum(cri_only.peak_ratios), 1.0, places=8)
+
+    def test_multi_target_solver_supports_simultaneous_xy_and_cri_goals(self):
+        source_results = tuple(
+            analyze_standard_illuminant(key) for key in ("A", "D65", "LED-B3")
+        )
+        sources = tuple(
+            SpectrumInput(result.name, result.wavelengths, result.values)
+            for result in source_results
+        )
+        solution = solve_spectrum_mix_targets(
+            sources,
+            target_xy=source_results[1].xy,
+            cri_targets=(90.0,) * 16,
+        )
+        self.assertAlmostEqual(solution.result.xy[0], source_results[1].xy[0], places=6)
+        self.assertAlmostEqual(solution.result.xy[1], source_results[1].xy[1], places=6)
+        self.assertGreaterEqual(solution.result.ra or 0, 89.95)
+
+        with self.assertRaisesRegex(SpectralAnalysisError, "至少启用"):
+            solve_spectrum_mix_targets(sources)
+        with self.assertRaisesRegex(SpectralAnalysisError, "共 16 项"):
+            solve_spectrum_mix_targets(sources, cri_targets=(90.0,) * 15)
 
     def test_power_limited_mix_reports_absolute_power_flux_and_limiting_source(self):
         sources = tuple(
