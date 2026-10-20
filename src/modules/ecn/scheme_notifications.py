@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import logging
-from html import escape
 from typing import Any
 
 from ...ecn_management_config import ECN_WECOM_CONFIG, get_ecn_scheme_target_projects
 from ...notification_recipients import is_system_admin_username
+from ...notification_content import build_textcard_description, truncate_notification_text
 from ...wecom_service import (
     resolve_wecom_recipients,
     send_wecom_text_message,
@@ -165,37 +165,16 @@ def resolve_scheme_sales_notification_routes(
 
 
 def _card_description(record: dict, routes: list[dict[str, Any]], *, note: str) -> str:
-    recipients = _unique(
-        username
-        for route in routes
-        for username in route.get("recipient_usernames", [])
-    )
     projects = _unique(route.get("project") for route in routes)
-    sales = _unique(route.get("project_sales") for route in routes)
     lines = [
         f"单号：{record.get('ecn_id') or '—'}",
-        f"主题：{record.get('basic_info', {}).get('title') or '工程变更申请'}",
-        f"涉及项目：{'、'.join(projects) or '—'}",
-        f"项目销售：{'、'.join(sales) or '未识别'}",
-        f"通知人员：{'、'.join(recipients) or '未找到可送达人员'}",
-        "结果：ECN方案全部审批节点已通过",
+        f"主题：{truncate_notification_text(record.get('basic_info', {}).get('title') or '工程变更申请', 32)}",
+        "结果：方案评审已全部通过",
+        f"涉及项目：{truncate_notification_text('、'.join(projects) or '—', 36)}",
     ]
     if any(route.get("escalated") is True for route in routes):
-        lines.append("传导说明：项目销售无法送达，已沿上级逐级通知")
-    prefix = f'<div class="gray">{escape(note)}</div>'
-    suffix = ""
-    overflow_block = '<div class="normal">…（进入系统查看详情）</div>'
-    budget = 512 - len((prefix + overflow_block).encode("utf-8"))
-    used = 0
-    for line in lines:
-        block = f'<div class="normal">{escape(str(line))}</div>'
-        size = len(block.encode("utf-8"))
-        if used + size > budget:
-            suffix += overflow_block
-            break
-        suffix += block
-        used += size
-    return prefix + suffix
+        lines.append("说明：原项目销售不可送达，已通知上级")
+    return build_textcard_description(note, lines)
 
 
 async def send_scheme_sales_completion_notifications(

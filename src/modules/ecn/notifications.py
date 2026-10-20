@@ -6,8 +6,6 @@ import json
 import logging
 import time
 import uuid
-from html import escape
-
 from nicegui import app
 
 from ... import db_storage
@@ -42,6 +40,11 @@ from ...ecn_management_config import (
 )
 from ...wecom_service import resolve_wecom_recipients, send_wecom_text_message, send_wecom_textcard_message
 from ...notification_recipients import is_system_admin_username
+from ...notification_content import (
+    build_compact_text_notification,
+    build_textcard_description,
+    truncate_notification_text,
+)
 from ...issue_workflow_utils import is_scheduled_wecom_reminder_time
 from ...runtime_controls import allows_background_task
 from .special_task_messages import get_special_message_item, get_special_message_items, build_special_card
@@ -388,23 +391,22 @@ def build_notification_content(
     record: dict, tasks: dict[str, list[str]], names: list[str], config: dict, *, is_cc: bool = False
 ) -> str:
     basic = record.get("basic_info", {})
-    lines = [
-        "【ECN待办提醒 · 研发经理抄送】" if is_cc else "【ECN待办提醒】",
-        f"单号：{record.get('ecn_id', '')}",
-        f"主题：{basic.get('title') or '工程变更申请'}",
-        f"申请人：{basic.get('applicant', '')}",
-        f"当前状态：{record.get('workflow', {}).get('current_state', '')}",
-        f"待处理人员：{'、'.join(names)}",
-    ]
-    for name in names:
-        lines.append(f"{name}：{'；'.join(tasks.get(name, []))}")
-    if is_cc:
-        lines.append("观察抄送：汇总上述人员的待办提醒，便于观察提醒内容及频度；如含本人待办，请按原职责处理。")
-    text = "\n".join(lines)
-    # 企业微信文本有长度限制；完整责任项可从系统列表查看。
-    if len(text.encode("utf-8")) > 1700:
-        text = text.encode("utf-8")[:1600].decode("utf-8", errors="ignore") + "\n更多待办请进入系统查看。"
-    return text
+    all_tasks = list(dict.fromkeys(task for name in names for task in tasks.get(name, [])))
+    action = (
+        f"待办：{truncate_notification_text(all_tasks[0], 46)}"
+        if len(all_tasks) == 1
+        else f"待办：有 {len(all_tasks)} 项任务待处理"
+    )
+    detail = f"责任人：{truncate_notification_text('、'.join(names), 36)}" if is_cc else ""
+    return build_compact_text_notification(
+        "【ECN】待办提醒 · 研发经理抄送" if is_cc else "【ECN】待办提醒",
+        (
+            f"单号：{record.get('ecn_id', '')}｜"
+            f"主题：{truncate_notification_text(basic.get('title') or '工程变更申请', 32)}"
+        ),
+        action,
+        detail,
+    )
 
 
 def build_notification_card(
@@ -444,36 +446,21 @@ def build_notification_card(
     ):
         event = "特定事项待确认"
     title = f"🔧【ECN工程变更】{event}"
-    nature = "研发经理抄送 · 含本人待办时请处理" if is_cc else "待办提醒"
+    nature = "研发经理抄送" if is_cc else "待办提醒"
     basic = record.get("basic_info", {})
     display_names = list(dict.fromkeys(names))
-    names_text = "、".join(display_names)
     all_tasks = list(dict.fromkeys(task for name in names for task in tasks.get(name, [])))
-    display_tasks = all_tasks[:3]
     lines = [
         f"单号：{record.get('ecn_id', '')}",
-        f"主题：{str(basic.get('title') or '工程变更申请')[:45]}",
-        f"待处理人员：{names_text}",
-        *[f"待办：{task}" for task in display_tasks],
+        f"主题：{truncate_notification_text(basic.get('title') or '工程变更申请', 32)}",
     ]
-    if len(all_tasks) > len(display_tasks):
-        lines.append(f"另有{len(all_tasks) - len(display_tasks)}项待办，请进入系统查看")
-    prefix = f'<div class="gray">{escape(nature)}</div><div class="normal">'
-    suffix = "</div>"
-    hint = "…（进入系统查看完整待办）"
-    budget = 512 - len((prefix + suffix + hint).encode("utf-8"))
-    parts: list[str] = []
-    used = 0
-    for char in "\n".join(lines):
-        # 客户端会忽略正文中的br，使用与灰色说明相同的独立div分行。
-        part = '</div><div class="normal">' if char == "\n" else escape(char)
-        size = len(part.encode("utf-8"))
-        if used + size > budget:
-            parts.append(hint)
-            break
-        parts.append(part)
-        used += size
-    return title, prefix + "".join(parts) + suffix
+    if len(all_tasks) == 1:
+        lines.append(f"待办：{truncate_notification_text(all_tasks[0], 46)}")
+    else:
+        lines.append(f"待办：有 {len(all_tasks)} 项任务待处理")
+    if is_cc:
+        lines.append(f"责任人：{truncate_notification_text('、'.join(display_names), 36)}")
+    return title, build_textcard_description(nature, lines)
 
 
 async def check_and_send_ecn_reminders(

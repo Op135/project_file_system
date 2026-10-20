@@ -64,6 +64,20 @@ class WecomCardTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse((await self.send(title="测" * 100))[0])
         self.client.post.assert_not_awaited()
 
+    async def test_oversized_description_is_compacted_before_network(self):
+        success, _ = await wecom.send_wecom_textcard_message(
+            '<div class="normal">' + "很长的待办内容" * 100 + "</div>",
+            "writer",
+            title="【ECN】待办提醒",
+            link_url="https://example.test/ecn_management",
+            module="ecn_management",
+            business_key="ECN-oversized",
+        )
+        self.assertTrue(success)
+        body = self.client.post.call_args.kwargs["json"]
+        self.assertLessEqual(len(body["textcard"]["description"].encode("utf-8")), 512)
+        self.assertTrue(body["textcard"]["description"].endswith("</div>"))
+
     async def test_existing_text_protocol_is_unchanged(self):
         self.assertTrue((await wecom._send_one_text_message("样品问题提醒", "writer"))[0])
         body = self.client.post.call_args.kwargs["json"]

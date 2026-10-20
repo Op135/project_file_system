@@ -56,6 +56,7 @@ from ..issue_workflow_utils import (
     unique_nonempty_texts,
 )
 from ..notification_recipients import resolve_permission_wecom_recipients
+from ..notification_content import build_compact_text_notification, truncate_notification_text
 from ..permission_catalog import (
     ERROR_CLOSE_APPROVED_NOTIFY_PERMISSION,
     ERROR_CLOSE_REQUEST_NOTIFY_PERMISSION,
@@ -1236,15 +1237,14 @@ async def check_and_send_error_reminders(
                 if not fresh_action:
                     continue
                 owner = fresh_action.get("owner", "")
-                content = (
-                    "产品问题纠正预防措施提醒\n"
-                    f"单据：{fresh_error.get('error_id')}\n"
-                    f"产品：{fresh_error.get('basic_info', {}).get('product_name', '')}\n"
-                    f"措施：{fresh_action.get('content', '')}\n"
-                    f"负责人：{owner}\n"
-                    f"预计完成日期：{fresh_action.get('due_date', '')}\n"
-                    f"已通过延期：{get_extension_counts(fresh_action)[0]} 次\n"
-                    f"提醒策略：{rule['label']}"
+                content = build_compact_text_notification(
+                    "【产品问题】纠正措施待处理",
+                    (
+                        f"单号：{fresh_error.get('error_id')}｜产品："
+                        f"{truncate_notification_text(fresh_error.get('basic_info', {}).get('product_name', ''), 28)}"
+                    ),
+                    f"事项：{fresh_action.get('content', '')}",
+                    f"截止：{fresh_action.get('due_date', '')}",
                 )
                 recipients = await format_people_for_wecom(owner)
                 if enforce_time_window and not is_scheduled_wecom_reminder_time():
@@ -1772,19 +1772,14 @@ async def error_management_page(error_id: str = "", view: str = ""):
                     return ui.notify(
                         "延期申请已保存，但读取最新数据失败，请刷新查看", type="warning", position="bottom"
                     )
-                approved_extension_count, current_request_count = get_extension_counts(fresh_action)
-                content = (
-                    "产品问题纠正预防措施延期申请\n"
-                    f"单据：{result.record['error_id']}\n"
-                    f"产品：{result.record.get('basic_info', {}).get('product_name', '')}\n"
-                    f"措施：{fresh_action.get('content', '')}\n"
-                    f"申请人：{current_user}\n"
-                    f"本次为第 {current_request_count} 次延期申请\n"
-                    f"此前已通过延期：{approved_extension_count} 次\n"
-                    f"原预计日期：{fresh_request.get('old_due_date') or '-'}\n"
-                    f"申请延期至：{fresh_request['new_due_date']}\n"
-                    f"延期原因：{fresh_request['reason']}\n"
-                    "审批权限：审批异常措施申请"
+                content = build_compact_text_notification(
+                    "【产品问题】延期申请待审批",
+                    (
+                        f"单号：{result.record['error_id']}｜产品："
+                        f"{truncate_notification_text(result.record.get('basic_info', {}).get('product_name', ''), 28)}"
+                    ),
+                    f"事项：{fresh_action.get('content', '')}",
+                    f"申请延期至：{fresh_request['new_due_date']}",
                 )
                 await send_error_extension_wecom_message(
                     content,
@@ -1864,18 +1859,16 @@ async def error_management_page(error_id: str = "", view: str = ""):
             fresh_request = find_extension_request(fresh_action or {}, request_id)
             if not fresh_action or not fresh_request:
                 return ui.notify("延期审批已保存，但读取最新数据失败，请刷新查看", type="warning", position="bottom")
-            approved_extension_count, request_count = get_extension_counts(fresh_action)
-            content = (
-                "产品问题延期申请审批结果\n"
-                f"单据：{result.record['error_id']}\n"
-                f"产品：{result.record.get('basic_info', {}).get('product_name', '')}\n"
-                f"措施：{fresh_action.get('content', '')}\n"
-                f"审批结果：{'通过' if approved else '驳回'}\n"
-                f"累计延期申请：{request_count} 次\n"
-                f"当前已通过延期：{approved_extension_count} 次\n"
-                f"原预计日期：{fresh_request.get('old_due_date', '-')}\n"
-                f"申请延期至：{fresh_request.get('new_due_date', '-')}\n"
-                f"审批人：{current_user}"
+            content = build_compact_text_notification(
+                f"【产品问题】延期申请已{'通过' if approved else '驳回'}",
+                (
+                    f"单号：{result.record['error_id']}｜产品："
+                    f"{truncate_notification_text(result.record.get('basic_info', {}).get('product_name', ''), 28)}"
+                ),
+                f"事项：{fresh_action.get('content', '')}",
+                f"申请日期：{fresh_request.get('new_due_date', '-')}"
+                if approved
+                else "请进入系统查看驳回记录",
             )
             schedule_background_task(
                 # 审批数据已经成功落库，通知异步发送，避免企业微信接口延迟阻塞页面刷新。
@@ -1924,14 +1917,14 @@ async def error_management_page(error_id: str = "", view: str = ""):
             fresh_action = find_preventive_action(result.record, action_id)
             fresh_request = get_pending_close_request(fresh_action or {})
             if fresh_action and fresh_request:
-                content = (
-                    "产品问题纠正预防措施关闭申请\n"
-                    f"单据：{result.record['error_id']}\n"
-                    f"产品：{result.record.get('basic_info', {}).get('product_name', '')}\n"
-                    f"措施：{fresh_action.get('content', '')}\n"
-                    f"申请人：{current_user}\n"
-                    f"关闭说明：{fresh_request.get('note', '-')}\n"
-                    "审批权限：审批异常措施申请"
+                content = build_compact_text_notification(
+                    "【产品问题】关闭申请待审批",
+                    (
+                        f"单号：{result.record['error_id']}｜产品："
+                        f"{truncate_notification_text(result.record.get('basic_info', {}).get('product_name', ''), 28)}"
+                    ),
+                    f"事项：{fresh_action.get('content', '')}",
+                    "待办：审批关闭申请",
                 )
                 schedule_background_task(
                     send_error_extension_wecom_message(
@@ -1981,15 +1974,14 @@ async def error_management_page(error_id: str = "", view: str = ""):
             if not fresh_action or not fresh_request:
                 return ui.notify("关闭审批已保存，但读取最新数据失败，请刷新查看", type="warning", position="bottom")
 
-            content = (
-                "产品问题纠正预防措施关闭审批结果\n"
-                f"单据：{result.record['error_id']}\n"
-                f"产品：{result.record.get('basic_info', {}).get('product_name', '')}\n"
-                f"措施：{fresh_action.get('content', '')}\n"
-                f"审批结果：{'通过' if approved else '驳回'}\n"
-                f"措施性质：{fresh_action.get('closure_nature', '-') or '-'}\n"
-                f"申请人：{fresh_request.get('requester', '-')}\n"
-                f"审批人：{current_user}"
+            content = build_compact_text_notification(
+                f"【产品问题】关闭申请已{'通过' if approved else '驳回'}",
+                (
+                    f"单号：{result.record['error_id']}｜产品："
+                    f"{truncate_notification_text(result.record.get('basic_info', {}).get('product_name', ''), 28)}"
+                ),
+                f"事项：{fresh_action.get('content', '')}",
+                "结果：措施已关闭" if approved else "请进入系统查看驳回记录",
             )
             schedule_background_task(
                 send_error_extension_wecom_message(

@@ -34,6 +34,7 @@ from ..issue_workflow_utils import (
     unique_nonempty_texts,
 )
 from ..notification_recipients import resolve_permission_wecom_recipients
+from ..notification_content import build_compact_text_notification, truncate_notification_text
 from ..permission_catalog import (
     SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
     SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVED_NOTIFY_PERMISSION,
@@ -1372,19 +1373,12 @@ async def check_and_send_sample_issue_reminders(
             fresh_issue = claim_result.record
             fresh_countermeasure = fresh_issue.get("countermeasure", {})
             owner = fresh_countermeasure.get("owner", "")
-            approved_extension_count, request_count = get_extension_counts(fresh_countermeasure)
             basic = fresh_issue.get("basic_info", {})
-            content = (
-                "样品问题纠正预防措施提醒\n"
-                f"样品问题：{fresh_issue.get('issue_id')}\n"
-                f"产品型号：{basic.get('product_model', '')}\n"
-                f"样品单号：{basic.get('sample_order_no', '')}\n"
-                f"问题点：{basic.get('issue_description', '')}\n"
-                f"对策责任人：{owner}\n"
-                f"预计完成日期：{fresh_countermeasure.get('due_date', '')}\n"
-                f"累计延期申请：{request_count} 次\n"
-                f"已通过延期：{approved_extension_count} 次\n"
-                f"提醒策略：{rule['label']}"
+            content = build_compact_text_notification(
+                "【样品问题】纠正措施待处理",
+                f"编号：{fresh_issue.get('issue_id')}｜型号：{basic.get('product_model', '')}",
+                f"问题：{basic.get('issue_description', '')}",
+                f"截止：{fresh_countermeasure.get('due_date', '')}",
             )
             recipients = await format_people_for_wecom(owner)
             if enforce_time_window and not is_scheduled_wecom_reminder_time():
@@ -1496,16 +1490,11 @@ async def check_and_send_sample_issue_reminders(
             basic = fresh_issue.get("basic_info", {})
             owner = fresh_countermeasure.get("owner", "")
             recipient_people = owner or basic.get("recorder_name", "") or fresh_issue.get("created_by", "")
-            content = (
-                "样品问题对策填写提醒\n"
-                f"样品问题：{fresh_issue.get('issue_id')}\n"
-                f"产品型号：{basic.get('product_model', '')}\n"
-                f"样品单号：{basic.get('sample_order_no', '')}\n"
-                f"问题点：{basic.get('issue_description', '')}\n"
-                f"记录日期：{basic.get('record_date', '')}\n"
-                f"对策责任人：{owner or '-'}\n"
-                f"待完善字段：{'、'.join(fresh_missing_labels)}\n"
-                f"提醒策略：{rule['label']}"
+            content = build_compact_text_notification(
+                "【样品问题】对策待完善",
+                f"编号：{fresh_issue.get('issue_id')}｜型号：{basic.get('product_model', '')}",
+                f"问题：{basic.get('issue_description', '')}",
+                f"待完善字段：{'、'.join(fresh_missing_labels)}",
             )
             recipients = await format_people_for_wecom(recipient_people)
             if enforce_time_window and not is_scheduled_wecom_reminder_time():
@@ -2971,21 +2960,12 @@ async def sample_issue_collection_page(issue_id: str = "", view: str = ""):
                     return ui.notify(
                         "延期申请已保存，但读取最新数据失败，请刷新查看", type="warning", position="bottom"
                     )
-                approved_extension_count, request_count = get_extension_counts(fresh_countermeasure)
                 basic = result.record.get("basic_info", {})
-                content = (
-                    "样品问题纠正预防措施延期申请\n"
-                    f"样品问题：{result.record['issue_id']}\n"
-                    f"产品型号：{basic.get('product_model', '')}\n"
-                    f"样品单号：{basic.get('sample_order_no', '')}\n"
-                    f"问题点：{basic.get('issue_description', '')}\n"
-                    f"申请人：{current_user}\n"
-                    f"本次为第 {request_count} 次延期申请\n"
-                    f"此前已通过延期：{approved_extension_count} 次\n"
-                    f"原预计日期：{fresh_request.get('old_due_date') or '-'}\n"
-                    f"申请延期至：{fresh_request['new_due_date']}\n"
-                    f"延期原因：{fresh_request['reason']}\n"
-                    "请具有“审批样品问题延期申请”权限的人员处理"
+                content = build_compact_text_notification(
+                    "【样品问题】延期申请待审批",
+                    f"编号：{result.record['issue_id']}｜型号：{basic.get('product_model', '')}",
+                    f"问题：{basic.get('issue_description', '')}",
+                    f"申请延期至：{fresh_request['new_due_date']}",
                 )
                 await send_sample_extension_wecom_message(
                     content,
@@ -3068,19 +3048,12 @@ async def sample_issue_collection_page(issue_id: str = "", view: str = ""):
             fresh_request = find_extension_request(fresh_countermeasure, request_id)
             if not fresh_request:
                 return ui.notify("延期审批已保存，但读取最新数据失败，请刷新查看", type="warning", position="bottom")
-            approved_extension_count, request_count = get_extension_counts(fresh_countermeasure)
             basic = result.record.get("basic_info", {})
-            content = (
-                "样品问题延期申请审批结果\n"
-                f"样品问题：{result.record['issue_id']}\n"
-                f"产品型号：{basic.get('product_model', '')}\n"
-                f"样品单号：{basic.get('sample_order_no', '')}\n"
-                f"审批结果：{'通过' if approved else '驳回'}\n"
-                f"累计延期申请：{request_count} 次\n"
-                f"当前已通过延期：{approved_extension_count} 次\n"
-                f"原预计日期：{fresh_request.get('old_due_date', '-')}\n"
-                f"申请延期至：{fresh_request.get('new_due_date', '-')}\n"
-                f"审批人：{current_user}"
+            content = build_compact_text_notification(
+                f"【样品问题】延期申请已{'通过' if approved else '驳回'}",
+                f"编号：{result.record['issue_id']}｜型号：{basic.get('product_model', '')}",
+                "结果：新的截止日期已生效" if approved else "结果：请修改后重新申请",
+                f"申请日期：{fresh_request.get('new_due_date', '-')}",
             )
             schedule_background_task(
                 send_sample_extension_wecom_message(
@@ -3188,15 +3161,11 @@ async def sample_issue_collection_page(issue_id: str = "", view: str = ""):
                 else ""
             )
             basic = result.record.get("basic_info", {})
-            content = (
-                "样品问题关闭申请\n"
-                f"样品问题：{result.record['issue_id']}\n"
-                f"产品型号：{basic.get('product_model', '')}\n"
-                f"样品单号：{basic.get('sample_order_no', '')}\n"
-                f"问题点：{basic.get('issue_description', '')}\n"
-                f"申请阶段：{'试产前特殊准备' if fresh_request.get('stage') == 'special_preparation' else '原问题对策'}\n"
-                f"申请人：{current_user}\n"
-                f"审批路由：{close_route.get('label', '默认关闭审批')}"
+            content = build_compact_text_notification(
+                "【样品问题】关闭申请待审批",
+                f"编号：{result.record['issue_id']}｜型号：{basic.get('product_model', '')}",
+                f"问题：{basic.get('issue_description', '')}",
+                "待办：审批关闭申请",
             )
             await send_sample_extension_wecom_message(
                 content,
@@ -3262,25 +3231,17 @@ async def sample_issue_collection_page(issue_id: str = "", view: str = ""):
                 return ui.notify("关闭审批已保存，但读取最新数据失败，请刷新查看", type="warning", position="bottom")
             close_route = get_sample_close_approval_route_for_request(fresh_request)
             basic = result.record.get("basic_info", {})
-            fresh_special_preparation = result.record.get("special_preparation", {})
             approval_additional_people = get_sample_close_approval_additional_people(
                 result.record,
                 fresh_request,
                 close_route,
                 approved,
             )
-            content = (
-                "样品问题关闭申请审批结果\n"
-                f"样品问题：{result.record['issue_id']}\n"
-                f"产品型号：{basic.get('product_model', '')}\n"
-                f"样品单号：{basic.get('sample_order_no', '')}\n"
-                f"审批结果：{'通过' if approved else '驳回'}\n"
-                f"问题性质：{fresh_countermeasure.get('closure_nature', '-') or '-'}\n"
-                f"当前状态：{calculate_sample_issue_status(result.record)}\n"
-                f"试产前后续动作：{'、'.join(fresh_request.get('follow_up_actions', [])) or '-'}\n"
-                f"特殊准备负责人：{fresh_special_preparation.get('owner_name', '-') or '-'}\n"
-                f"申请人：{fresh_request.get('requester', '-')}\n"
-                f"审批人：{current_user}"
+            content = build_compact_text_notification(
+                f"【样品问题】关闭申请已{'通过' if approved else '驳回'}",
+                f"编号：{result.record['issue_id']}｜型号：{basic.get('product_model', '')}",
+                f"结果：{calculate_sample_issue_status(result.record)}",
+                "点击查看后续动作" if approved else "请进入系统查看驳回记录",
             )
             schedule_background_task(
                 send_sample_extension_wecom_message(

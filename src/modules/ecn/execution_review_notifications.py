@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from html import escape
 from typing import Any
 
+from ...notification_content import build_textcard_description, truncate_notification_text
 from ...notification_recipients import is_system_admin_username
 
 logger = logging.getLogger(__name__)
@@ -74,25 +74,13 @@ def resolve_review_notice_recipients(notice: dict, service) -> tuple[list[str], 
 def _card_description(record: dict, notice: dict, *, note: str, recipients: list[str]) -> str:
     lines = [
         f"单号：{record.get('ecn_id') or '—'}",
-        f"主题：{record.get('basic_info', {}).get('title') or '工程变更申请'}",
-        f"执行项：{notice.get('subject') or '—'}",
-        f"原确认人：{notice.get('recipient') or '—'}",
-        f"撤销人：{notice.get('reviewer') or '—'}",
-        f"撤销理由：{notice.get('reason') or '—'}",
+        f"执行项：{truncate_notification_text(notice.get('subject') or '—', 36)}",
+        f"待办：重新确认执行结果",
+        f"原因：{truncate_notification_text(notice.get('reason') or '—', 36)}",
     ]
     if recipients and recipients != [str(notice.get("recipient") or "")]:
-        lines.append(f"传导至：{'、'.join(recipients)}")
-    prefix = f'<div class="gray">{escape(note)}</div>'
-    overflow = '<div class="normal">…（进入系统查看完整记录）</div>'
-    budget = 512 - len((prefix + overflow).encode("utf-8"))
-    body = ""
-    for line in lines:
-        block = f'<div class="normal">{escape(str(line))}</div>'
-        if len((body + block).encode("utf-8")) > budget:
-            body += overflow
-            break
-        body += block
-    return prefix + body
+        lines.append(f"原确认人：{truncate_notification_text(notice.get('recipient') or '—', 24)}")
+    return build_textcard_description(note, lines)
 
 
 async def send_execution_review_notices(

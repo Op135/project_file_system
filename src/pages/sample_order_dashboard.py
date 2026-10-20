@@ -34,6 +34,7 @@ from ..issue_workflow_utils import (
     schedule_background_task,
 )
 from ..notification_recipients import resolve_permission_wecom_recipients
+from ..notification_content import build_compact_text_notification
 from ..permission_catalog import (
     SAMPLE_ORDER_AVERAGE_SCORE_VIEW_PERMISSION,
     SAMPLE_ORDER_BASE_EDIT_PERMISSION,
@@ -1099,22 +1100,14 @@ async def _send_sample_order_change_notifications(
         if not recipients:
             failures.append(f"第{extension_number}次延期未匹配到企业微信收件人")
             continue
-        attention_notice = (
-            f"\n该订单已延期{extension_number}次，超过配置阈值"
-            f"{SAMPLE_ORDER_DELAY_ATTENTION_THRESHOLD}次，请相关负责人关注。"
-            if notify_manager
-            else ""
-        )
-        content = (
-            "【样品单延期通知】\n"
-            f"样品单号：{basic.get('sample_order_no', '')}\n"
-            f"产品型号：{basic.get('product_model', '')}\n"
-            f"申请人：{applicant}\n"
-            f"延期次数：第{extension_number}次\n"
-            f"延期目标日期：{event.get('target_date', '')}\n"
-            f"延期原因：{event.get('reason', '')}\n"
-            f"操作人：{event.get('created_by', '')}（{event.get('created_role', '')}）"
-            f"{attention_notice}"
+        content = build_compact_text_notification(
+            "【样品单】交期已调整",
+            (
+                f"单号：{basic.get('sample_order_no', '')}｜"
+                f"型号：{basic.get('product_model', '')}"
+            ),
+            f"新交期：{event.get('target_date', '')}",
+            f"请关注：已延期 {extension_number} 次" if notify_manager else "",
         )
         success, message = await send_wecom_text_message(
             content,
@@ -1135,14 +1128,14 @@ async def _send_sample_order_change_notifications(
         if not recipients:
             failures.append("特殊状态通知未匹配到企业微信收件人")
         else:
-            content = (
-                "【样品单特殊状态通知】\n"
-                f"样品单号：{basic.get('sample_order_no', '')}\n"
-                f"产品型号：{basic.get('product_model', '')}\n"
-                f"申请人：{applicant}\n"
-                f"状态变更：{status_event.get('old_status', '')} → {status_event.get('status', '')}\n"
-                f"设置原因：{status_event.get('reason', '') or '无'}\n"
-                f"操作人：{status_event.get('updated_by', '')}（{status_event.get('updated_role', '')}）"
+            content = build_compact_text_notification(
+                "【样品单】状态已变更",
+                (
+                    f"单号：{basic.get('sample_order_no', '')}｜"
+                    f"型号：{basic.get('product_model', '')}"
+                ),
+                f"状态：{status_event.get('old_status', '')} → {status_event.get('status', '')}",
+                f"原因：{status_event.get('reason', '')}" if status_event.get("reason") else "",
             )
             success, message = await send_wecom_text_message(
                 content,
@@ -1258,14 +1251,14 @@ async def check_and_send_sample_order_overdue_reminders(
             logger.warning("样品单逾期提醒未匹配到收件人：%s", record_id)
             continue
 
-        content = (
-            "【样品单逾期未填新交期提醒】\n"
-            f"样品单号：{basic.get('sample_order_no', '')}\n"
-            f"产品型号：{basic.get('product_model', '')}\n"
-            f"项目工程师：{project_engineer or '未指定'}\n"
-            f"当前目标交期：{effective_target}\n"
-            f"当前状态：{metrics.get('alert_message', '')}\n"
-            "请进入样品订单看板填写新的目标交期和延期原因。"
+        content = build_compact_text_notification(
+            "【样品单】新交期待填写",
+            (
+                f"单号：{basic.get('sample_order_no', '')}｜"
+                f"型号：{basic.get('product_model', '')}"
+            ),
+            "待办：填写新的目标交期和延期原因",
+            f"原目标交期：{effective_target}",
         )
         if enforce_time_window and not is_scheduled_wecom_reminder_time():
             return sent_count, fail_count

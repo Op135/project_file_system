@@ -1,8 +1,7 @@
 """移交提醒的业务摘要，与执行表的事项、项目及应执行内容保持一致。"""
 
-from html import escape
-
 from ...ecn_management_config import ECNState, get_ecn_special_confirmations, get_ecn_scheme_target_projects
+from ...notification_content import build_textcard_description, truncate_notification_text
 
 
 def get_special_message_item(record: dict, key: str, assignee: str) -> dict[str, str]:
@@ -36,20 +35,6 @@ def get_special_message_items(record: dict, names: list[str]) -> list[dict[str, 
     return result
 
 
-def _escaped_summary(value: str, budget: int) -> str:
-    """先转义再限制UTF-8字节数，截断不破坏HTML实体。"""
-    value = " ".join(value.split())
-    if len(escape(value).encode("utf-8")) <= budget:
-        return escape(value)
-    result = ""
-    for char in value:
-        part = escape(char)
-        if len((result + part + "…").encode("utf-8")) > budget:
-            break
-        result += part
-    return result + "…"
-
-
 def build_special_card(
     record: dict,
     items: list[dict[str, str]],
@@ -58,34 +43,24 @@ def build_special_card(
     cancelled: bool = False,
     observer_names: list[str] | None = None,
 ) -> tuple[str, str]:
-    """优先分配三项业务字段的空间，接收人和单号放在后面。"""
+    """生成只保留识别信息与明确动作的特定事项卡片。"""
     first = items[0]
     nature = "研发经理抄送" if is_cc else "移交待办"
     if cancelled and not is_cc:
         nature = "取消告知"
-    prefix = f'<div class="gray">{nature}</div>'
+    lines = [f"单号：{record.get('ecn_id') or '—'}"]
     if cancelled:
-        prefix += '<div class="normal">已取消，无需继续处理</div>'
-    observer_footer = ""
+        lines.append("结果：原任务已取消，无需继续处理")
+        lines.append(f"事项：{truncate_notification_text(first['subject'], 30)}")
+    else:
+        lines.append(f"待办：确认{truncate_notification_text(first['subject'], 30)}")
+    lines.append(f"项目：{truncate_notification_text(first['projects'], 36)}")
     if is_cc:
         names = list(dict.fromkeys(observer_names or [item["assignee"] for item in items]))
-        observer_footer = f'<div class="gray">待处理人员：{escape("、".join(names))}</div>'
-    footer = observer_footer + (
-        f'<div class="gray">{"原负责人" if cancelled else "接收人"}：{_escaped_summary(first["assignee"], 30)}</div>'
-        f'<div class="gray">单号：{_escaped_summary(str(record.get("ecn_id") or ""), 40)}</div>'
-    )
+        lines.append(f"责任人：{truncate_notification_text('、'.join(names), 36)}")
     if len(items) > 1:
-        footer += f'<div class="gray">另有{len(items) - 1}项，详情查看</div>'
-    labels = [("事项/方案", "subject"), ("项目", "projects"), ("应执行内容", "content")]
-    overhead = "".join(f'<div class="normal">{label}：</div>' for label, _ in labels)
-    remaining = 512 - len((prefix + footer + overhead).encode("utf-8"))
-    parts = []
-    for index, (label, key) in enumerate(labels):
-        # 前两项各留四分之一预算，其余优先留给应执行内容。
-        budget = remaining if index == 2 else max(3, remaining // (4 - index))
-        value = _escaped_summary(first[key], budget)
-        remaining -= len(value.encode("utf-8"))
-        parts.append(f'<div class="normal">{label}：{value}</div>')
-    return "🔧【ECN工程变更】移交任务取消" if cancelled else "🔧【ECN工程变更】特定事项待确认", prefix + "".join(
-        parts
-    ) + footer
+        lines.append(f"另有 {len(items) - 1} 项待办，点击查看")
+    return (
+        "🔧【ECN工程变更】移交任务取消" if cancelled else "🔧【ECN工程变更】特定事项待确认",
+        build_textcard_description(nature, lines),
+    )

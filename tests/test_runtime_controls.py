@@ -184,7 +184,7 @@ class RuntimeControlTests(unittest.IsolatedAsyncioTestCase):
                 patch.object(wecom_service, "_append_log", AsyncMock()),
             ):
                 success, _ = await wecom_service.send_wecom_textcard_message(
-                    "卡片内容",
+                    '<div class="normal">' + "卡片内容" * 100 + "</div>",
                     "real-user",
                     title="卡片标题",
                     link_url="https://production.example/ecn_management?id=1",
@@ -198,6 +198,7 @@ class RuntimeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(recipient, "developer-a")
         self.assertEqual(body["url"], "http://127.0.0.1:9090/ecn_management?id=1")
         self.assertTrue(body["title"].startswith("【本地调试】"))
+        self.assertLessEqual(len(body["description"].encode("utf-8")), 512)
 
     def test_guard_rejects_non_loopback_host(self):
         environment = {

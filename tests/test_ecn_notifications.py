@@ -259,7 +259,7 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("<script>", description)
         self.assertIn("&lt;script&gt;", description)
         self.assertTrue(description.endswith("</div>"))
-        self.assertIn("进入系统查看完整待办", description)
+        self.assertIn("…", description)
 
     async def test_card_uses_separate_blocks_and_combines_identical_tasks(self):
         _, description = notifications.build_notification_card(
@@ -270,25 +270,22 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertNotIn("<br", description)
         self.assertIn('</div><div class="normal">主题：', description)
-        self.assertIn('</div><div class="normal">待处理人员：writer、manager</div>', description)
+        self.assertNotIn("责任人：", description)
         self.assertEqual(description.count("请发起评审"), 1)
 
-    async def test_normal_and_cc_cards_keep_every_intended_person_name(self):
+    async def test_only_cc_card_keeps_compact_responsible_person_summary(self):
         names = [f"处理人{index}" for index in range(1, 9)]
         tasks = {name: ["请处理待办"] for name in names}
-        expected = "、".join(names)
-
         _, normal_description = notifications.build_notification_card(
             self.record, tasks, names, self.settings
         )
-        self.assertIn(f"待处理人员：{expected}", normal_description)
-        self.assertNotIn("等8人", normal_description)
+        self.assertNotIn("责任人：", normal_description)
 
         _, cc_description = notifications.build_notification_card(
             self.record, tasks, names, self.settings, is_cc=True
         )
-        self.assertIn(f"待处理人员：{expected}", cc_description)
-        self.assertNotIn("等8人", cc_description)
+        self.assertIn("责任人：处理人1、处理人2", cc_description)
+        self.assertLessEqual(len(cc_description.encode("utf-8")), 512)
 
     async def test_production_copies_manager_without_duplicate_scans(self):
         self.settings["cc_manager_enabled"] = True
@@ -297,7 +294,7 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
         messages = {call.args[1]: call.args[0] for call in self.sender.await_args_list}
         self.assertEqual(set(messages), {"writer_wx", "manager_wx"})
         self.assertIn("研发经理抄送", messages["manager_wx"])
-        self.assertIn("待处理人员：writer", messages["manager_wx"])
+        self.assertIn("责任人：writer", messages["manager_wx"])
         self.assertNotIn("抄送", messages["writer_wx"])
         self.assertEqual(await self.check(), (0, 0))
 
@@ -309,8 +306,8 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.check(), (3, 0))
         copies = [call.args[0] for call in self.sender.await_args_list if call.args[1] == "manager_wx"]
         self.assertEqual(len(copies), 2)
-        self.assertTrue(any("待处理人员：writer" in content for content in copies))
-        self.assertTrue(any("待处理人员：manager" in content for content in copies))
+        self.assertTrue(any("责任人：writer" in content for content in copies))
+        self.assertTrue(any("责任人：" not in content for content in copies))
         self.assertFalse(any("writer、manager" in content for content in copies))
 
     async def test_one_person_completing_work_does_not_remind_unchanged_people(self):
@@ -333,7 +330,8 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
         }
         await self.save_record()
         self.assertEqual(await self.check(), (1, 0))
-        self.assertIn("待处理人员：writer", self.sender.call_args.args[0])
+        self.assertEqual(self.sender.call_args.args[1], "writer_wx")
+        self.assertNotIn("责任人：", self.sender.call_args.args[0])
 
     async def test_cc_switch_does_not_resend_actual_notification(self):
         self.settings["cc_manager_enabled"] = False
@@ -410,7 +408,7 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
         self.record["workflow"]["scheme_participants"] = {"manager": "editing"}
         await self.save_record()
         self.assertEqual(await self.check(), (1, 0))
-        self.assertIn("待处理人员：manager", self.sender.call_args.args[0])
+        self.assertEqual(self.sender.call_args.args[1], "manager_wx")
 
     async def test_assigned_writer_uses_existing_notification_frequency(self):
         self.record["workflow"]["scheme_assignees"] = ["manager"]
@@ -418,7 +416,7 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
         await self.save_record()
 
         self.assertEqual(await self.check(), (1, 0))
-        self.assertIn("待处理人员：manager", self.sender.call_args.args[0])
+        self.assertEqual(self.sender.call_args.args[1], "manager_wx")
         self.assertIn("已被指定为方案填写人", self.sender.call_args.args[0])
         self.assertEqual(await self.check(), (0, 0))
 

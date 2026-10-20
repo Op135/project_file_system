@@ -24,6 +24,7 @@ from .config import (
     WECOM_MAX_RETRY_COUNT,
 )
 from .runtime_controls import decide_wecom_delivery
+from .notification_content import compact_oversized_textcard_description
 
 logger = logging.getLogger(__name__)
 
@@ -618,12 +619,11 @@ async def send_wecom_textcard_message(
     url = urlsplit(link_url)
     if url.scheme not in {"http", "https"} or not url.netloc:
         return False, "企业微信卡片需要有效的系统 HTTP/HTTPS 地址"
-    if (
-        len(title.encode("utf-8")) > 128
-        or len(description.encode("utf-8")) > 512
-        or len(link_url.encode("utf-8")) > 2048
-    ):
-        return False, "企业微信卡片标题、摘要或链接超出长度限制"
+    description = compact_oversized_textcard_description(description)
+    if len(title.encode("utf-8")) > 128:
+        return False, "企业微信卡片标题超出长度限制"
+    if len(link_url.encode("utf-8")) > 2048:
+        return False, "企业微信卡片链接超出长度限制"
     body = {"title": title, "description": description, "url": link_url, "btntxt": "查看详情"}
     results = []
     overall_success = True

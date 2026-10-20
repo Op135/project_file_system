@@ -266,7 +266,8 @@ class SpecialTasksTests(unittest.IsolatedAsyncioTestCase):
             calls = {call.args[1]: call for call in sender.await_args_list}
             self.assertIn("取消", calls["writer_wx"].kwargs["title"])
             self.assertIn("特定事项", calls["manager_wx"].kwargs["title"])
-            self.assertIn("应执行内容：", calls["manager_wx"].args[0])
+            self.assertIn("待办：确认", calls["manager_wx"].args[0])
+            self.assertLessEqual(len(calls["manager_wx"].args[0].encode("utf-8")), 512)
             self.assertEqual(
                 await notifications.check_and_send_ecn_reminders(
                     config=settings, user_service=self.service, storage=self.storage

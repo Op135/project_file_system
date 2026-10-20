@@ -20,6 +20,7 @@ from . import db_storage
 from . import overview_storage
 from .config import BASE_DIR, OVERVIEW_EXEMPTION_CHECK_LIST, PROJECT_STATE_LIST
 from .notification_recipients import resolve_permission_wecom_recipients
+from .notification_content import build_compact_text_notification
 from .overview_conversion_review import (
     build_conversion_preview,
     conversion_target_id,
@@ -298,12 +299,10 @@ async def _send_transition_notification(
         warning = f"通知权限 {permission_code} 未匹配到已绑定企业微信成员"
         logger.warning(warning)
         return warning
-    content = (
-        "【项目状态变更】\n"
-        f"项目：{project_name}\n"
-        f"状态：{previous_state} → {target_state}\n"
-        f"操作人：{actor}\n"
-        f"时间：{changed_at}"
+    content = build_compact_text_notification(
+        f"【项目】已进入{target_state}阶段",
+        f"项目：{project_name}",
+        f"状态：{previous_state} → {target_state}",
     )
     success, message = await send_wecom_text_message(
         content,

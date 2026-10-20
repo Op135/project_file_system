@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import logging
-from html import escape
 from typing import Any, Iterable
 
 from nicegui import app
 
 from .notification_recipients import resolve_position_wecom_recipients
+from .notification_content import build_textcard_description
 from .wecom_service import send_wecom_text_message, send_wecom_textcard_message
 
 logger = logging.getLogger(__name__)
@@ -80,11 +80,12 @@ async def send_workflow_completion_cc(
     )
     if not recipients:
         return True, "未配置可送达的流程完成抄送人员"
-    normalized_lines = [str(line) for line in lines if str(line).strip()]
-    description = "".join(
-        f'<div class="normal">{escape(str(line))}</div>'
-        for line in normalized_lines
-    )
+    normalized_lines = [
+        str(line)
+        for line in lines
+        if str(line).strip() and not str(line).strip().startswith("结果：全部")
+    ][:3]
+    description = build_textcard_description("流程完成抄送", normalized_lines)
     try:
         if not link_url:
             return await send_wecom_text_message(
