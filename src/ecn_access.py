@@ -17,7 +17,6 @@ from .ecn_management_config import (
     classify_ecn_change_item,
     get_ecn_impact_handlers,
     get_ecn_material_execution_specs,
-    get_ecn_missing_material_code_items,
     get_ecn_level_code,
     get_ecn_validation_report,
     is_ecn_impact_blank,
@@ -1077,7 +1076,6 @@ def is_ecn_pending_for_user(
         return True
     if (
         workflow.get("current_state") == ECNState.MATERIAL_CODE_PENDING
-        and get_ecn_missing_material_code_items(ecn_data)
         and can_edit_ecn_material_codes(
             current_role,
             current_user,

@@ -6,7 +6,7 @@ import unittest
 from contextlib import ExitStack
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from nicegui.elements.upload_files import SmallFileUpload
 
@@ -222,6 +222,15 @@ class ECNAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         await self.review()
         self.assertEqual(self.value["workflow"]["current_state"], ECNState.MATERIAL_CODE_PENDING)
         self.accept(await actions.update_material_codes(self.value["ecn_id"], self.value["change_items"][0], {"main:material_code": "AUDIT-001"}, "张三", "助理", user_service=self.service, storage=self.storage))
+        self.assertEqual(self.value["workflow"]["current_state"], ECNState.MATERIAL_CODE_PENDING)
+        self.accept(await actions.confirm_material_codes_and_enter_execution(
+            self.value["ecn_id"],
+            self.value,
+            "张三",
+            "助理",
+            user_service=self.service,
+            storage=self.storage,
+        ))
         await self.special("__erp__", confirmed=True)
         await self.overview()
         tasks = self.value["execution_info"]["material_confirmations"]["material"]["traceability_tasks"]
@@ -236,6 +245,38 @@ class ECNAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         self.accept(await execution_review.revoke_execution_confirmation(self.value["ecn_id"], "material", "material", second, confirmation, "核对数量", [], "张三", "复核", user_service=self.service, storage=self.storage))
         self.assertFalse((await self.material(second, "王五", final=True))["reason"])
         self.assertEqual(self.value["workflow"]["current_state"], ECNState.CLOSED)
+
+    async def test_erp_confirmation_immediately_refreshes_scheme_actions(self):
+        scheme_refresh = Mock()
+        execution_refresh = Mock()
+        sync_execution = Mock(return_value=True)
+        namespace = execution_panel.__dict__.copy()
+        namespace.update(
+            ui=SimpleNamespace(context=SimpleNamespace(client=object())),
+            app=SimpleNamespace(state=SimpleNamespace(user_service=self.service)),
+            local_data={"ecn_id": "ECN-refresh"},
+            current_user="张三",
+            current_role="助理",
+            capture_execution_scroll_state=AsyncMock(return_value={}),
+            restore_execution_scroll_state=AsyncMock(),
+            update_special_task=AsyncMock(
+                return_value=SimpleNamespace(ok=True, record={}, message="")
+            ),
+            sync_execution_local_data=sync_execution,
+            render_execution_tab=execution_refresh,
+            execution_changed_callback=scheme_refresh,
+            notify_execution_safely=Mock(),
+        )
+        update_confirmation = self.extract(
+            "update_assistant_execution_confirmation",
+            namespace,
+        )
+
+        await update_confirmation("erp", None, True, {})
+
+        sync_execution.assert_called_once_with()
+        execution_refresh.assert_called_once_with()
+        scheme_refresh.assert_called_once_with()
 
     async def test_overview_full_lifecycle_writes_real_project_and_closes(self):
         await self.scheming()

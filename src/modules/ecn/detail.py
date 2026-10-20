@@ -1066,6 +1066,7 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                     can_review_execution,
                     refresh_list,
                     panel_container=execution_panel_host,
+                    execution_changed_callback=lambda: render_items(),
                 )
 
             def queue_lazy_panel(panel_name: str):
@@ -1608,6 +1609,18 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                     "execution_info", {}
                 ):
                     previous_execution_info = local_data.get("execution_info", {})
+                    previous_erp = (
+                        previous_execution_info.get("erp_confirmation", {})
+                        if isinstance(previous_execution_info, dict)
+                        else {}
+                    )
+                    fresh_erp = fresh_execution_info.get("erp_confirmation", {})
+                    erp_lock_changed = (
+                        isinstance(previous_erp, dict)
+                        and isinstance(fresh_erp, dict)
+                        and (previous_erp.get("confirmed") is True)
+                        != (fresh_erp.get("confirmed") is True)
+                    )
                     previous_material = (
                         previous_execution_info.get("material_confirmations", {})
                         if isinstance(previous_execution_info, dict)
@@ -1651,6 +1664,8 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                         refresh_material_execution_controls(changed_material_ids)
                     else:
                         render_execution_tab()
+                    if erp_lock_changed:
+                        render_items()
                     render_workflow_tab()
                     if not can_update_controls_only:
                         await restore_execution_scroll_state(execution_container.client, scroll_state)

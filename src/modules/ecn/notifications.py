@@ -190,6 +190,8 @@ def pending_task_details(
             code_tasks.append(
                 f"补充物料料号\n方案：{item['scheme_no']}\n缺少：{'、'.join(field_names)}"
             )
+        if not code_tasks:
+            code_tasks.append("复核全部物料料号，并确认进入ECN执行阶段")
         return {name: list(code_tasks) for name in pending}
     if state == ECNState.ECN_SCHEMING and get_ecn_level_code(record) == ECN_LEVEL_COMPLEX:
         validation_tasks: dict[str, list[str]] = {name: [] for name in pending}

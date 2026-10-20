@@ -91,18 +91,36 @@ class ECNMaterialCodeTests(unittest.IsolatedAsyncioTestCase):
         return records["ECN-code"]
 
     async def update(self, item: dict, code: str, *, allowed: bool = True):
+        with patch.object(actions, "can_edit_ecn_material_codes", return_value=allowed):
+            return await actions.update_material_codes(
+                "ECN-code",
+                copy.deepcopy(item),
+                {"main:material_code": code},
+                "assistant",
+                "研发助理",
+                user_service=self.service,
+                storage=self.storage,
+            )
+
+    async def confirm_execution(self, expected: dict, *, allowed: bool = True):
+        execution_info = {
+            "stage": "assistant_confirmation",
+            "erp_confirmation": {"confirmed": False, "history": []},
+            "ordinary_confirmations": {},
+            "overview_results": {},
+            "material_confirmations": {},
+        }
         with (
             patch.object(actions, "can_edit_ecn_material_codes", return_value=allowed),
             patch.object(
                 actions,
                 "build_ecn_execution_info_from_workflows",
-                return_value={"stage": "assistant_confirmation"},
+                return_value=execution_info,
             ),
         ):
-            return await actions.update_material_codes(
+            return await actions.confirm_material_codes_and_enter_execution(
                 "ECN-code",
-                copy.deepcopy(item),
-                {"main:material_code": code},
+                copy.deepcopy(expected),
                 "assistant",
                 "研发助理",
                 user_service=self.service,
@@ -254,6 +272,30 @@ class ECNMaterialCodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("方案：#01", details["assistant"][0])
         self.assertIn("缺少：料号", details["assistant"][0])
 
+        completed = copy.deepcopy(self.record)
+        for index, item in enumerate(completed["change_items"], start=1):
+            item["material_change"]["material_code"] = f"CODE-{index}"
+        self.assertTrue(
+            is_ecn_pending_for_user(
+                completed,
+                "assistant",
+                "研发助理",
+                user_service=service,
+                access_snapshot=snapshot,
+            )
+        )
+        completed_pending = notifications.collect_pending_users(completed, service, snapshot)
+        completed_details = notifications.pending_task_details(
+            completed,
+            completed_pending,
+            service,
+            snapshot,
+        )
+        self.assertEqual(
+            completed_details["assistant"],
+            ["复核全部物料料号，并确认进入ECN执行阶段"],
+        )
+
     async def test_permission_stale_snapshot_and_execution_lock(self):
         denied = await self.update(self.record["change_items"][0], "LED-001", allowed=False)
         self.assertFalse(denied.ok)
@@ -272,14 +314,33 @@ class ECNMaterialCodeTests(unittest.IsolatedAsyncioTestCase):
         final = await self.update(second_item, "SCREW-001")
         self.assertTrue(final.ok, final.message)
         assert final.record is not None
-        self.assertEqual(final.record["workflow"]["current_state"], ECNState.ECN_EXECUTING)
-        self.assertEqual(final.record["workflow"]["current_phase"], "ECN_EXECUTION_PHASE")
-        self.assertEqual(final.record["execution_info"]["stage"], "assistant_confirmation")
+        self.assertEqual(final.record["workflow"]["current_state"], ECNState.MATERIAL_CODE_PENDING)
+        self.assertEqual(final.record["execution_info"], {})
 
-        locked_item = final.record["change_items"][0]
-        locked = await self.update(locked_item, "LED-003")
+        denied_enter = await self.confirm_execution(final.record, allowed=False)
+        self.assertFalse(denied_enter.ok)
+        self.assertIn("权限", denied_enter.message)
+
+        entered = await self.confirm_execution(final.record)
+        self.assertTrue(entered.ok, entered.message)
+        assert entered.record is not None
+        self.assertEqual(entered.record["workflow"]["current_state"], ECNState.ECN_EXECUTING)
+        self.assertEqual(entered.record["workflow"]["current_phase"], "ECN_EXECUTION_PHASE")
+        self.assertEqual(entered.record["execution_info"]["stage"], "assistant_confirmation")
+
+        revised = await self.update(entered.record["change_items"][0], "LED-003")
+        self.assertTrue(revised.ok, revised.message)
+        assert revised.record is not None
+        self.assertEqual(
+            revised.record["change_items"][0]["material_change"]["material_code"],
+            "LED-003",
+        )
+
+        revised.record["execution_info"]["erp_confirmation"]["confirmed"] = True
+        await self.storage.set_item("ecn_management_data", {"ECN-code": revised.record})
+        locked = await self.update(revised.record["change_items"][0], "LED-004")
         self.assertFalse(locked.ok)
-        self.assertIn("不能修改", locked.message)
+        self.assertIn("已锁定", locked.message)
 
     async def test_authorized_user_can_fill_main_and_alternative_codes_together(self):
         first_item = self.record["change_items"][0]

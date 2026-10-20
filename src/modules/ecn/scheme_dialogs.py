@@ -82,7 +82,9 @@ def open_material_code_dialog(item: dict, on_save_callback) -> None:
     dialog = ui.dialog().props("persistent")
     with dialog, ui.card().classes("w-[620px] max-w-full p-5 gap-3"):
         ui.label("补充物料料号").classes("text-lg font-bold text-blue-900")
-        ui.label("主物料和替换料的料号全部补齐后才能进入ECN执行；进入执行后将锁定。").classes("text-sm text-slate-500")
+        ui.label(
+            "保存后请继续核对全部料号，并手动确认进入ECN执行；ERP相关变更确认后料号将锁定。"
+        ).classes("text-sm text-slate-500")
         for index, entry in enumerate(entries):
             token = entry["token"]
             ui.input(f"{entry['label']}（必填）").classes("w-full").bind_value(values, token).props(

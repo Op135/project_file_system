@@ -476,7 +476,7 @@ async def update_material_codes(
     project_sales=None,
     storage=None,
 ):
-    """补充单条物料方案料号，并在最后一项补齐时原子进入执行阶段。"""
+    """保存物料方案料号；进入执行后仅在ERP确认前允许修正。"""
     service = user_service or getattr(app.state, "user_service", None)
 
     async def operation(current, connection):
@@ -484,8 +484,18 @@ async def update_material_codes(
         actor_role = require_active_actor_role(user, role, service)
         require_permission(can_edit_ecn_material_codes, actor_role, user, service)
         workflow = current.get("workflow", {})
-        if not isinstance(workflow, dict) or workflow.get("current_state") != ECNState.MATERIAL_CODE_PENDING:
-            raise ECNConflict("当前已不在料号补充阶段，料号不能修改。")
+        current_state = workflow.get("current_state") if isinstance(workflow, dict) else None
+        if current_state not in {ECNState.MATERIAL_CODE_PENDING, ECNState.ECN_EXECUTING}:
+            raise ECNConflict("当前阶段不允许修改物料料号。")
+        if current_state == ECNState.ECN_EXECUTING:
+            execution_info = current.get("execution_info", {})
+            erp_confirmation = (
+                execution_info.get("erp_confirmation", {})
+                if isinstance(execution_info, dict)
+                else {}
+            )
+            if not isinstance(erp_confirmation, dict) or erp_confirmation.get("confirmed") is True:
+                raise ECNConflict("ERP相关变更已确认，物料料号已锁定，不能修改。")
         item_id = str(expected_item.get("item_id") or "")
         items = current.get("change_items", [])
         if not isinstance(items, list):
@@ -536,12 +546,72 @@ async def update_material_codes(
             {
                 "user": user,
                 "role": actor_role,
-                "action": f"补充物料料号（方案 #{scheme_index:02d}）",
+                "action": (
+                    f"修改物料料号（方案 #{scheme_index:02d}）"
+                    if current_state == ECNState.ECN_EXECUTING
+                    else f"补充物料料号（方案 #{scheme_index:02d}）"
+                ),
                 "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             },
         )
-        if not get_ecn_missing_material_code_items(current):
-            enter_execution_phase(current, project_sales or {}, service)
+        return current
+
+    return await mutate_record(ecn_id, operation, storage=storage)
+
+
+def _material_code_review_snapshot(record: dict) -> dict[str, dict[str, str]]:
+    """提取进入执行前需要再次核对的料号快照。"""
+    result: dict[str, dict[str, str]] = {}
+    items = record.get("change_items", [])
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict) or classify_ecn_change_item(item) != ECN_SCHEME_GROUP_MATERIAL:
+            continue
+        item_id = str(item.get("item_id") or "")
+        if item_id:
+            result[item_id] = {
+                entry["token"]: entry["value"]
+                for entry in get_ecn_material_code_entries(item)
+            }
+    return result
+
+
+async def confirm_material_codes_and_enter_execution(
+    ecn_id: str,
+    expected: dict,
+    user: str,
+    role: str,
+    *,
+    user_service=None,
+    project_sales=None,
+    storage=None,
+):
+    """由料号维护人员复核全部料号后，手动生成执行清单。"""
+    service = user_service or getattr(app.state, "user_service", None)
+
+    async def operation(current, connection):
+        del connection
+        actor_role = require_active_actor_role(user, role, service)
+        require_permission(can_edit_ecn_material_codes, actor_role, user, service)
+        require_current_context(current, expected)
+        workflow = current.get("workflow", {})
+        if not isinstance(workflow, dict) or workflow.get("current_state") != ECNState.MATERIAL_CODE_PENDING:
+            raise ECNConflict("当前已不在料号核对阶段，不能进入执行。")
+        if _material_code_review_snapshot(current) != _material_code_review_snapshot(expected):
+            raise ECNConflict("物料料号已被其他页面修改，请刷新并重新核对后再进入执行。")
+        missing = get_ecn_missing_material_code_items(current)
+        if missing:
+            schemes = "、".join(str(item.get("scheme_no") or "") for item in missing)
+            raise ECNConflict(f"仍有方案未补齐物料料号：{schemes}")
+        enter_execution_phase(current, project_sales or {}, service)
+        append_ecn_approval_log_once(
+            current.setdefault("approval_log", []),
+            {
+                "user": user,
+                "role": actor_role,
+                "action": "确认物料料号无误，进入执行阶段",
+                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            },
+        )
         return current
 
     return await mutate_record(ecn_id, operation, storage=storage)

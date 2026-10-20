@@ -55,6 +55,7 @@ from ...ecn_management_config import (
     get_ecn_level_code,
     get_ecn_material_change_display,
     get_ecn_material_code_entries,
+    get_ecn_missing_material_code_items,
     get_ecn_overview_deactivation_remaining_contents,
     get_ecn_overview_project_new_data,
     get_ecn_scheme_coverage,
@@ -64,6 +65,7 @@ from ...ecn_management_config import (
     split_ecn_material_change_display,
 )
 from .actions import (
+    confirm_material_codes_and_enter_execution,
     edit_scheme,
     retain_scheme_after_association_change,
     set_participant_status,
@@ -512,14 +514,87 @@ def build_scheme_panel(
                             wf.update(copy.deepcopy(current_workflow))
                         local_data["execution_info"] = copy.deepcopy(record.get("execution_info", {}))
                         local_data["approval_log"] = copy.deepcopy(record.get("approval_log", []))
-                        if wf.get("current_state") == ECNState.ECN_EXECUTING:
-                            ui.notify("全部料号已补齐，ECN已进入执行阶段。", type="positive")
-                        else:
-                            ui.notify("料号已保存。", type="positive")
+                        ui.notify("料号已保存。", type="positive")
                         render_items()
                         render_coverage_dashboard()
                         material_code_saved_callback()
                         return True
+
+                    def material_codes_are_unlocked() -> bool:
+                        """料号补充阶段始终可编辑；执行后以ERP确认作为最终锁。"""
+                        state = wf.get("current_state")
+                        if state == ECNState.MATERIAL_CODE_PENDING:
+                            return True
+                        if state != ECNState.ECN_EXECUTING:
+                            return False
+                        execution_info = local_data.get("execution_info", {})
+                        erp_confirmation = (
+                            execution_info.get("erp_confirmation", {})
+                            if isinstance(execution_info, dict)
+                            else {}
+                        )
+                        return isinstance(erp_confirmation, dict) and erp_confirmation.get("confirmed") is not True
+
+                    def open_enter_execution_confirmation() -> None:
+                        """展示全部料号并要求维护人员再次确认。"""
+                        expected = copy.deepcopy(local_data)
+                        dialog = ui.dialog().props("persistent")
+                        with dialog, ui.card().classes("w-[680px] max-w-[94vw] p-5 gap-3"):
+                            with ui.row().classes("items-center gap-2"):
+                                ui.icon("fact_check", color="orange-8", size="sm")
+                                ui.label("再次确认物料料号").classes("text-lg font-bold text-slate-800")
+                            ui.label(
+                                "进入执行阶段前，请逐项核对以下料号。进入执行后，在“ERP相关变更”确认前仍可返回本页修改；ERP确认后料号将锁定。"
+                            ).classes("text-sm text-orange-800 bg-orange-50 rounded p-3 leading-relaxed")
+                            with ui.scroll_area().classes("w-full max-h-[45vh] border border-slate-200 rounded"):
+                                with ui.column().classes("w-full gap-0 p-2"):
+                                    for index, item in enumerate(local_data.get("change_items", []), start=1):
+                                        if not isinstance(item, dict) or classify_ecn_change_item(
+                                            item
+                                        ) != ECN_SCHEME_GROUP_MATERIAL:
+                                            continue
+                                        ui.label(
+                                            f"方案 #{index:02d} · {item.get('change_type') or '物料变更'}"
+                                        ).classes("w-full text-sm font-bold text-slate-700 pt-2")
+                                        for entry in get_ecn_material_code_entries(item):
+                                            ui.label(f"{entry['label']}：{entry['value']}").classes(
+                                                "w-full text-sm text-slate-600 pl-3 py-0.5 break-all"
+                                            )
+
+                            async def submit() -> None:
+                                result = await confirm_material_codes_and_enter_execution(
+                                    str(local_data["ecn_id"]),
+                                    expected,
+                                    current_user,
+                                    current_role,
+                                    project_sales=app.storage.general.get("project_sale", {}),
+                                )
+                                if not result.ok or result.record is None:
+                                    ui.notify(result.message, type="warning")
+                                    return
+                                record = result.record
+                                local_data["change_items"] = copy.deepcopy(record.get("change_items", []))
+                                current_workflow = record.get("workflow", {})
+                                if isinstance(current_workflow, dict):
+                                    wf.clear()
+                                    wf.update(copy.deepcopy(current_workflow))
+                                local_data["execution_info"] = copy.deepcopy(record.get("execution_info", {}))
+                                local_data["approval_log"] = copy.deepcopy(record.get("approval_log", []))
+                                dialog.close()
+                                render_items()
+                                render_coverage_dashboard()
+                                material_code_saved_callback()
+                                ui.notify("已确认料号无误，ECN进入执行阶段。", type="positive")
+
+                            with ui.row().classes("w-full justify-end gap-2 mt-2"):
+                                ui.button("返回继续核对", on_click=dialog.close).props("flat color=grey")
+                                ui.button(
+                                    "再次确认，进入执行",
+                                    icon="play_circle",
+                                    on_click=submit,
+                                ).props("color=orange-8 no-caps")
+                        dialog.on("close", dialog.delete)
+                        dialog.open()
 
                     def get_item_projects(item):
                         return [project for project in item.get("projects", []) if project]
@@ -533,6 +608,28 @@ def build_scheme_panel(
                             if not change_items:
                                 ui.label("暂未添加具体的方案条目").classes("text-sm text-slate-400 m-auto mt-4")
                                 return
+
+                            if (
+                                wf.get("current_state") == ECNState.MATERIAL_CODE_PENDING
+                                and can_edit_material_codes
+                                and not get_ecn_missing_material_code_items(local_data)
+                            ):
+                                with ui.row().classes(
+                                    "w-full items-center justify-between gap-3 rounded-lg "
+                                    "border border-orange-300 bg-orange-50 px-4 py-3"
+                                ):
+                                    with ui.column().classes("gap-0 min-w-0"):
+                                        ui.label("全部物料料号已填写，等待最终核对").classes(
+                                            "text-sm font-bold text-orange-900"
+                                        )
+                                        ui.label("请确认料号准确无误后，再手动进入执行阶段。").classes(
+                                            "text-xs text-orange-700"
+                                        )
+                                    ui.button(
+                                        "核对料号并进入执行",
+                                        icon="fact_check",
+                                        on_click=open_enter_execution_confirmation,
+                                    ).props("color=orange-8 no-caps").classes("shrink-0")
 
                             grouped_items = {
                                 ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT: [],
@@ -1837,8 +1934,8 @@ def build_scheme_panel(
                                             )
                                             can_edit_codes_for_item = (
                                                 classify_ecn_change_item(item) == ECN_SCHEME_GROUP_MATERIAL
-                                                and wf.get("current_state") == ECNState.MATERIAL_CODE_PENDING
                                                 and can_edit_material_codes
+                                                and material_codes_are_unlocked()
                                             )
                                             has_rejection_history = bool(get_rejection_history(item))
                                             if can_edit_item or has_rejection_history or can_edit_codes_for_item:

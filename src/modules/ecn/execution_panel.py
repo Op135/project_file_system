@@ -8,6 +8,7 @@ from datetime import (
 )
 from typing import (
     Any,
+    Callable,
     Literal,
 )
 
@@ -103,6 +104,7 @@ def build_execution_panel(
     refresh_list,
     *,
     panel_container=None,
+    execution_changed_callback: Callable[[], None] = lambda: None,
 ):
     # --- [TAB 4] ECN 分阶段执行 ---
     panel = (
@@ -637,6 +639,8 @@ def build_execution_panel(
                 )
                 sync_execution_local_data()
                 render_execution_tab()
+            if confirmation_kind == "erp":
+                execution_changed_callback()
             await restore_execution_scroll_state(event_client, scroll_state)
 
         async def run_overview_execution():
@@ -1229,7 +1233,7 @@ def build_execution_panel(
                 execution_info = local_data.get("execution_info", {})
                 if not isinstance(execution_info, dict) or not execution_info.get("stage"):
                     message = (
-                        "方案评审已通过，请先在“ECN-方案”页签补齐全部物料料号；补齐后自动生成执行清单。"
+                        "方案评审已通过，请先在“ECN-方案”页签补齐并仔细核对全部物料料号，再手动确认进入执行阶段。"
                         if wf.get("current_state") == ECNState.MATERIAL_CODE_PENDING
                         else "方案评审全部通过后，系统将在这里生成分阶段执行清单。"
                     )
