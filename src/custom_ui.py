@@ -12,7 +12,7 @@ from nicegui.elements.upload import Upload
 
 from .image_preview import show_interactive_image_preview
 
-__all__ = ["CustomUploadRemovedEventArguments", "custom_upload"]
+__all__ = ["CompactUpload", "CustomUploadRemovedEventArguments", "custom_upload"]
 
 _CUSTOM_UPLOAD_CSS = """
     .custom-upload-panel { display: grid; width: 100%; gap: 8px; align-items: start; }
@@ -111,17 +111,30 @@ class CustomUploadRemovedEventArguments(events.UiEventArguments):
     clear_all: bool
 
 
-class _CompactUpload(Upload):
-    """保留 Upload 公共接口，并在外部 reset 时同步紧凑文件列表。"""
+class CompactUpload(Upload):
+    """保留 Upload 公共接口，并提供紧凑文件列表的运行时刷新能力。"""
 
     def __init__(self, **kwargs: Any) -> None:
         self._compact_reset_callback: Callable[[], None] | None = None
+        self._compact_existing_files_callback: (
+            Callable[[list[dict[str, Any]], bool], None] | None
+        ) = None
         super().__init__(**kwargs)
 
     def reset(self) -> None:
         super().reset()
         if self._compact_reset_callback is not None:
             self._compact_reset_callback()
+
+    def set_existing_files(
+        self,
+        files: list[dict[str, Any]],
+        *,
+        clear_selected: bool = False,
+    ) -> None:
+        """用最新归档文件刷新文件区，并可同时清除浏览器选择队列。"""
+        if self._compact_existing_files_callback is not None:
+            self._compact_existing_files_callback(files, clear_selected)
 
 
 def custom_upload(
@@ -141,7 +154,8 @@ def custom_upload(
     max_total_size: int | None = None,
     file_area_position: Literal["top", "bottom", "left", "right"] = "bottom",
     show_thumbnails: bool = True,
-) -> Upload:
+    show_clear_all: bool = True,
+) -> CompactUpload:
     """创建紧凑的文件上传组件，并保持 NiceGUI Upload 的调用兼容性。"""
     if file_area_position not in {"top", "bottom", "left", "right"}:
         raise ValueError("file_area_position 必须是 top、bottom、left 或 right")
@@ -176,7 +190,7 @@ def custom_upload(
         if multiple:
             file_area_classes += " custom-upload-files-scroll"
         file_area = ui.column().classes(file_area_classes)
-        uploader = _CompactUpload(
+        uploader = CompactUpload(
             multiple=multiple,
             max_files=effective_max_files,
             on_begin_upload=on_begin_upload,
@@ -284,15 +298,19 @@ def custom_upload(
                         ui.label(str(file_data.get("name") or "文件")).classes(
                             "text-xs text-slate-800 break-all cursor-pointer hover:text-primary"
                         ).on("click", lambda _, entry=file_data: open_file(entry))
-                        ui.label(_format_size(file_data.get("size"))).classes("text-[10px] text-slate-500")
-                    remove_handler = (
-                        (lambda _, entry=file_data: remove_existing(entry))
-                        if existing
-                        else (lambda _, entry=file_data: remove_selected(entry))
-                    )
-                    ui.button(icon="delete_outline", on_click=remove_handler).props(
-                        "flat round dense size=sm color=negative"
-                    ).tooltip("删除文件")
+                        description = str(file_data.get("description") or "").strip()
+                        ui.label(description or _format_size(file_data.get("size"))).classes(
+                            "text-[10px] text-slate-500"
+                        )
+                    if not existing or bool(file_data.get("removable", True)):
+                        remove_handler = (
+                            (lambda _, entry=file_data: remove_existing(entry))
+                            if existing
+                            else (lambda _, entry=file_data: remove_selected(entry))
+                        )
+                        ui.button(icon="delete_outline", on_click=remove_handler).props(
+                            "flat round dense size=sm color=negative"
+                        ).tooltip("删除文件")
         update_action_state()
 
     def handle_added(event: events.GenericEventArguments) -> None:
@@ -325,7 +343,20 @@ def custom_upload(
         selected_files.clear()
         render_files()
 
+    def replace_existing_files(files: list[dict[str, Any]], clear_selected: bool) -> None:
+        saved_files.clear()
+        for index, item in enumerate(files):
+            entry = dict(item)
+            key = str(entry.get("key") or entry.get("id") or f"existing-{index}")
+            entry.update(key=key, existing=True)
+            saved_files[key] = entry
+        if clear_selected:
+            selected_files.clear()
+            Upload.reset(uploader)
+        render_files()
+
     uploader._compact_reset_callback = reset_display
+    uploader._compact_existing_files_callback = replace_existing_files
     uploader.on("added", handle_added, js_handler=_file_metadata_js(uploader.id))
     uploader.on("removed", handle_removed, js_handler=_file_metadata_js(uploader.id))
 
@@ -336,7 +367,7 @@ def custom_upload(
             on_click=lambda: uploader.run_method("pickFiles"),
         ).props("outline dense no-caps color=primary")
         info_label = ui.label().classes("text-[11px] text-slate-500")
-        if multiple:
+        if multiple and show_clear_all:
             clear_all_button = ui.button("清空全部", icon="delete_sweep", on_click=clear_all).props(
                 "flat dense no-caps color=negative"
             ).classes("text-xs")
