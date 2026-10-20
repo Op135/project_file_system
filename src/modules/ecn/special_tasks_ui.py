@@ -12,6 +12,7 @@ from ...ecn_access import (
 )
 from ...ecn_management_config import ECNState, get_ecn_special_confirmations
 from .special_tasks import update_special_task
+from .task_labels import preferred_execution_responsibility_label
 from .material_tasks import update_material_task_assignee
 
 
@@ -115,6 +116,7 @@ def render_transfer_button(
     refresh,
     *,
     access_snapshot: dict | None = None,
+    default_assignees: object = None,
 ):
     with ui.column().classes("px-3 py-2 gap-1 items-center justify-center text-center self-stretch"):
         assignee = str(confirmation.get("assignee") or "")
@@ -123,8 +125,12 @@ def render_transfer_button(
             user_service=app.state.user_service,
             access_snapshot=access_snapshot,
         )
+        responsibility = assignee or preferred_execution_responsibility_label(
+            default_assignees,
+            "研发助理",
+        )
         ui.label(
-            (assignee or "执行助理") + ("（账号已停用/无权限）" if not assignee_active else "")
+            responsibility + ("（账号已停用/无权限）" if not assignee_active else "")
         ).classes("text-xs " + ("text-red-600 font-semibold" if not assignee_active else ""))
         if active and confirmation.get("confirmed") is not True and can_execute_ecn_assistant_stage(
             role,
@@ -201,7 +207,17 @@ async def open_special_tasks_dialog(ecn_id: str, username: str, role: str, refre
                 ui.label("单据已删除")
                 return
             items = {str(item.get("item_id")): item for item in record.get("change_items", [])}
-            entries = get_ecn_special_confirmations(record.get("execution_info"))
+            execution_info = record.get("execution_info", {})
+            entries = get_ecn_special_confirmations(execution_info)
+            default_assignees = (
+                execution_info.get("assistant_users", [])
+                if isinstance(execution_info, dict)
+                else []
+            )
+            default_responsibility = preferred_execution_responsibility_label(
+                default_assignees,
+                "研发助理",
+            )
             access_snapshot = build_ecn_access_snapshot(app.state.user_service)
             assigned = {
                 key: item for key, item in entries.items() if item.get("assignee") or item.get("assignment_history")
@@ -215,7 +231,7 @@ async def open_special_tasks_dialog(ecn_id: str, username: str, role: str, refre
                         "ERP更新" if key == "__erp__" else f"{key} · {items.get(key, {}).get('new_content', '')}"
                     ).classes("flex-1 whitespace-pre-line")
                     ui.label(
-                        f"{item.get('assignee') or '执行助理'} · "
+                        f"{item.get('assignee') or default_responsibility} · "
                         f"{'已完成' if item.get('confirmed') else '待确认'}"
                         + (
                             " · 账号已停用/无权限"
@@ -269,6 +285,7 @@ async def open_special_tasks_dialog(ecn_id: str, username: str, role: str, refre
                         active,
                         lambda: (render.refresh(), refresh_list()),
                         access_snapshot=access_snapshot,
+                        default_assignees=default_assignees,
                     )
 
         await render()

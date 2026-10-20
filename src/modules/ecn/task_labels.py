@@ -69,23 +69,40 @@ def material_task_label(record: dict[str, Any], item_id: str, task: dict[str, An
     return f"物料方案 {scheme_no} {change_type}{suffix}"
 
 
+def preferred_execution_responsibility_label(
+    users: object,
+    fallback: object,
+    *,
+    project: object = "",
+) -> str:
+    """执行责任显示优先使用具体人员，无法解析人员时才显示岗位。"""
+    names = (
+        list(
+            dict.fromkeys(
+                str(value).strip()
+                for value in users
+                if str(value).strip()
+            )
+        )
+        if isinstance(users, (list, tuple, set))
+        else []
+    )
+    responsibility = "、".join(names) or str(fallback or "").strip()
+    project_text = str(project or "").strip()
+    return " · ".join(value for value in (project_text, responsibility) if value)
+
+
 def compact_material_confirmation_label(spec: dict[str, Any]) -> str:
     """生成表格复选框短标签；完整的责任变化说明仍放在悬浮提示中。"""
     project = str(spec.get("project") or "").strip()
-    responsible_type = str(spec.get("responsible_type") or "")
     responsible_key = str(spec.get("responsible_key") or "").strip()
     raw_users = spec.get("users", [])
-    users = (
-        "、".join(str(value).strip() for value in raw_users if str(value).strip())
-        if isinstance(raw_users, (list, tuple, set))
-        else ""
-    )
-    if responsible_type == "hierarchy_users" and users:
+    users = preferred_execution_responsibility_label(raw_users, "")
+    if users:
+        detail = users
         if spec.get("source_responsible_type") == "project_sales" or str(spec.get("resolution_mode") or "") == "manager_escalation":
-            detail = f"{users}（代确认）"
-        else:
-            detail = " ".join(value for value in (responsible_key, users) if value)
-        return " · ".join(value for value in (project, detail) if value)
+            detail += "（代确认）"
+        return preferred_execution_responsibility_label([detail], responsible_key, project=project)
     return str(spec.get("label") or "待确认负责人")
 
 

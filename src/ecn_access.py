@@ -693,13 +693,16 @@ def resolve_ecn_material_spec_responsibility(
         )
         return resolved
 
-    project_sales_available = responsible_type == "project_sales" and any(
-        _snapshot_active_user(snapshot, username)
+    available_project_sales_users = [
+        username
+        for username in raw_users
+        if responsible_type == "project_sales"
+        and _snapshot_active_user(snapshot, username)
         and _snapshot_permission(snapshot, username, ECN_VIEW_PERMISSION)
         and _snapshot_permission(snapshot, username, ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION)
-        for username in raw_users
-    )
-    if project_sales_available:
+    ]
+    if available_project_sales_users:
+        resolved["users"] = available_project_sales_users
         return resolved
 
     users = snapshot.get("users", {})

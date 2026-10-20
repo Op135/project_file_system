@@ -80,7 +80,11 @@ from .repository import (
 )
 from .special_tasks import update_special_task
 from .special_tasks_ui import open_material_transfer_dialog, render_transfer_button
-from .task_labels import compact_material_confirmation_label, material_confirmation_tooltip_text
+from .task_labels import (
+    compact_material_confirmation_label,
+    material_confirmation_tooltip_text,
+    preferred_execution_responsibility_label,
+)
 from .attachment_ui import (
     open_ecn_attachment_dialog,
     open_ecn_attachment_file,
@@ -1363,12 +1367,16 @@ def build_execution_panel(
                                                         ).props("flat dense size=sm color=indigo no-caps")
 
                 item_map = get_execution_change_items()
+                assistant_responsibility = preferred_execution_responsibility_label(
+                    execution_info.get("assistant_users", []),
+                    "研发助理",
+                )
                 with ui.card().classes("w-full p-0 gap-0 border border-slate-300 shadow-sm overflow-hidden"):
                     with ui.row().classes(
                         "w-full items-center justify-between px-4 py-2.5 bg-slate-300 text-slate-900"
                     ):
                         ui.label("1. 资料准备与执行确认").classes("font-bold text-base")
-                        ui.label("责任：研发助理").classes("text-xs text-slate-600")
+                        ui.label(f"责任：{assistant_responsibility}").classes("text-xs text-slate-600")
 
                     ordinary_confirmations = execution_info.get("ordinary_confirmations", {})
                     erp_confirmation = execution_info.get("erp_confirmation", {})
@@ -1536,6 +1544,7 @@ def build_execution_panel(
                                                 render_execution_tab(),
                                             ),
                                             access_snapshot=access_snapshot,
+                                            default_assignees=execution_info.get("assistant_users", []),
                                         )
 
                                 erp_row_bg = "bg-white" if len(assistant_rows) % 2 == 0 else "bg-slate-50/70"
@@ -1657,6 +1666,7 @@ def build_execution_panel(
                                         wf.get("current_state") == ECNState.ECN_EXECUTING,
                                         lambda: (sync_execution_local_data(), render_execution_tab()),
                                         access_snapshot=access_snapshot,
+                                        default_assignees=execution_info.get("assistant_users", []),
                                     )
 
                     overview_results = execution_info.get("overview_results", {})

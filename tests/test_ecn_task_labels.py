@@ -4,6 +4,7 @@ from src.modules.ecn.task_labels import (
     humanize_ecn_log_action,
     material_confirmation_tooltip_text,
     material_task_label,
+    preferred_execution_responsibility_label,
     scheme_log_label,
     special_task_label,
 )
@@ -96,7 +97,18 @@ def test_compact_material_confirmation_label_removes_repeated_responsibility_tex
     }
 
     assert compact_material_confirmation_label(missing_sales) == "RFFM-1009-B · 邓俊豪（代确认）"
-    assert compact_material_confirmation_label(supervisor) == "RFFM-1009-A · 销售主管 邓俊豪"
+    assert compact_material_confirmation_label(supervisor) == "RFFM-1009-A · 邓俊豪"
+
+    workflow_users = {
+        "responsible_type": "workflow_users",
+        "responsible_key": "采购",
+        "users": ["张三", "李四"],
+        "label": "采购",
+    }
+    assert compact_material_confirmation_label(workflow_users) == "张三、李四"
+    assert compact_material_confirmation_label({**workflow_users, "users": []}) == "采购"
+    assert preferred_execution_responsibility_label(["张三", "李四"], "研发助理") == "张三、李四"
+    assert preferred_execution_responsibility_label([], "研发助理") == "研发助理"
 
     escalated_project_sales = {
         "key": "客户/在途::项目销售::RFFM-1108-F",

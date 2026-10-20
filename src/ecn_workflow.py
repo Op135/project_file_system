@@ -64,13 +64,8 @@ def _execution_workflow_task(
     task_key = f"{level}::{node_key}{suffix}"
     workflow = workflow_result.get("workflow", {})
     version = workflow_result.get("version", {})
-    label = (
-        f"{project} · {users[0]}"
-        if project and users
-        else f"{project} · {responsible_key}"
-        if project
-        else responsible_key
-    )
+    responsible_display = "、".join(dict.fromkeys(users)) or responsible_key
+    label = " · ".join(value for value in (project, responsible_display) if value)
     workflow_code = str(workflow.get("code") or "") if isinstance(workflow, dict) else ""
     version_number = version.get("version_number") if isinstance(version, dict) else None
     return task_key, {
@@ -206,8 +201,7 @@ def build_ecn_execution_info_from_workflows(
                             personal_task["users"] = [username]
                             personal_task["co_signer"] = username
                             personal_task["label"] = " · ".join(
-                                value for value in (project if project_scoped else "", str(node.get("name") or task["responsible_key"]), username)
-                                if value
+                                value for value in (project if project_scoped else "", username) if value
                             )
                             personal_key = f"{task_key}::user:{username}"
                             if personal_key in tasks:

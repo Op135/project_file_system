@@ -800,6 +800,7 @@ class ApprovalWorkflowTests(unittest.TestCase):
         self.assertEqual(len(entry["traceability_tasks"]), 1)
         task = entry["traceability_tasks"]["供应商::pool"]
         self.assertEqual(set(task["users"]), {"李四", "王五"})
+        self.assertEqual(task["label"], "李四、王五")
         spec = get_ecn_material_execution_specs(item, entry)[0]
         self.assertTrue(can_confirm_ecn_material_spec(spec, "审批岗位", "李四", user_service=self.service))
         self.assertTrue(can_confirm_ecn_material_spec(spec, "其他有权岗位", "王五", user_service=self.service))
@@ -860,6 +861,7 @@ class ApprovalWorkflowTests(unittest.TestCase):
 
         self.assertEqual(execution["workflow_source"], "approval_workflows")
         self.assertEqual(task["users"], ["李四"])
+        self.assertEqual(task["label"], "李四")
         self.assertEqual(task["responsible_type"], "workflow_users")
         self.assertEqual(task["workflow_assignment"]["workflow_code"], "ecn.execution_supplier.test")
 
