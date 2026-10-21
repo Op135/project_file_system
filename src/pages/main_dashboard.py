@@ -197,7 +197,8 @@ def main_page():
     # 格式：(图标, 标题, 描述, 目标路径)
     menu_items_metadata = [
         ("assignment", "项目资料", "录入与查看项目资料", "/project_table"),
-        ("rule", "项目待办项", "查阅项目相关待办项", "/information"),
+        ("description", "项目概述待办", "处理项目概述相关待办", "/project_overview_todo"),
+        ("rule", "项目需求待办", "处理项目需求相关待办", "/project_requirement_todo"),
         ("handyman", "分析工具", "专业分析计算工具", "/tool"),
         ("account_tree", "需求项结构", "查阅需求项结构", "/question_tree_tabs"),
         ("equalizer", "统计信息", "查阅系统统计信息", "/statistics"),
@@ -216,7 +217,7 @@ def main_page():
         ):
             continue
         # 项目待办使用独立稳定入口权限，内部内容继续按各业务权限和具体责任过滤。
-        elif items[3] == "/information" and not can_view_project_todo(
+        elif items[3] in {"/project_overview_todo", "/project_requirement_todo"} and not can_view_project_todo(
             current_role,
             current_user,
         ):
@@ -444,8 +445,8 @@ def main_page():
                 # 1. 预先计算该模块的待办数量 (Logic Pre-calculation)
                 #    这样我们可以根据数量来决定图标的颜色
                 pending_count = 0
-                if target == "/information":
-                    overview_pending_count = (
+                if target == "/project_overview_todo":
+                    pending_count = (
                         overview_urgent_count
                         + change_task_count
                         + batch_change_task_count
@@ -453,7 +454,8 @@ def main_page():
                         + overview_add_task_count
                         + conversion_review_task_count
                     )
-                    pending_count = len(requirement_pending_keys) + overview_pending_count
+                elif target == "/project_requirement_todo":
+                    pending_count = len(requirement_pending_keys)
                 elif target == "/ecn_management":
                     # 将算出的 ECN 待办数量赋给这个卡片
                     pending_count = ecn_pending_num_user
@@ -474,11 +476,11 @@ def main_page():
                 # 为图标底座准备一个极淡的背景色
                 icon_bg_class = "bg-red-50" if pending_count > 0 else "bg-blue-50"
                 card_urgent_class = ""
-                if target == "/information" and overview_max_warning_level >= 4:
+                if target == "/project_overview_todo" and overview_max_warning_level >= 4:
                     icon_color_class = "text-violet-600 animate-pulse"
                     icon_bg_class = "bg-violet-100"
                     card_urgent_class = "dashboard-urgent-level-4"
-                elif target == "/information" and overview_max_warning_level >= 3:
+                elif target == "/project_overview_todo" and overview_max_warning_level >= 3:
                     card_urgent_class = "dashboard-urgent-level-3"
 
                 # 3. 渲染卡片 (【修改重点】增加大圆角、软阴影、悬浮抬升和过渡动画)
@@ -497,7 +499,7 @@ def main_page():
 
                     # 【修改】标题文字加粗，颜色加深，使其更锐利
                     ui_title = ui.label(title).classes("text-xl font-bold text-gray-800")
-                    if target == "/information" and overview_urgent_count > 0:
+                    if target == "/project_overview_todo" and overview_urgent_count > 0:
                         if overview_max_warning_level >= 4:
                             urgent_text = f"重要警示 · {overview_urgent_count}个待办"
                             urgent_classes = "bg-violet-100/40 text-violet-800 border-violet-300/50"

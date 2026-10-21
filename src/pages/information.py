@@ -182,7 +182,7 @@ def _schedule_overview_completion_cc(
                 "结果：全部审批节点已通过",
                 f"审批人：{reviewer}",
             ),
-            link_url=f"{SYSTEM_PUBLIC_BASE_URL}/information",
+            link_url=f"{SYSTEM_PUBLIC_BASE_URL}/project_overview_todo",
             module="project_overview",
             business_key=f"{business_key}:completion_cc",
         ),
@@ -342,8 +342,7 @@ def status_badge(text: str | None, color_name: str = "gray"):
     ui.label(display_text).classes(f"text-xs px-2 py-0.5 rounded bg-{bg} text-{fg} font-medium")
 
 
-@ui.page("/information")
-def information_page():
+def _render_information_page(section: str) -> None:
     # 1. 权限与基础数据获取
     stored_current_user = app.storage.user.get("current_user")
     if not isinstance(stored_current_user, str) or not stored_current_user:
@@ -351,7 +350,9 @@ def information_page():
         return
 
     # --- 调用全局活跃跟踪组件 ---
-    setup_global_activity_tracking("information")
+    setup_global_activity_tracking(
+        "project_overview_todo" if section == "overview" else "project_requirement_todo"
+    )
     ui.add_css("""
         @keyframes overview-warning-shake {
             0%, 100% { transform: translateX(0); }
@@ -2968,7 +2969,8 @@ def information_page():
     header = ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4")
     with header:
         ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
-        ui.label("项目待办项").classes(
+        page_title = "项目概述待办" if section == "overview" else "项目需求待办"
+        ui.label(page_title).classes(
             "text-white text-lg absolute left-1/2 transform -translate-x-1/2"
         )  # 绝对定位居中
         with ui.avatar(size="lg").classes("cursor-pointer ml-auto -mt-3"):  # 右侧对齐
@@ -2976,7 +2978,7 @@ def information_page():
             with ui.menu().props("auto-close"):
                 ui.menu_item(f"你好, {app.storage.user.get('current_user', '匿名')}").style("white-space: nowrap;")
                 ui.separator().props("size=1px")
-                if can_revoke_project_requirement_approval(current_role, current_user):
+                if section == "requirement" and can_revoke_project_requirement_approval(current_role, current_user):
                     ui.menu_item("撤销需求审批", on_click=lambda: create_revoke_dialog()).classes(
                         "text-red-600 font-bold"
                     )
@@ -2989,102 +2991,103 @@ def information_page():
     # 将滚动限制在 header 下方的内容区内，避免浏览器主滚动条覆盖到顶部导航栏
     with ui.element("div").classes("fixed top-12 bottom-0 left-0 right-0 overflow-hidden bg-gray-50"):
         with ui.element("div").classes("w-full h-full overflow-y-auto overflow-x-hidden p-4 md:p-6"):
-            project_engineer_dic = get_project_engineer_project_list_dic()
-
             # Grid: 大屏12列，左8右4；小屏自动换行
             with ui.grid(columns=12).classes("w-full gap-4"):
                 # =========================================================
                 # 左侧列 (主要工作流)
                 # =========================================================
                 with ui.column().classes("col-span-12 lg:col-span-6 gap-4"):
-                    with ui.column().classes("w-full gap-0"):
-                        render_conversion_reviews()
-                        render_overview_pending()
-
-                    # B. 需求评审队列 (Review Queue)
-                    has_assigned_projects = bool(project_engineer_dic.get(current_user)) and (
-                        has_assigned_requirement_review_permission(current_role, current_user)
-                    )
-                    if can_edit_requirements() or can_review_all_requirements() or has_assigned_projects:
-                        with ui.card().classes("w-full rounded-xl shadow-sm border border-gray-100 bg-white"):
-                            ui_card_header("需求评审看板", "rate_review", "blue-600")
-                            render_requirement_review_board()
+                    if section == "overview":
+                        with ui.column().classes("w-full gap-0"):
+                            render_conversion_reviews()
+                            render_overview_pending()
+                    else:
+                        project_engineer_dic = get_project_engineer_project_list_dic()
+                        has_assigned_projects = bool(project_engineer_dic.get(current_user)) and (
+                            has_assigned_requirement_review_permission(current_role, current_user)
+                        )
+                        if can_edit_requirements() or can_review_all_requirements() or has_assigned_projects:
+                            with ui.card().classes("w-full rounded-xl shadow-sm border border-gray-100 bg-white"):
+                                ui_card_header("需求评审看板", "rate_review", "blue-600")
+                                render_requirement_review_board()
 
                 # =========================================================
                 # 右侧列
                 # =========================================================
                 with ui.column().classes("col-span-12 lg:col-span-6 gap-4"):
-                    # D. 草稿箱 (Drafts)
-                    can_manage_all_drafts = can_manage_all_project_requirement_drafts(
-                        current_role,
-                        current_user,
-                    )
-                    if can_edit_requirements() or can_manage_all_drafts:
-                        with ui.card().classes("w-full rounded-xl shadow-sm border border-gray-100 bg-white"):
-                            ui_card_header("需求草稿箱", "save_as", "amber-600")
+                    if section == "requirement":
+                        # D. 草稿箱 (Drafts)
+                        can_manage_all_drafts = can_manage_all_project_requirement_drafts(
+                            current_role,
+                            current_user,
+                        )
+                        if can_edit_requirements() or can_manage_all_drafts:
+                            with ui.card().classes("w-full rounded-xl shadow-sm border border-gray-100 bg-white"):
+                                ui_card_header("需求草稿箱", "save_as", "amber-600")
 
-                            temp_req_dic = app.storage.general.get("temp_req", {})
-                            drafts = []
-                            for user, project_dic in temp_req_dic.items():
-                                if user == current_user or can_manage_all_drafts:
-                                    for project_name, version_li in project_dic.items():
-                                        for version in version_li:
-                                            saved_timestamp = _get_draft_saved_timestamp(project_name, version, user)
-                                            drafts.append((project_name, version, user, saved_timestamp))
-                            drafts.sort(key=lambda draft: (draft[0], draft[3]), reverse=True)
+                                temp_req_dic = app.storage.general.get("temp_req", {})
+                                drafts = []
+                                for user, project_dic in temp_req_dic.items():
+                                    if user == current_user or can_manage_all_drafts:
+                                        for project_name, version_li in project_dic.items():
+                                            for version in version_li:
+                                                saved_timestamp = _get_draft_saved_timestamp(project_name, version, user)
+                                                drafts.append((project_name, version, user, saved_timestamp))
+                                drafts.sort(key=lambda draft: (draft[0], draft[3]), reverse=True)
 
-                            with ui.scroll_area().classes("h-90 w-full pr-2"):
-                                for project_name, version, user, saved_timestamp in drafts:
-                                    row = ui.element("div").classes(
-                                        "w-full grid grid-cols-[minmax(0,1fr)_auto] items-start sm:items-center "
-                                        "gap-x-3 gap-y-1 py-2 border-b border-gray-100 last:border-0"
-                                    )
-                                    with row:
-                                        saved_time = (
-                                            datetime.fromtimestamp(saved_timestamp).strftime("%Y-%m-%d %H:%M:%S")
-                                            if saved_timestamp != float("-inf")
-                                            else "未知"
+                                with ui.scroll_area().classes("h-90 w-full pr-2"):
+                                    for project_name, version, user, saved_timestamp in drafts:
+                                        row = ui.element("div").classes(
+                                            "w-full grid grid-cols-[minmax(0,1fr)_auto] items-start sm:items-center "
+                                            "gap-x-3 gap-y-1 py-2 border-b border-gray-100 last:border-0"
                                         )
-                                        with ui.element("div").classes(
-                                            "min-w-0 grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_48px_72px_minmax(0,1.25fr)] "
-                                            "sm:items-center gap-x-3 gap-y-1"
-                                        ):
-                                            ui.label(project_name).classes(
-                                                "min-w-0 truncate font-medium text-sm text-gray-700"
-                                            ).tooltip(project_name)
-                                            ui.label(f"V{version}").classes(
-                                                "min-w-0 truncate text-xs text-gray-400"
-                                            ).tooltip(f"V{version}")
-                                            ui.label(user).classes("min-w-0 truncate text-xs text-gray-400").tooltip(
-                                                user
+                                        with row:
+                                            saved_time = (
+                                                datetime.fromtimestamp(saved_timestamp).strftime("%Y-%m-%d %H:%M:%S")
+                                                if saved_timestamp != float("-inf")
+                                                else "未知"
                                             )
-                                            ui.label(f"保存时间：{saved_time}").classes(
-                                                "min-w-0 truncate tabular-nums text-xs text-gray-400"
-                                            ).tooltip(f"保存时间：{saved_time}")
+                                            with ui.element("div").classes(
+                                                "min-w-0 grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_48px_72px_minmax(0,1.25fr)] "
+                                                "sm:items-center gap-x-3 gap-y-1"
+                                            ):
+                                                ui.label(project_name).classes(
+                                                    "min-w-0 truncate font-medium text-sm text-gray-700"
+                                                ).tooltip(project_name)
+                                                ui.label(f"V{version}").classes(
+                                                    "min-w-0 truncate text-xs text-gray-400"
+                                                ).tooltip(f"V{version}")
+                                                ui.label(user).classes(
+                                                    "min-w-0 truncate text-xs text-gray-400"
+                                                ).tooltip(user)
+                                                ui.label(f"保存时间：{saved_time}").classes(
+                                                    "min-w-0 truncate tabular-nums text-xs text-gray-400"
+                                                ).tooltip(f"保存时间：{saved_time}")
 
-                                        with ui.row().classes("shrink-0 self-center gap-1 flex-nowrap justify-end"):
-                                            # 跨用户草稿管理权限只允许查看，草稿本人仍可继续编辑。
-                                            btn_icon = "visibility" if user != current_user else "edit"
-                                            ui.button(
-                                                icon=btn_icon,
-                                                on_click=lambda pn=project_name, v=version, owner=user: get_req_page(
-                                                    pn, v, owner
-                                                ),
-                                            ).props("flat dense size=sm color=amber").tooltip("查看/编辑")
-
-                                            if user == current_user:
+                                            with ui.row().classes("shrink-0 self-center gap-1 flex-nowrap justify-end"):
+                                                # 跨用户草稿管理权限只允许查看，草稿本人仍可继续编辑。
+                                                btn_icon = "visibility" if user != current_user else "edit"
                                                 ui.button(
-                                                    icon="close",
-                                                    color="red",
-                                                    on_click=lambda r=row, pn=project_name, v=version: (
-                                                        dele_temp_req_row(r, pn, v)
+                                                    icon=btn_icon,
+                                                    on_click=lambda pn=project_name, v=version, owner=user: get_req_page(
+                                                        pn, v, owner
                                                     ),
-                                                ).props("flat dense size=sm").tooltip("丢弃草稿")
+                                                ).props("flat dense size=sm color=amber").tooltip("查看/编辑")
 
-                            if not drafts:
-                                ui.label("暂无草稿记录").classes("text-sm text-gray-400 p-2")
-                    with ui.column().classes("w-full gap-0"):
-                        render_overview_requests()
+                                                if user == current_user:
+                                                    ui.button(
+                                                        icon="close",
+                                                        color="red",
+                                                        on_click=lambda r=row, pn=project_name, v=version: (
+                                                            dele_temp_req_row(r, pn, v)
+                                                        ),
+                                                    ).props("flat dense size=sm").tooltip("丢弃草稿")
+
+                                if not drafts:
+                                    ui.label("暂无草稿记录").classes("text-sm text-gray-400 p-2")
+                    else:
+                        with ui.column().classes("w-full gap-0"):
+                            render_overview_requests()
 
     async def reconcile_visible_conversion_reviews() -> None:
         project_summary = app.storage.general.get("project_summary", {})
@@ -3094,7 +3097,24 @@ def information_page():
                     await reconcile_conversion_reviews(str(project_name))
         _refresh_conversion_sections()
 
-    schedule_background_task(
-        reconcile_visible_conversion_reviews(),
-        "校准转产概述职能汇总待办",
-    )
+    if section == "overview":
+        schedule_background_task(
+            reconcile_visible_conversion_reviews(),
+            "校准转产概述职能汇总待办",
+        )
+
+
+@ui.page("/project_overview_todo")
+def project_overview_todo_page() -> None:
+    _render_information_page("overview")
+
+
+@ui.page("/project_requirement_todo")
+def project_requirement_todo_page() -> None:
+    _render_information_page("requirement")
+
+
+@ui.page("/information")
+def information_page() -> None:
+    """兼容旧书签；新入口已拆分到首页的两张独立卡片。"""
+    ui.navigate.to("/main")

@@ -78,6 +78,8 @@ PAGE_MODULE_LABELS = {
     "main": "首页",
     "project_table": "项目资料",
     "information": "项目待办项",
+    "project_overview_todo": "项目概述待办",
+    "project_requirement_todo": "项目需求待办",
     "tool": "分析工具",
     "question_tree_tabs": "需求项结构",
     "print_list": "需求项打印",
