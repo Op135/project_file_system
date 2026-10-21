@@ -18,6 +18,15 @@ from tests.test_error_management_concurrency import load_isolated_db_storage
 
 
 class ECNManagementRecordTests(unittest.TestCase):
+    def test_ecn_lock_message_uses_configured_chinese_overview_title(self):
+        self.assertEqual(
+            overview_storage._format_ecn_lock_message(
+                {"ecn_id": "ECN26101902", "project": "RFFM-1009-A", "label": "light_source"}
+            ),
+            "概述已被ECN方案占用，普通通道不能修改："
+            "ECN26101902 / RFFM-1009-A / 光源选型",
+        )
+
     def test_adjacent_identical_approval_log_is_not_appended_twice(self):
         entry = {
             "user": "张三",
@@ -381,6 +390,14 @@ class ECNOverviewExecutionTests(unittest.IsolatedAsyncioTestCase):
         }
         await self.storage.set_item("ecn_management_data", {ecn_record["ecn_id"]: ecn_record})
 
+        lock_message = await overview_storage.get_ecn_overview_lock_message(
+            "P1", "参数A", "chip-1", storage=self.storage
+        )
+        self.assertEqual(
+            lock_message,
+            "概述已被ECN方案占用，普通通道不能修改：ECN26101701 / P1 / 参数A",
+        )
+
         def normal_edit(current):
             current["content"] = "普通通道修改"
             return current
@@ -404,6 +421,125 @@ class ECNOverviewExecutionTests(unittest.IsolatedAsyncioTestCase):
         )
         stored = await self.storage.get_fresh_item("P1_over_data", {})
         self.assertEqual(stored["参数A"]["chip-1"]["content"], "普通通道修改")
+
+    async def test_editor_precheck_includes_table_row_dependencies(self):
+        value = self.child_record()
+        await self.prepare_execution(value)
+        base = {
+            "id": "base",
+            "row_id": "row-1",
+            "content": "基准",
+            "select_activ_dic": {"1.0": True},
+        }
+        await self.storage.set_item("P1_over_data", {"基准参数": {"base": base}})
+
+        message = await overview_storage.get_ecn_overview_lock_message(
+            "P1", "基准参数", "base", storage=self.storage
+        )
+
+        self.assertEqual(
+            message,
+            "概述已被ECN方案占用，普通通道不能修改：ECN26101703 / P1 / 基准参数",
+        )
+
+    async def test_child_change_locks_target_and_row_anchor_but_not_sibling(self):
+        anchor = {"id": "source", "row_id": "row-1", "content": "白光：5050"}
+        target = {"id": "driver", "row_id": "row-1", "content": "1.73±8%A"}
+        sibling = {"id": "voltage", "row_id": "row-1", "content": "14V@1.73A"}
+        await self.storage.set_item(
+            "P1_over_data",
+            {
+                "光源选型": {"source": anchor},
+                "光源驱动If": {"driver": target},
+                "光源驱动Vf": {"voltage": sibling},
+            },
+        )
+        ecn_record = {
+            "ecn_id": "ECN26101902",
+            "workflow": {"current_state": ECNState.ECN_SCHEMING},
+            "change_items": [
+                {
+                    "item_id": "driver-change",
+                    "type": "overview_update",
+                    "label": "光源驱动If",
+                    "first_col_label": "光源选型",
+                    "execute_status": "pending",
+                    "project_states": {
+                        "P1": {"action": "update", "chip_id": "driver"}
+                    },
+                }
+            ],
+        }
+        await self.storage.set_item("ecn_management_data", {ecn_record["ecn_id"]: ecn_record})
+
+        anchor_message = await overview_storage.get_ecn_overview_lock_message(
+            "P1", "光源选型", "source", storage=self.storage
+        )
+        target_message = await overview_storage.get_ecn_overview_lock_message(
+            "P1", "光源驱动If", "driver", storage=self.storage
+        )
+        sibling_message = await overview_storage.get_ecn_overview_lock_message(
+            "P1", "光源驱动Vf", "voltage", storage=self.storage
+        )
+
+        self.assertIn("ECN26101902 / P1 / 光源驱动If", anchor_message)
+        self.assertIn("ECN26101902 / P1 / 光源驱动If", target_message)
+        self.assertEqual(sibling_message, "")
+        with self.assertRaisesRegex(overview_storage.OverviewWriteError, "ECN方案占用"):
+            await overview_storage.set_deep_item(
+                ["P1_over_data", "光源选型", "source"],
+                {**anchor, "enabled": False},
+                storage=self.storage,
+            )
+        self.assertTrue(
+            await overview_storage.set_deep_item(
+                ["P1_over_data", "光源驱动Vf", "voltage"],
+                {**sibling, "content": "14V@1.70A"},
+                storage=self.storage,
+            )
+        )
+
+    async def test_anchor_change_locks_entire_table_row_only(self):
+        anchor = {"id": "source", "row_id": "row-1", "content": "白光：5050"}
+        sibling = {"id": "driver", "row_id": "row-1", "content": "1.73±8%A"}
+        other_row = {"id": "other", "row_id": "row-2", "content": "0.7A"}
+        await self.storage.set_item(
+            "P1_over_data",
+            {
+                "光源选型": {"source": anchor},
+                "光源驱动If": {"driver": sibling, "other": other_row},
+            },
+        )
+        ecn_record = {
+            "ecn_id": "ECN26101903",
+            "workflow": {"current_state": ECNState.ECN_SCHEMING},
+            "change_items": [
+                {
+                    "item_id": "source-change",
+                    "type": "overview_update",
+                    "label": "光源选型",
+                    "first_col_label": "光源选型",
+                    "execute_status": "pending",
+                    "project_states": {
+                        "P1": {"action": "deactivate", "chip_id": "source"}
+                    },
+                }
+            ],
+        }
+        await self.storage.set_item("ecn_management_data", {ecn_record["ecn_id"]: ecn_record})
+
+        self.assertTrue(
+            await overview_storage.get_ecn_overview_lock_message(
+                "P1", "光源驱动If", "driver", storage=self.storage
+            )
+        )
+        self.assertEqual(
+            await overview_storage.get_ecn_overview_lock_message(
+                "P1", "光源驱动If", "other", storage=self.storage
+            ),
+            "",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

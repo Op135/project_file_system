@@ -10,6 +10,7 @@ import copy
 import inspect
 import json
 from contextvars import ContextVar
+from pathlib import Path
 from typing import Any, Callable
 
 from . import db_storage
@@ -18,6 +19,7 @@ from .modules.ecn.overview_locks import find_changed_ecn_locked_overviews
 
 _DELETE_VALUE = object()
 _last_ecn_lock_message: ContextVar[str] = ContextVar("overview_last_ecn_lock_message", default="")
+_OVERVIEW_CONFIG_PATH = Path(__file__).resolve().parents[1] / "overview_config.json"
 
 
 class OverviewWriteError(RuntimeError):
@@ -34,6 +36,63 @@ def take_ecn_lock_message() -> str:
 def require_write_success(success: bool, default_message: str = "概述数据保存失败，请刷新后重试。") -> None:
     if not success:
         raise OverviewWriteError(take_ecn_lock_message() or default_message)
+
+
+def _overview_label_title(label: str) -> str:
+    """把内部概述 label 转换为配置中的中文名称；配置异常时安全回退。"""
+    try:
+        config = json.loads(_OVERVIEW_CONFIG_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return label
+    if not isinstance(config, dict):
+        return label
+    for groups in config.values():
+        if not isinstance(groups, dict):
+            continue
+        for items in groups.values():
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                if isinstance(item, dict) and str(item.get("label") or "") == label:
+                    return str(item.get("title") or label)
+    return label
+
+
+def _format_ecn_lock_message(conflict: dict[str, str]) -> str:
+    label = str(conflict["label"])
+    return (
+        "概述已被ECN方案占用，普通通道不能修改："
+        f"{conflict['ecn_id']} / {conflict['project']} / {_overview_label_title(label)}"
+    )
+
+
+async def get_ecn_overview_lock_message(
+    project: str,
+    label: str,
+    chip_id: str,
+    *,
+    storage=None,
+) -> str:
+    """在打开编辑界面前检查目标概述是否正被 ECN 占用。
+
+    这是提前反馈用的只读检查；正式写入仍须经过同一事务内的 ECN 门禁。
+    """
+    storage = storage or db_storage
+    top_key = f"{project}_over_data"
+    current = await storage.get_fresh_item(top_key, {})
+    if not isinstance(current, dict):
+        return ""
+    label_data = current.get(label)
+    if not isinstance(label_data, dict) or chip_id not in label_data:
+        return ""
+    changed = copy.deepcopy(current)
+    changed_label = changed.get(label)
+    if not isinstance(changed_label, dict):
+        return ""
+    changed_label.pop(chip_id, None)
+    records = await storage.get_fresh_item("ecn_management_data", {})
+    conflicts = find_changed_ecn_locked_overviews(top_key, current, changed, records)
+    return _format_ecn_lock_message(conflicts[0]) if conflicts else ""
 
 
 async def _load_latest_ecn_records(connection, storage) -> Any:
@@ -108,10 +167,7 @@ async def atomic_deep_update(
             conflicts = find_changed_ecn_locked_overviews(top_key, before, new_top, records)
             if conflicts:
                 conflict = conflicts[0]
-                _last_ecn_lock_message.set(
-                    "概述已被ECN方案占用，普通通道不能修改："
-                    f"{conflict['ecn_id']} / {conflict['project']} / {conflict['label']}"
-                )
+                _last_ecn_lock_message.set(_format_ecn_lock_message(conflict))
                 blocked = True
                 return storage.ATOMIC_NO_UPDATE
         if transaction_effect is not None:

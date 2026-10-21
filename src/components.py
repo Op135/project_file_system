@@ -112,6 +112,27 @@ from .utils import (
 logger = logging.getLogger(__name__)
 
 
+async def _allow_overview_editor_open(project: str, label: str, chip_id: str) -> bool:
+    """编辑入口的 ECN 占用预检；正式写入仍由 overview_storage 原子门禁复核。"""
+    try:
+        message = await overview_storage.get_ecn_overview_lock_message(project, label, chip_id)
+    except Exception:
+        logger.exception("检查概述 ECN 占用状态失败: %s / %s / %s", project, label, chip_id)
+        ui.notify("暂时无法检查该概述的ECN占用状态，请稍后重试。", type="negative")
+        return False
+    if not message:
+        return True
+    ui.notify(
+        f"错误: {message}",
+        type="negative",
+        position="center",
+        timeout=0,
+        progress=False,
+        close_button="✖",
+    )
+    return False
+
+
 class _CorrectionUploadFile(Protocol):
     @property
     def name(self) -> str: ...
@@ -1964,13 +1985,13 @@ class InteractiveButton:
     # 1. 核心状态同步与 UI 刷新逻辑
     # ==========================================================
 
-    def _open_requested_correction(self) -> None:
+    async def _open_requested_correction(self) -> None:
         chip_info = db_storage.get_deep_item(
             [f"{self.project}_over_data", self.label, self.auto_open_correction_chip_id],
             {},
         )
         if chip_info:
-            self.show_change_request_dialog(chip_info)
+            await self.show_change_request_dialog(chip_info)
         else:
             ui.notify("未找到需要继续修改的概述记录，可能已被删除或更新。", type="warning")
         _clear_correction_navigation_query()
@@ -2186,7 +2207,7 @@ class InteractiveButton:
                 remove="text-blue-800 text-green-700 text-red-700 font-bold", add="text-gray-500"
             )
 
-    def show_change_request_dialog(self, chip_info):
+    async def show_change_request_dialog(self, chip_info):
         """提交普通概述的原记录纠错/错误记录删除申请。"""
         self.chip_dialog.clear()
         current_user = str(app.storage.user.get("current_user") or "匿名用户")
@@ -2194,6 +2215,9 @@ class InteractiveButton:
         access_config = {"role": self.role, "label": self.label, "permission": self.permission}
         if not can_edit_overview_item(access_config, current_role, current_user):
             ui.notify("当前角色没有该概述项的纠错申请权限。", type="negative")
+            return
+        chip_id = str(chip_info.get("id") or "")
+        if not await _allow_overview_editor_open(self.project, self.label, chip_id):
             return
         reviewer_roles = get_correction_reviewer_roles(current_role)
         workflow_result = resolve_project_overview_workflow("correction", current_user)
@@ -4376,6 +4400,10 @@ class InteractiveButton:
 
     async def delete_chip_info(self, chip_info):
         if self._edit_permission_judge():
+            if not await _allow_overview_editor_open(
+                self.project, self.label, str(chip_info.get("id") or "")
+            ):
+                return
             if app.storage.user["current_user"] == "admin":
                 # 直接使用 chip_info 获取 ID，杜绝 UI props 报错
                 await overview_storage.del_deep_item([f"{self.project}_over_data", self.label, chip_info["id"]])
@@ -4386,6 +4414,10 @@ class InteractiveButton:
 
     async def clear_thumbnail(self, chip_info):
         if self._edit_permission_judge():
+            if not await _allow_overview_editor_open(
+                self.project, self.label, str(chip_info.get("id") or "")
+            ):
+                return
             if app.storage.user["current_user"] == "admin":
                 # 删除了 thumbnail.delete()，统一由 _refresh_chip_container 去刷新销毁
                 await overview_storage.del_deep_item([f"{self.project}_over_data", self.label, chip_info["id"]])
@@ -5250,7 +5282,7 @@ class OverviewTableGroup:
         elif self.auto_open_add_resubmit:
             ui.timer(0.25, self._open_requested_add_resubmission, once=True)
 
-    def _open_requested_correction(self) -> None:
+    async def _open_requested_correction(self) -> None:
         config = next(
             (item for item in self.configs if str(item.get("label") or "") == self.auto_open_correction_label),
             None,
@@ -5264,7 +5296,7 @@ class OverviewTableGroup:
             {},
         )
         if config and chip_info:
-            self.show_change_request_dialog(chip_info, config)
+            await self.show_change_request_dialog(chip_info, config)
         else:
             ui.notify("未找到需要继续修改的表格概述记录，可能已被删除或更新。", type="warning")
         _clear_correction_navigation_query()
@@ -7143,6 +7175,10 @@ class OverviewTableGroup:
 
     async def delete_chip_info(self, chip_info, config):
         if self._edit_permission_judge(config):
+            if not await _allow_overview_editor_open(
+                self.project, str(config.get("label") or ""), str(chip_info.get("id") or "")
+            ):
+                return
             if app.storage.user["current_user"] == "admin":
                 await overview_storage.del_deep_item([f"{self.project}_over_data", config["label"], chip_info["id"]])
                 OverviewVersionManager.bump(self.project, config["label"])
@@ -7153,6 +7189,10 @@ class OverviewTableGroup:
 
     async def clear_thumbnail(self, chip_info, config):
         if self._edit_permission_judge(config):
+            if not await _allow_overview_editor_open(
+                self.project, str(config.get("label") or ""), str(chip_info.get("id") or "")
+            ):
+                return
             if app.storage.user["current_user"] == "admin":
                 await overview_storage.del_deep_item([f"{self.project}_over_data", config["label"], chip_info["id"]])
                 OverviewVersionManager.bump(self.project, config["label"])
@@ -8709,7 +8749,7 @@ class OverviewTableGroup:
                 remove="text-blue-800 text-green-700 text-red-700 font-bold", add="text-gray-500"
             )
 
-    def show_change_request_dialog(self, chip_info, config):
+    async def show_change_request_dialog(self, chip_info, config):
         """提交表格概述的原记录纠错/错误记录删除申请。"""
         self.chip_dialog.clear()
         current_user = str(app.storage.user.get("current_user") or "匿名用户")
@@ -8717,6 +8757,10 @@ class OverviewTableGroup:
         access_config = {**config, "role": self.role}
         if not can_edit_overview_item(access_config, current_role, current_user):
             ui.notify("当前角色没有该概述项的纠错申请权限。", type="negative")
+            return
+        label = str(config.get("label") or "")
+        chip_id = str(chip_info.get("id") or "")
+        if not await _allow_overview_editor_open(self.project, label, chip_id):
             return
         reviewer_roles = get_correction_reviewer_roles(current_role)
         workflow_result = resolve_project_overview_workflow("correction", current_user)
@@ -8730,8 +8774,6 @@ class OverviewTableGroup:
         workflow_assignment = workflow_result["assignment"]
         reviewer_roles = list(workflow_assignment.get("assignee_names", reviewer_roles))
 
-        label = str(config.get("label") or "")
-        chip_id = str(chip_info.get("id") or "")
         requests = db_storage.get_item(OVERVIEW_CORRECTION_REQUESTS_KEY, {}) or {}
         existing = find_active_correction_for_chip(requests, self.project, label, chip_id)
         existing_rid, existing_req = existing if existing else (None, None)

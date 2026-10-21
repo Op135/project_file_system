@@ -37,6 +37,7 @@ class OverviewECNIntegrationTests(unittest.IsolatedAsyncioTestCase):
         await self.storage.set_item("ecn_management_data", {"ECN-TEST": {
             "ecn_id": "ECN-TEST", "workflow": {"current_state": ECNState.ECN_SCHEMING},
             "change_items": [{"item_id": "item", "type": "overview_update", "label": label,
+                              "first_col_label": "base",
                               "project_states": {"P": {"action": ECN_OVERVIEW_ACTION_UPDATE, "chip_id": chip_id}}}],
         }})
 
@@ -113,17 +114,16 @@ class OverviewECNIntegrationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(saved["child"]["b"][key], child[key])
         self.assertEqual(saved["child"]["other"], data["child"]["other"])
 
-    async def test_promotion_exclusions_do_not_change_locked_excluded_child(self):
+    async def test_promotion_exclusions_do_not_bypass_ecn_anchor_dependency_lock(self):
         before = await self.seed_row(False)
         await self.lock()
         changed, message, _ = await overview_batch_operations.update_overview_chip_state(
             "P", "base", "a", "1.0", True, "测试人员", group_configs=[
                 {"label": "base", "row_state_follow_excluded_labels": ["child"]}, {"label": "child"}],
         )
-        self.assertTrue(changed, message)
-        saved = self.storage.get_item("P_over_data")
-        self.assertEqual(saved["child"], before["child"])
-        self.assertTrue(saved["base"]["a"]["enabled"])
+        self.assertFalse(changed)
+        self.assertIn("ECN", message)
+        self.assertEqual(self.storage.get_item("P_over_data"), before)
 
     async def test_pending_row_promotion_keeps_child_pending_record_open(self):
         await self.seed_row(False)

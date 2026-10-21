@@ -102,7 +102,11 @@ def collect_ecn_overview_locks(records: Any) -> dict[tuple[str, str, str], dict[
                     chip_ids.append(str(uuid.uuid5(uuid.NAMESPACE_URL, f"ecn:{ecn_id}:{item_id}:{project_name}:chip")))
                 for chip_id in chip_ids:
                     if chip_id:
-                        locks[(project_name, label, chip_id)] = {"ecn_id": ecn_id, "item_id": item_id}
+                        locks[(project_name, label, chip_id)] = {
+                            "ecn_id": ecn_id,
+                            "item_id": item_id,
+                            "first_col_label": str(item.get("first_col_label") or label).strip(),
+                        }
     return locks
 
 
@@ -120,6 +124,31 @@ def find_changed_ecn_locked_overviews(
     before_data = before if isinstance(before, dict) else {}
     after_data = after if isinstance(after, dict) else {}
     changed: list[dict[str, str]] = []
+
+    def label_row_contents(data: dict, label: str, row_id: str) -> dict[str, Any]:
+        values = data.get(label, {})
+        if not isinstance(values, dict):
+            return {}
+        return {
+            str(key): chip
+            for key, chip in values.items()
+            if isinstance(chip, dict) and str(chip.get("row_id") or "") == row_id
+        }
+
+    def project_row_contents(data: dict, row_id: str) -> dict[str, dict[str, Any]]:
+        result: dict[str, dict[str, Any]] = {}
+        for row_label, values in data.items():
+            if not isinstance(values, dict):
+                continue
+            matching = {
+                str(key): chip
+                for key, chip in values.items()
+                if isinstance(chip, dict) and str(chip.get("row_id") or "") == row_id
+            }
+            if matching:
+                result[str(row_label)] = matching
+        return result
+
     for (locked_project, label, chip_id), owner in collect_ecn_overview_locks(records).items():
         if locked_project != project:
             continue
@@ -127,7 +156,23 @@ def find_changed_ecn_locked_overviews(
         after_label = after_data.get(label, {})
         before_chip = before_label.get(chip_id) if isinstance(before_label, dict) else None
         after_chip = after_label.get(chip_id) if isinstance(after_label, dict) else None
-        if before_chip != after_chip:
+        dependency_changed = False
+        row_id = str(before_chip.get("row_id") or "") if isinstance(before_chip, dict) else ""
+        first_col_label = str(owner.get("first_col_label") or label)
+        if row_id:
+            if label == first_col_label:
+                # ECN更换/失活基准项会改变整行语义，执行前整行必须保持审核时状态。
+                dependency_changed = (
+                    project_row_contents(before_data, row_id)
+                    != project_row_contents(after_data, row_id)
+                )
+            else:
+                # ECN处理子项只向上保护同行基准项；无关兄弟子项仍可独立维护。
+                dependency_changed = (
+                    label_row_contents(before_data, first_col_label, row_id)
+                    != label_row_contents(after_data, first_col_label, row_id)
+                )
+        if before_chip != after_chip or dependency_changed:
             changed.append(
                 {
                     "project": project,
