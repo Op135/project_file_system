@@ -60,27 +60,27 @@ class SampleOrderCalculationTests(unittest.TestCase):
             "2026-07-20",
         )
 
-    def test_assessment_score_matches_excel_ranges(self):
+    def test_assessment_score_changes_ten_points_per_day_with_limits(self):
         cases = {
             -6: 150,
-            -5: 140,
+            -5: 150,
             -4: 140,
             -3: 130,
-            -1: 130,
-            0: 120,
-            1: 100,
-            3: 100,
-            4: 80,
-            5: 80,
-            6: 60,
-            10: 60,
+            -1: 110,
+            0: 100,
+            1: 90,
+            3: 70,
+            4: 60,
+            5: 50,
+            6: 0,
+            10: 0,
             11: 0,
         }
         for days, expected in cases.items():
             with self.subTest(days=days):
                 self.assertEqual(dashboard.calculate_assessment_score(days), expected)
 
-    def test_primary_delay_uses_original_delivery_date_for_assessment(self):
+    def test_primary_delay_uses_original_planned_date_for_assessment(self):
         record = make_record()
         record["execution"]["actual_delivery_date"] = "2026-07-25"
         record["extensions"] = [
@@ -94,7 +94,7 @@ class SampleOrderCalculationTests(unittest.TestCase):
         ]
         self.assertEqual(dashboard.calculate_assessment_days(record), 5)
 
-    def test_non_primary_latest_delay_uses_latest_target(self):
+    def test_extension_targets_do_not_change_assessment_baseline(self):
         record = make_record()
         record["execution"]["actual_delivery_date"] = "2026-08-05"
         record["extensions"] = [
@@ -120,7 +120,7 @@ class SampleOrderCalculationTests(unittest.TestCase):
                 }
             ),
         ]
-        self.assertEqual(dashboard.calculate_assessment_days(record), 0)
+        self.assertEqual(dashboard.calculate_assessment_days(record), 16)
 
     @patch.object(dashboard, "is_holiday", return_value=False)
     def test_business_days_exclude_weekends(self, _mock_holiday):
@@ -149,7 +149,7 @@ class SampleOrderCalculationTests(unittest.TestCase):
         self.assertEqual(metrics["attention_level"], "completed")
         self.assertEqual(metrics["expected_status"], "按期")
         self.assertEqual(metrics["assessment_days"], -2)
-        self.assertEqual(metrics["assessment_score"], 130)
+        self.assertEqual(metrics["assessment_score"], 120)
         self.assertIsNone(metrics["remaining_workdays"])
         workday_calculator.assert_not_called()
 
@@ -160,6 +160,59 @@ class SampleOrderCalculationTests(unittest.TestCase):
         self.assertEqual(metrics["remaining_workdays"], -1)
         self.assertEqual(metrics["attention_level"], "overdue")
         workday_calculator.assert_not_called()
+
+    def test_average_score_uses_actual_date_range_and_primary_responsibility(self):
+        on_time = make_record()
+        on_time["execution"]["actual_delivery_date"] = "2026-07-20"
+
+        primary_delay = make_record()
+        primary_delay["record_id"] = "record-primary"
+        primary_delay["execution"]["actual_delivery_date"] = "2026-07-25"
+        primary_delay["extensions"] = [
+            dashboard.normalize_extension(
+                {
+                    "target_date": "2026-07-25",
+                    "reason": "排产延误",
+                }
+            )
+        ]
+        primary_delay["delay_nature"]["sample_team_primary"] = True
+
+        non_primary_delay = copy.deepcopy(primary_delay)
+        non_primary_delay["record_id"] = "record-non-primary"
+        non_primary_delay["delay_nature"]["sample_team_primary"] = False
+
+        unjudged_delay = copy.deepcopy(primary_delay)
+        unjudged_delay["record_id"] = "record-unjudged"
+        unjudged_delay["delay_nature"]["sample_team_primary"] = None
+
+        average, count = dashboard.calculate_sample_order_average_score(
+            {
+                "on-time": on_time,
+                "primary": primary_delay,
+                "non-primary": non_primary_delay,
+                "unjudged": unjudged_delay,
+            },
+            start_date="2026-07-20",
+            end_date="2026-07-25",
+        )
+
+        self.assertEqual(average, 75.0)
+        self.assertEqual(count, 2)
+
+    def test_average_score_range_preferences_reject_invalid_values(self):
+        self.assertEqual(
+            dashboard.normalize_sample_order_average_score_range(
+                {"start_date": "2026-07-01", "end_date": "2026-07-31"}
+            ),
+            ("2026-07-01", "2026-07-31"),
+        )
+        self.assertEqual(
+            dashboard.normalize_sample_order_average_score_range(
+                {"start_date": "2026-08-01", "end_date": "2026-07-31"}
+            ),
+            ("", ""),
+        )
 
     def test_in_progress_status_distinguishes_plan_and_current_target(self):
         record = make_record()
@@ -638,6 +691,8 @@ class SampleOrderCalculationTests(unittest.TestCase):
 
         self.assertTrue(dashboard.is_delay_nature_pending(record))
         record["delay_nature"]["tag"] = "内部排产"
+        self.assertTrue(dashboard.is_delay_nature_pending(record))
+        record["delay_nature"]["sample_team_primary"] = False
         self.assertFalse(dashboard.is_delay_nature_pending(record))
 
     def test_delay_nature_catalog_prioritizes_frequently_used_tags(self):
@@ -684,6 +739,7 @@ class SampleOrderCalculationTests(unittest.TestCase):
         tagged = copy.deepcopy(pending)
         tagged["record_id"] = "record-2"
         tagged["delay_nature"]["tag"] = "供应异常"
+        tagged["delay_nature"]["sample_team_primary"] = True
         in_progress = make_record()
         in_progress["record_id"] = "record-3"
         records = {"record-1": pending, "record-2": tagged, "record-3": in_progress}
@@ -1389,13 +1445,18 @@ class SampleOrderAtomicSaveTests(unittest.IsolatedAsyncioTestCase):
                 "经理A",
                 "研发经理",
                 expected_revision=1,
+                sample_team_primary=True,
             )
 
         self.assertTrue(result.changed)
         saved_record = cast(dict[str, Any], saved["record"])
         self.assertEqual(saved_record["delay_nature"]["tag"], "内部排产")
+        self.assertIs(saved_record["delay_nature"]["sample_team_primary"], True)
         self.assertEqual(saved_record["delay_nature"]["marked_by"], "经理A")
         self.assertEqual(len(saved_record["delay_nature"]["history"]), 1)
+        history = saved_record["delay_nature"]["history"][0]
+        self.assertIs(history["sample_team_primary"], True)
+        self.assertIsNone(history["old_sample_team_primary"])
         self.assertEqual(saved_record["_revision"], 2)
         set_version.assert_awaited_once()
 
@@ -1424,10 +1485,45 @@ class SampleOrderAtomicSaveTests(unittest.IsolatedAsyncioTestCase):
                 "经理A",
                 "研发经理",
                 expected_revision=1,
+                sample_team_primary=False,
             )
 
         self.assertFalse(result.changed)
         self.assertEqual(result.code, "revision_conflict")
+
+    async def test_marked_legacy_order_can_add_sample_team_primary_judgment(self):
+        stored = make_record()
+        stored["execution"]["actual_delivery_date"] = "2026-07-25"
+        stored["extensions"] = [
+            dashboard.normalize_extension(
+                {"target_date": "2026-07-25", "reason": "排产调整"}
+            )
+        ]
+        stored["delay_nature"]["tag"] = "内部排产"
+        saved: dict[str, object] = {}
+
+        async def fake_atomic(_namespace, _entity_id, callback):
+            saved["record"] = callback(copy.deepcopy(stored))
+            return True
+
+        with (
+            patch.object(db_storage, "atomic_json_entity_update", side_effect=fake_atomic),
+            patch.object(db_storage, "set_item", new=AsyncMock()),
+        ):
+            result = await dashboard.mark_sample_order_delay_nature(
+                "record-1",
+                "内部排产",
+                "经理A",
+                "研发经理",
+                expected_revision=1,
+                sample_team_primary=False,
+            )
+
+        self.assertTrue(result.changed)
+        saved_record = cast(dict[str, Any], saved["record"])
+        self.assertEqual(saved_record["delay_nature"]["tag"], "内部排产")
+        self.assertIs(saved_record["delay_nature"]["sample_team_primary"], False)
+        self.assertFalse(dashboard.is_delay_nature_pending(saved_record))
 
     async def test_non_manager_cannot_mark_delay_nature(self):
         with patch.object(db_storage, "atomic_json_entity_update", new=AsyncMock()) as atomic_update:
@@ -1437,6 +1533,7 @@ class SampleOrderAtomicSaveTests(unittest.IsolatedAsyncioTestCase):
                 "组长A",
                 "研发样品组长",
                 expected_revision=1,
+                sample_team_primary=True,
             )
 
         self.assertFalse(result.changed)

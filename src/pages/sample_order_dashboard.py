@@ -63,6 +63,7 @@ SAMPLE_ORDER_ENTITY_NAMESPACE = "sample_order_dashboard"
 SAMPLE_ORDER_VERSION_KEY = "sample_order_dashboard_version_stamp"
 SAMPLE_ORDER_OVERDUE_NOTIFICATION_STATE_KEY = "sample_order_overdue_notification_state"
 SAMPLE_ORDER_EXCEL_IMPORT_OWNER = "叶子浩"
+SAMPLE_ORDER_AVERAGE_SCORE_RANGE_PREFERENCE = "sample_order_average_score_range"
 
 logger = logging.getLogger(__name__)
 
@@ -308,6 +309,7 @@ def get_sample_order_template() -> dict:
         },
         "delay_nature": {
             "tag": "",
+            "sample_team_primary": None,
             "marked_by": "",
             "marked_role": "",
             "marked_at": "",
@@ -391,6 +393,10 @@ def merge_with_sample_order_template(raw: object) -> dict:
         special_status["history"] = []
     delay_nature = merged["delay_nature"]
     delay_nature["tag"] = option_text(delay_nature.get("tag"))
+    sample_team_primary = delay_nature.get("sample_team_primary")
+    delay_nature["sample_team_primary"] = (
+        sample_team_primary if isinstance(sample_team_primary, bool) else None
+    )
     if not isinstance(delay_nature.get("history"), list):
         delay_nature["history"] = []
     merged["_revision"] = max(0, normalize_int(merged.get("_revision"), 0))
@@ -711,46 +717,80 @@ def get_record_revision(record: object) -> int:
 
 
 def _calculate_assessment_days_from_data(data: dict) -> Optional[int]:
-    """使用已经标准化的样品单计算考核天数，避免重复深拷贝。"""
+    """按实际交样日期相对原计划交货日期计算自然日差。"""
     basic = data["basic_info"]
     execution = data["execution"]
     actual = parse_iso_date(execution.get("actual_delivery_date"))
     planned = parse_iso_date(basic.get("planned_delivery_date"))
     if actual is None or planned is None:
         return None
-
-    assessment_target = planned
-    for extension in data["extensions"]:
-        target_date = parse_iso_date(extension.get("target_date"))
-        if target_date is not None and "主责" not in option_text(extension.get("reason")):
-            assessment_target = target_date
-    return (actual - assessment_target).days
+    return (actual - planned).days
 
 
 def calculate_assessment_days(record: object) -> Optional[int]:
-    """复刻原 Excel 的责任归属口径，计算实际交付相对考核基准的自然日差。"""
+    """计算实际交样日期与原计划交货日期之间的自然日差。"""
     return _calculate_assessment_days_from_data(merge_with_sample_order_template(record))
 
 
 def calculate_assessment_score(days: Optional[int]) -> Optional[int]:
-    """按原表考核区间把交付天数差换算为分数。"""
+    """按每天10分计算考核分，最高150分，低于50分时归零。"""
     if days is None:
         return None
-    if days < -5:
-        return 150
-    if days < -3:
-        return 140
-    if days < 0:
-        return 130
-    if days == 0:
-        return 120
-    if days <= 3:
-        return 100
-    if days <= 5:
-        return 80
-    if days <= 10:
-        return 60
-    return 0
+    score = min(150, 100 - days * 10)
+    return score if score >= 50 else 0
+
+
+def normalize_sample_order_average_score_range(raw: object) -> tuple[str, str]:
+    """读取并校验平均考核分的实际交样日期范围。"""
+    if not isinstance(raw, dict):
+        return "", ""
+    start_text = option_text(raw.get("start_date"))
+    end_text = option_text(raw.get("end_date"))
+    start_date = parse_iso_date(start_text) if start_text else None
+    end_date = parse_iso_date(end_text) if end_text else None
+    if (start_text and start_date is None) or (end_text and end_date is None):
+        return "", ""
+    if start_date is not None and end_date is not None and start_date > end_date:
+        return "", ""
+    return start_text, end_text
+
+
+def calculate_sample_order_average_score(
+    all_records: object,
+    *,
+    start_date: str = "",
+    end_date: str = "",
+) -> tuple[Optional[float], int]:
+    """按实际交样日期范围汇总主责样品单的平均考核分。"""
+    if not isinstance(all_records, dict):
+        return None, 0
+    start = parse_iso_date(start_date) if start_date else None
+    end = parse_iso_date(end_date) if end_date else None
+    if (start_date and start is None) or (end_date and end is None):
+        return None, 0
+    if start is not None and end is not None and start > end:
+        return None, 0
+
+    scores: list[int] = []
+    for raw_record in all_records.values():
+        if not isinstance(raw_record, dict):
+            continue
+        record = merge_with_sample_order_template(raw_record)
+        actual_date = parse_iso_date(record["execution"].get("actual_delivery_date"))
+        if actual_date is None:
+            continue
+        if start is not None and actual_date < start:
+            continue
+        if end is not None and actual_date > end:
+            continue
+        if record["extensions"] and record["delay_nature"].get("sample_team_primary") is not True:
+            continue
+        score = calculate_sample_order_metrics(record)["assessment_score"]
+        if isinstance(score, int) and not isinstance(score, bool):
+            scores.append(score)
+    if not scores:
+        return None, 0
+    return round(sum(scores) / len(scores), 1), len(scores)
 
 
 def calculate_sample_order_metrics(record: object, today: Optional[date] = None) -> dict:
@@ -848,19 +888,30 @@ def sample_order_is_overdue(record: object, today: Optional[date] = None) -> boo
 
 
 def _is_delay_nature_pending_from_data(data: dict) -> bool:
-    """使用已经标准化的样品单判断是否待标记延期性质。"""
+    """使用已经标准化的样品单判断延期性质或样品组主责是否待判断。"""
     actual_date = parse_iso_date(data["execution"].get("actual_delivery_date"))
+    delay_nature = data["delay_nature"]
     return bool(
         actual_date
         and data["extensions"]
         and data["special_status"].get("status") != "作废"
-        and not option_text(data["delay_nature"].get("tag"))
+        and (
+            not option_text(delay_nature.get("tag"))
+            or not isinstance(delay_nature.get("sample_team_primary"), bool)
+        )
     )
 
 
 def is_delay_nature_pending(record: object) -> bool:
-    """判断订单是否已交付、有延期且尚未由研发经理标记延期性质。"""
+    """判断已交付延期订单是否仍有性质或样品组主责维度待判断。"""
     return _is_delay_nature_pending_from_data(merge_with_sample_order_template(record))
+
+
+def sample_team_primary_display(value: object) -> str:
+    """把样品组主责判断转换为页面展示文本。"""
+    if isinstance(value, bool):
+        return "是" if value else "否"
+    return "未判断"
 
 
 def is_sample_order_pending_for_user(
@@ -1556,8 +1607,9 @@ async def mark_sample_order_delay_nature(
     role: str,
     *,
     expected_revision: int,
+    sample_team_primary: Optional[bool] = None,
 ) -> SampleOrderUpdateResult:
-    """由研发经理原子标记已完成延期订单的标准性质标签。"""
+    """由研发经理原子标记延期性质及是否属于样品组主责。"""
     if not is_sample_order_delay_nature_marker(role, user):
         return SampleOrderUpdateResult(True, False, "forbidden")
     normalized_tag = option_text(nature_tag)
@@ -1565,6 +1617,8 @@ async def mark_sample_order_delay_nature(
         return SampleOrderUpdateResult(True, False, "invalid", {"errors": ["延期性质标签不能为空"]})
     if len(normalized_tag) > 50:
         return SampleOrderUpdateResult(True, False, "invalid", {"errors": ["延期性质标签不能超过50个字符"]})
+    if not isinstance(sample_team_primary, bool):
+        return SampleOrderUpdateResult(True, False, "invalid", {"errors": ["请选择是否属于样品组主责"]})
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     outcome: dict[str, Any] = {"changed": False, "code": "db_error", "record": None}
@@ -1589,7 +1643,8 @@ async def mark_sample_order_delay_nature(
 
         nature = record["delay_nature"]
         old_tag = option_text(nature.get("tag"))
-        if old_tag == normalized_tag:
+        old_sample_team_primary = nature.get("sample_team_primary")
+        if old_tag == normalized_tag and old_sample_team_primary is sample_team_primary:
             outcome["code"] = "no_change"
             outcome["record"] = copy.deepcopy(record)
             return db_storage.ATOMIC_NO_UPDATE
@@ -1597,6 +1652,10 @@ async def mark_sample_order_delay_nature(
             "history_id": uuid.uuid4().hex,
             "old_tag": old_tag,
             "tag": normalized_tag,
+            "old_sample_team_primary": (
+                old_sample_team_primary if isinstance(old_sample_team_primary, bool) else None
+            ),
+            "sample_team_primary": sample_team_primary,
             "marked_by": user,
             "marked_role": role,
             "marked_at": now_str,
@@ -1607,6 +1666,7 @@ async def mark_sample_order_delay_nature(
         nature.update(
             {
                 "tag": normalized_tag,
+                "sample_team_primary": sample_team_primary,
                 "marked_by": user,
                 "marked_role": role,
                 "marked_at": now_str,
@@ -1620,7 +1680,10 @@ async def mark_sample_order_delay_nature(
             {
                 "user": user,
                 "role": role,
-                "action": f"标记延期性质：{normalized_tag}",
+                "action": (
+                    f"标记延期性质：{normalized_tag}；"
+                    f"样品组主责：{sample_team_primary_display(sample_team_primary)}"
+                ),
                 "time": now_str,
             }
         )
@@ -1719,6 +1782,10 @@ def build_sample_order_row(
         "special_status": special_status["status"],
         "special_status_reason": special_status["reason"],
         "delay_nature_tag": delay_nature["tag"],
+        "sample_team_primary": delay_nature["sample_team_primary"],
+        "sample_team_primary_display": sample_team_primary_display(
+            delay_nature.get("sample_team_primary")
+        ),
         "nature_pending": _is_delay_nature_pending_from_data(data),
         "assessment_days": assessment_days if assessment_days is not None else "",
         "assessment_score": assessment_score if assessment_score is not None else "",
@@ -2303,6 +2370,7 @@ async def sample_order_dashboard_page(record_id: str = "", view: str = "") -> No
     can_edit_special_status = is_sample_order_special_status_editor(current_role, current_user)
     can_mark_delay_nature = is_sample_order_delay_nature_marker(current_role, current_user)
     can_delete = is_sample_order_admin(current_role, current_user)
+    can_view_average_score = can_view_sample_order_average_score(current_role, current_user)
     has_assigned_projects = any(
         is_assigned_sample_order_project_engineer(record, current_user)
         for record in get_all_sample_order_records().values()
@@ -2314,11 +2382,25 @@ async def sample_order_dashboard_page(record_id: str = "", view: str = "") -> No
         if option_text(view).lower() == "my_pending" and has_pending_scope
         else DEFAULT_SAMPLE_ORDER_FILTER
     )
+    user_preferences = app.storage.general.get("user_preferences", {})
+    current_user_preferences = (
+        user_preferences.get(current_user, {}) if isinstance(user_preferences, dict) else {}
+    )
+    saved_average_range = (
+        current_user_preferences.get(SAMPLE_ORDER_AVERAGE_SCORE_RANGE_PREFERENCE, {})
+        if isinstance(current_user_preferences, dict)
+        else {}
+    )
+    average_score_start_date, average_score_end_date = normalize_sample_order_average_score_range(
+        saved_average_range
+    )
     page_state: dict[str, object] = {
         "search_keyword": "",
         "filter_state": initial_filter,
         "last_version": db_storage.get_item(SAMPLE_ORDER_VERSION_KEY, 0),
         "kpi_cache_key": None,
+        "average_score_start_date": average_score_start_date,
+        "average_score_end_date": average_score_end_date,
     }
     dashboard_data_cache: dict[str, Any] = {
         "key": None,
@@ -2330,6 +2412,112 @@ async def sample_order_dashboard_page(record_id: str = "", view: str = "") -> No
     statistics_dialog = ui.dialog()
     statistics_detail_dialog = ui.dialog()
     delay_reason_statistics_dialog = ui.dialog()
+    average_score_range_dialog = ui.dialog()
+
+    def save_average_score_range_preference(start_date: str, end_date: str) -> None:
+        """一次性替换用户偏好，持久化平均考核分的日期范围。"""
+        stored_preferences = app.storage.general.get("user_preferences", {})
+        preferences = copy.deepcopy(stored_preferences) if isinstance(stored_preferences, dict) else {}
+        stored_user_preferences = preferences.get(current_user, {})
+        user_preference = (
+            copy.deepcopy(stored_user_preferences) if isinstance(stored_user_preferences, dict) else {}
+        )
+        user_preference[SAMPLE_ORDER_AVERAGE_SCORE_RANGE_PREFERENCE] = {
+            "start_date": start_date,
+            "end_date": end_date,
+        }
+        preferences[current_user] = user_preference
+        app.storage.general["user_preferences"] = preferences
+
+    def open_average_score_range_dialog() -> None:
+        """用独立紧凑弹窗设置平均考核分的实际交样日期范围。"""
+        if not can_view_sample_order_average_score(current_role, current_user):
+            ui.notify(
+                "当前账号没有查看或设置平均考核分的权限",
+                type="negative",
+                position="bottom",
+            )
+            return
+        average_score_range_dialog.clear()
+        with average_score_range_dialog, ui.card().classes("w-[430px] max-w-[94vw] p-4"):
+            with ui.row().classes("w-full items-center justify-between"):
+                with ui.row().classes("items-center gap-2"):
+                    ui.icon("date_range", color="green")
+                    ui.label("平均考核分统计日期").classes("text-lg font-bold")
+                ui.button(icon="close", on_click=average_score_range_dialog.close).props("flat round dense")
+            ui.label("按实际交样日期筛选；留空表示不限制，修改后自动保存。") \
+                .classes("text-xs text-gray-500")
+            save_status = ui.label("").classes("text-xs text-green-600 min-h-4")
+            with ui.row().classes("w-full gap-2"):
+                start_input = (
+                    ui.input(
+                        "开始日期",
+                        value=option_text(page_state.get("average_score_start_date")),
+                    )
+                    .props("type=date dense outlined clearable")
+                    .classes("flex-1")
+                )
+                end_input = (
+                    ui.input(
+                        "结束日期",
+                        value=option_text(page_state.get("average_score_end_date")),
+                    )
+                    .props("type=date dense outlined clearable")
+                    .classes("flex-1")
+                )
+
+            def update_average_score_range(key: str, value: object) -> None:
+                if not can_view_sample_order_average_score(current_role, current_user):
+                    ui.notify(
+                        "当前账号没有查看或设置平均考核分的权限",
+                        type="negative",
+                        position="bottom",
+                    )
+                    average_score_range_dialog.close()
+                    return
+                new_value = option_text(value)
+                parsed_value = parse_iso_date(new_value) if new_value else None
+                if new_value and parsed_value is None:
+                    ui.notify("统计日期格式无效", type="warning", position="bottom")
+                    return
+                candidate_start = (
+                    new_value
+                    if key == "average_score_start_date"
+                    else option_text(page_state.get("average_score_start_date"))
+                )
+                candidate_end = (
+                    new_value
+                    if key == "average_score_end_date"
+                    else option_text(page_state.get("average_score_end_date"))
+                )
+                start = parse_iso_date(candidate_start) if candidate_start else None
+                end = parse_iso_date(candidate_end) if candidate_end else None
+                if start is not None and end is not None and start > end:
+                    ui.notify(
+                        "统计开始日期不能晚于结束日期",
+                        type="warning",
+                        position="bottom",
+                    )
+                    return
+                page_state[key] = new_value
+                save_average_score_range_preference(candidate_start, candidate_end)
+                page_state["kpi_cache_key"] = None
+                refresh_dashboard()
+                save_status.set_text("已自动保存")
+
+            start_input.on_value_change(
+                lambda event: update_average_score_range(
+                    "average_score_start_date",
+                    event.value,
+                )
+            )
+            end_input.on_value_change(
+                lambda event: update_average_score_range(
+                    "average_score_end_date",
+                    event.value,
+                )
+            )
+        average_score_range_dialog.open()
 
     def open_statistics_dialog() -> None:
         """打开可切换计划/实际交样月份口径的订单统计。"""
@@ -3085,19 +3273,30 @@ async def sample_order_dashboard_page(record_id: str = "", view: str = "") -> No
                             ui.icon("sell", color="red")
                             ui.label("延期性质标记 · 研发经理维护").classes("text-lg font-bold")
                         current_nature_tag = option_text(delay_nature.get("tag"))
+                        current_sample_team_primary = delay_nature.get("sample_team_primary")
                         if current_nature_tag:
                             ui.badge(current_nature_tag, color="green").props("outline")
-                        elif is_delay_nature_pending(local_data):
+                        if isinstance(current_sample_team_primary, bool):
+                            ui.badge(
+                                f"样品组主责：{sample_team_primary_display(current_sample_team_primary)}",
+                                color="purple" if current_sample_team_primary else "blue",
+                            ).props("outline")
+                        if is_delay_nature_pending(local_data):
                             ui.badge("待标记", color="red")
                     ui.label(
-                        "订单实际交付后，对样品组长填写的原始延期原因补充标准性质标签；历史标签会优先列出。"
+                        "订单实际交付后，对原始延期原因补充标准性质标签，并判断是否属于样品组主责；"
+                        "历史标签会优先列出。"
                     ).classes("text-sm text-red-700 mb-3")
                     nature_applicable = bool(
                         parse_iso_date(execution.get("actual_delivery_date"))
                         and extensions
                         and special_status.get("status") != "作废"
                     )
-                    nature_state = {"selected": current_nature_tag, "custom": ""}
+                    nature_state: dict[str, object] = {
+                        "selected": current_nature_tag,
+                        "custom": "",
+                        "sample_team_primary": current_sample_team_primary,
+                    }
                     if not nature_applicable:
                         ui.label("订单完成且存在延期记录后才需要标记。").classes("text-sm text-gray-500")
                     elif can_mark_delay_nature:
@@ -3127,11 +3326,36 @@ async def sample_order_dashboard_page(record_id: str = "", view: str = "") -> No
                                 nature_state["custom"] = option_text(event.value)
 
                             new_nature_input.on_value_change(set_custom_nature)
+                            primary_select = (
+                                ui.select(
+                                    ["是", "否"],
+                                    label="是否属于样品组主责",
+                                    value=(
+                                        sample_team_primary_display(current_sample_team_primary)
+                                        if isinstance(current_sample_team_primary, bool)
+                                        else None
+                                    ),
+                                )
+                                .props("outlined dense")
+                                .classes("w-full")
+                            )
+
+                            def set_sample_team_primary(event: Any) -> None:
+                                selected = option_text(event.value)
+                                nature_state["sample_team_primary"] = (
+                                    selected == "是" if selected in {"是", "否"} else None
+                                )
+
+                            primary_select.on_value_change(set_sample_team_primary)
 
                         async def save_delay_nature() -> None:
                             tag = option_text(nature_state.get("custom")) or option_text(nature_state.get("selected"))
                             if not tag:
                                 ui.notify("请选择已有标签或输入新标签", type="warning", position="bottom")
+                                return
+                            sample_team_primary = nature_state.get("sample_team_primary")
+                            if not isinstance(sample_team_primary, bool):
+                                ui.notify("请选择是否属于样品组主责", type="warning", position="bottom")
                                 return
                             result = await mark_sample_order_delay_nature(
                                 local_data["record_id"],
@@ -3139,10 +3363,16 @@ async def sample_order_dashboard_page(record_id: str = "", view: str = "") -> No
                                 current_user,
                                 current_role,
                                 expected_revision=get_record_revision(local_data),
+                                sample_team_primary=sample_team_primary,
                             )
                             if result.changed:
                                 detail_dialog.close()
-                                ui.notify(f"延期性质已标记为：{tag}", type="positive", position="bottom")
+                                ui.notify(
+                                    f"延期性质已标记为：{tag}；样品组主责："
+                                    f"{sample_team_primary_display(sample_team_primary)}",
+                                    type="positive",
+                                    position="bottom",
+                                )
                                 refresh_dashboard()
                             elif result.code == "revision_conflict":
                                 ui.notify("记录已被其他人更新，请关闭后重新打开", type="warning", position="bottom")
@@ -3166,7 +3396,9 @@ async def sample_order_dashboard_page(record_id: str = "", view: str = "") -> No
                                     ui.label(
                                         f"{history_item.get('marked_at', '')} · "
                                         f"{history_item.get('old_tag', '') or '未标记'} → "
-                                        f"{history_item.get('tag', '')} · {history_item.get('marked_by', '')}"
+                                        f"{history_item.get('tag', '')} · 样品组主责："
+                                        f"{sample_team_primary_display(history_item.get('sample_team_primary'))} · "
+                                        f"{history_item.get('marked_by', '')}"
                                     ).classes("text-sm text-gray-600")
 
                 if local_data.get("operation_log"):
@@ -3426,15 +3658,27 @@ async def sample_order_dashboard_page(record_id: str = "", view: str = "") -> No
                 sample_order_grid.options["rowData"] = grid_rows
                 sample_order_grid.update()
 
-                if page_state.get("kpi_cache_key") == calculation_key:
+                average_start_date = option_text(page_state.get("average_score_start_date"))
+                average_end_date = option_text(page_state.get("average_score_end_date"))
+                kpi_calculation_key = (
+                    calculation_key,
+                    average_start_date,
+                    average_end_date,
+                )
+                if page_state.get("kpi_cache_key") == kpi_calculation_key:
                     return
 
-                metrics_list = [metrics for _, metrics in records_with_metrics]
                 total_count = len(valid_records)
-                scores = [
-                    item["assessment_score"] for item in metrics_list if isinstance(item.get("assessment_score"), int)
-                ]
-                average_score = round(sum(scores) / len(scores), 1) if scores else "--"
+                average_records = {
+                    option_text(record.get("record_id")) or str(index): record
+                    for index, record in enumerate(valid_records)
+                }
+                average_score_value, average_score_count = calculate_sample_order_average_score(
+                    average_records,
+                    start_date=average_start_date,
+                    end_date=average_end_date,
+                )
+                average_score: object = average_score_value if average_score_value is not None else "--"
 
                 def kpi_records(label: str) -> list[dict]:
                     """收集统计卡片对应的订单，用于生成悬停明细。"""
@@ -3458,22 +3702,31 @@ async def sample_order_dashboard_page(record_id: str = "", view: str = "") -> No
                 if can_mark_delay_nature:
                     pending_records = kpi_records("待性质标记")
                     kpi_items.append(("待性质标记", len(pending_records), "sell", "red", pending_records))
-                if can_view_sample_order_average_score(current_role, current_user):
-                    # score_records = kpi_records("平均考核分")
+                if can_view_average_score:
                     kpi_items.append(("平均考核分", average_score, "military_tech", "green", None))
                 kpi_container.clear()
                 with kpi_container:
                     for label, value, icon, color, detail_records in kpi_items:
                         with (
                             ui.card()
-                            .classes("flex-1 min-w-40 p-3 shadow-sm border-l-4")
+                            .classes("flex-1 min-w-40 h-[74px] p-3 shadow-sm border-l-4")
                             .style(f"border-left-color: var(--q-{color})")
                         ):
                             with ui.row().classes("w-full justify-between items-center"):
                                 with ui.column().classes("gap-0"):
                                     ui.label(label).classes("text-xs text-gray-500")
                                     ui.label(str(value)).classes("text-2xl font-bold text-gray-800")
-                                ui.icon(icon, color=color, size="md")
+                                if label == "平均考核分" and can_view_average_score:
+                                    with ui.button(
+                                        icon="date_range",
+                                        on_click=open_average_score_range_dialog,
+                                    ).props("flat round dense color=green"):
+                                        ui.tooltip(
+                                            f"统计范围：{average_start_date or '不限'} 至 "
+                                            f"{average_end_date or '不限'}；纳入 {average_score_count} 张订单"
+                                        )
+                                else:
+                                    ui.icon(icon, color=color, size="md")
                             if detail_records is not None:
                                 with ui.tooltip().classes(
                                     "bg-slate-800/80 text-white p-3 max-w-3xl max-h-[70vh] overflow-y-auto"
@@ -3493,7 +3746,7 @@ async def sample_order_dashboard_page(record_id: str = "", view: str = "") -> No
                                         )
                                     else:
                                         ui.label("暂无对应订单").classes("text-xs")
-                page_state["kpi_cache_key"] = calculation_key
+                page_state["kpi_cache_key"] = kpi_calculation_key
 
             async def refresh_if_version_changed() -> None:
                 latest_version = await db_storage.get_fresh_item(SAMPLE_ORDER_VERSION_KEY, 0)
