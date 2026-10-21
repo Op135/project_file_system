@@ -27,7 +27,8 @@ from ..project_requirement_access import (
     has_assigned_requirement_review_permission,
 )
 from ..project_todo_access import (
-    can_view_project_todo,
+    can_view_project_overview_todo,
+    can_view_project_requirement_todo,
     get_actionable_overview_urgent_projects,
     get_requirement_todo_keys_by_state,
 )
@@ -216,8 +217,13 @@ def main_page():
             current_user,
         ):
             continue
-        # 项目待办使用独立稳定入口权限，内部内容继续按各业务权限和具体责任过滤。
-        elif items[3] in {"/project_overview_todo", "/project_requirement_todo"} and not can_view_project_todo(
+        # 两类项目待办分别使用稳定入口权限，内部内容继续按业务权限和具体责任过滤。
+        elif items[3] == "/project_overview_todo" and not can_view_project_overview_todo(
+            current_role,
+            current_user,
+        ):
+            continue
+        elif items[3] == "/project_requirement_todo" and not can_view_project_requirement_todo(
             current_role,
             current_user,
         ):

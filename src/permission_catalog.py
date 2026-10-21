@@ -121,6 +121,7 @@ PROJECT_REQUIREMENT_REVIEW_ASSIGNED_PERMISSION = "project_requirement.review.ass
 PROJECT_REQUIREMENT_REVIEW_ALL_PERMISSION = "project_requirement.review.all"
 PROJECT_REQUIREMENT_REVOKE_PERMISSION = "project_requirement.approval.revoke"
 PROJECT_REQUIREMENT_DRAFT_MANAGE_ALL_PERMISSION = "project_requirement.draft.manage_all"
+PROJECT_REQUIREMENT_TODO_VIEW_PERMISSION = "project_requirement.todo.view"
 
 
 PROJECT_REQUIREMENT_PERMISSIONS = (
@@ -160,6 +161,12 @@ PROJECT_REQUIREMENT_PERMISSIONS = (
         "项目需求配置",
         "允许在项目待办页查看其他用户的需求草稿；草稿仍只能由创建人删除",
     ),
+    PermissionDefinition(
+        PROJECT_REQUIREMENT_TODO_VIEW_PERMISSION,
+        "查看 — 项目需求待办",
+        "项目待办",
+        "允许从主页进入项目需求待办；具体需求、评审和草稿内容仍按各自业务权限过滤",
+    ),
 )
 
 
@@ -169,9 +176,9 @@ PROJECT_TODO_VIEW_PERMISSION = "project_todo.view"
 PROJECT_TODO_PERMISSIONS = (
     PermissionDefinition(
         PROJECT_TODO_VIEW_PERMISSION,
-        "查看 — 项目待办工作台",
+        "查看 — 项目概述待办",
         "项目待办",
-        "允许从主页进入项目待办工作台；具体需求、概述和审批内容仍按各自业务权限过滤",
+        "允许从主页进入项目概述待办；具体概述和审批内容仍按各自业务权限过滤",
     ),
 )
 

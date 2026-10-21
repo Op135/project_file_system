@@ -64,6 +64,7 @@ from src.permission_catalog import (
     PROJECT_REQUIREMENT_REVIEW_ALL_PERMISSION,
     PROJECT_REQUIREMENT_REVIEW_ASSIGNED_PERMISSION,
     PROJECT_REQUIREMENT_REVOKE_PERMISSION,
+    PROJECT_REQUIREMENT_TODO_VIEW_PERMISSION,
     PROJECT_REQUIREMENT_VIEW_PERMISSION,
     PROJECT_TODO_VIEW_PERMISSION,
     PROJECT_TEST_SUMMARY_VIEW_PERMISSION,
@@ -88,6 +89,7 @@ from src.permission_catalog import (
     project_overview_item_permission,
     project_overview_dimension_permission,
     project_overview_permission_definitions,
+    permission_catalog_rows,
 )
 from src.pages.project_table import (
     can_manage_project_records,
@@ -109,6 +111,8 @@ from src.project_requirement_access import (
     can_view_project_requirement,
 )
 from src.project_todo_access import (
+    can_view_project_overview_todo,
+    can_view_project_requirement_todo,
     can_view_project_todo,
     filter_actionable_overview_pending,
     get_actionable_overview_urgent_projects,
@@ -437,8 +441,8 @@ class AccessControlTests(unittest.TestCase):
             can_manage_overview_owners("普通岗位", "张三", user_service=self.service)
         )
 
-    def test_project_todo_database_mode_requires_stable_entry_permission(self):
-        """数据库模式不得因岗位名称碰巧包含旧关键词而开放项目待办。"""
+    def test_project_todo_database_mode_uses_independent_entry_permissions(self):
+        """数据库模式分别校验概述与需求待办入口，不按岗位名称或另一入口权限放行。"""
         org_unit_id = self.service.save_org_unit(code="org.todo", name="待办测试部")
         position_id = self.service.save_position(code="todo.viewer", name="研发待办查看岗位")
         self.service.set_primary_membership(
@@ -447,13 +451,32 @@ class AccessControlTests(unittest.TestCase):
             position_id=position_id,
         )
 
-        self.assertFalse(can_view_project_todo("研发经理", "张三", user_service=self.service))
+        self.assertFalse(can_view_project_overview_todo("研发经理", "张三", user_service=self.service))
+        self.assertFalse(can_view_project_requirement_todo("销售", "张三", user_service=self.service))
         self.service.set_position_permissions(
             position_id,
             [PROJECT_TODO_VIEW_PERMISSION],
             actor_username="admin",
         )
+        self.assertTrue(can_view_project_overview_todo("普通岗位", "张三", user_service=self.service))
         self.assertTrue(can_view_project_todo("普通岗位", "张三", user_service=self.service))
+        self.assertFalse(can_view_project_requirement_todo("普通岗位", "张三", user_service=self.service))
+
+        self.service.set_position_permissions(
+            position_id,
+            [PROJECT_REQUIREMENT_TODO_VIEW_PERMISSION],
+            actor_username="admin",
+        )
+        self.assertFalse(can_view_project_overview_todo("普通岗位", "张三", user_service=self.service))
+        self.assertTrue(can_view_project_requirement_todo("普通岗位", "张三", user_service=self.service))
+
+    def test_requirement_todo_permission_is_grouped_with_project_todo(self):
+        permission = next(
+            item
+            for item in permission_catalog_rows(strict_overview=False)
+            if item["code"] == PROJECT_REQUIREMENT_TODO_VIEW_PERMISSION
+        )
+        self.assertEqual(permission["module"], "项目待办")
 
     def test_project_todo_only_keeps_actionable_overview_labels(self):
         """个人概述待办只显示本人有维护权限的 label，首页不按旧角色隐藏。"""

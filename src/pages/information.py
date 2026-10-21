@@ -78,7 +78,8 @@ from ..project_requirement_access import (
     has_assigned_requirement_review_permission,
 )
 from ..project_todo_access import (
-    can_view_project_todo,
+    can_view_project_overview_todo,
+    can_view_project_requirement_todo,
     filter_actionable_overview_pending,
     get_default_requirement_review_state,
     get_requirement_todo_keys_by_state,
@@ -400,8 +401,14 @@ def _render_information_page(section: str) -> None:
     conversion_review_dialog = ui.dialog().props("persistent")
     current_user = stored_current_user
     current_role = sync_current_user_role()
-    if not can_view_project_todo(current_role, current_user):
-        ui.notify("当前账号没有查看项目待办工作台的权限", type="negative")
+    can_view_section = (
+        can_view_project_overview_todo(current_role, current_user)
+        if section == "overview"
+        else can_view_project_requirement_todo(current_role, current_user)
+    )
+    if not can_view_section:
+        section_name = "项目概述待办" if section == "overview" else "项目需求待办"
+        ui.notify(f"当前账号没有查看{section_name}的权限", type="negative")
         ui.navigate.to("/main")
         return
 

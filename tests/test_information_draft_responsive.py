@@ -45,6 +45,8 @@ class InformationSplitTests(unittest.TestCase):
 
     def test_requirement_only_actions_stay_out_of_overview_page(self):
         source = INFORMATION_PATH.read_text(encoding="utf-8")
+        self.assertIn("can_view_project_overview_todo(current_role, current_user)", source)
+        self.assertIn("can_view_project_requirement_todo(current_role, current_user)", source)
         self.assertIn(
             'if section == "requirement" and can_revoke_project_requirement_approval',
             source,
@@ -69,6 +71,8 @@ class InformationSplitTests(unittest.TestCase):
         self.assertIn('if target == "/project_overview_todo":', source)
         self.assertIn('elif target == "/project_requirement_todo":', source)
         self.assertIn("pending_count = len(requirement_pending_keys)", source)
+        self.assertIn('items[3] == "/project_overview_todo" and not can_view_project_overview_todo', source)
+        self.assertIn('items[3] == "/project_requirement_todo" and not can_view_project_requirement_todo', source)
 
 
 if __name__ == "__main__":

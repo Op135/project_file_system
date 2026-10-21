@@ -8,7 +8,10 @@ from nicegui import app
 
 from .access_control import can
 from .overview_warning import get_urgent_overview_projects
-from .permission_catalog import PROJECT_TODO_VIEW_PERMISSION
+from .permission_catalog import (
+    PROJECT_REQUIREMENT_TODO_VIEW_PERMISSION,
+    PROJECT_TODO_VIEW_PERMISSION,
+)
 from .project_overview_access import can_edit_overview_item
 
 
@@ -19,8 +22,8 @@ def _service(user_service=None):
     return user_service or getattr(app.state, "user_service", None)
 
 
-def can_view_project_todo(current_role: object, current_user: str, *, user_service=None) -> bool:
-    """判断用户能否进入项目待办工作台。"""
+def can_view_project_overview_todo(current_role: object, current_user: str, *, user_service=None) -> bool:
+    """判断用户能否进入项目概述待办。"""
     role = str(current_role or "")
     legacy_allowed = any(keyword in role for keyword in PROJECT_TODO_LEGACY_VIEW_KEYWORDS)
     return can(
@@ -29,6 +32,28 @@ def can_view_project_todo(current_role: object, current_user: str, *, user_servi
         PROJECT_TODO_VIEW_PERMISSION,
         legacy_role=role,
         legacy_allowed_roles=(role,) if legacy_allowed else (),
+    )
+
+
+def can_view_project_requirement_todo(current_role: object, current_user: str, *, user_service=None) -> bool:
+    """判断用户能否进入项目需求待办。"""
+    role = str(current_role or "")
+    legacy_allowed = any(keyword in role for keyword in PROJECT_TODO_LEGACY_VIEW_KEYWORDS)
+    return can(
+        _service(user_service),
+        current_user,
+        PROJECT_REQUIREMENT_TODO_VIEW_PERMISSION,
+        legacy_role=role,
+        legacy_allowed_roles=(role,) if legacy_allowed else (),
+    )
+
+
+def can_view_project_todo(current_role: object, current_user: str, *, user_service=None) -> bool:
+    """兼容旧调用；原项目待办权限现在仅代表项目概述待办。"""
+    return can_view_project_overview_todo(
+        current_role,
+        current_user,
+        user_service=user_service,
     )
 
 
