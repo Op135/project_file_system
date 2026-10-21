@@ -15,7 +15,9 @@ from nicegui import app, run, ui
 from ..access_control import can_use_tool
 from .optical_curve_manager import (
     RELATIVE_SPD_Y_AXIS_NAME,
+    _clipboard_click_handler,
     _curve_legend_label,
+    _select_textarea_script,
     get_optical_curve_records,
 )
 
@@ -707,6 +709,18 @@ def _spectrum_input_from_result(result: MixingSpectrumResult) -> SpectrumInput:
         zero_outside_range=(
             result.zero_outside_range if isinstance(result, SpectrumResult) else False
         ),
+    )
+
+
+def _spectrum_data_text(result: SpectrumResult, *, normalized: bool) -> str:
+    """生成可粘贴到 Excel 的波长/光谱值两列文本。"""
+
+    values = result.normalized_values if normalized else result.values
+    if len(result.wavelengths) != len(values):
+        return ""
+    return "\n".join(
+        f"{wavelength:.12g}\t{value:.12g}"
+        for wavelength, value in zip(result.wavelengths, values)
     )
 
 
@@ -1506,6 +1520,70 @@ class SpectralAnalyzerTool:
                 )
             ).classes("w-full h-[calc(100vh-545px)] min-h-[480px]")
 
+        def render_spectrum_copy_button(
+            result: SpectrumResult,
+            *,
+            normalized: bool,
+            button_label: str,
+        ) -> None:
+            """渲染单条光谱的复制按钮及自动复制失败时的手动兜底。"""
+
+            value_label = "峰值归一化值" if normalized else "原始值"
+            data_text = _spectrum_data_text(result, normalized=normalized)
+            with ui.dialog() as manual_copy_dialog, ui.card().classes(
+                "p-4 gap-3 max-w-[92vw]"
+            ):
+                ui.label(f"复制“{result.name}”数据").classes(
+                    "text-base font-bold text-slate-800"
+                )
+                ui.label(
+                    "当前浏览器不允许网页自动写入剪贴板。"
+                    "下方数据已全选，请按 Ctrl+C 复制。"
+                ).classes("text-sm text-slate-600")
+                manual_textarea = ui.textarea(
+                    label=f"波长 / {value_label}",
+                    value=data_text,
+                ).props("outlined readonly rows=16").classes(
+                    "w-[min(48rem,82vw)] font-mono"
+                )
+                with ui.row().classes("w-full justify-end gap-2"):
+                    select_button = ui.button("重新全选", icon="select_all").props(
+                        "outline color=blue-8"
+                    )
+                    select_button.on(
+                        "click",
+                        js_handler=f"() => {{{_select_textarea_script(manual_textarea.id)}}}",
+                    )
+                    ui.button("关闭", on_click=manual_copy_dialog.close).props(
+                        "flat color=grey-7"
+                    )
+
+            def report_copy_result(event: Any) -> None:
+                copy_result = event.args if isinstance(event.args, dict) else {}
+                if copy_result.get("reason") == "empty":
+                    ui.notify("目标混合光谱没有可复制的完整数据", type="warning")
+                    return
+                if copy_result.get("ok") is True:
+                    ui.notify(f"已复制目标混合光谱的 {len(result.wavelengths)} 个数据点")
+                    return
+                manual_copy_dialog.open()
+                ui.run_javascript(_select_textarea_script(manual_textarea.id, delay_ms=150))
+                message = (
+                    "当前为内网 HTTP，数据已全选，请按 Ctrl+C"
+                    if copy_result.get("reason") == "insecure"
+                    else "浏览器阻止了自动复制，数据已全选，请按 Ctrl+C"
+                )
+                ui.notify(message, type="warning")
+
+            copy_button = ui.button(button_label, icon="content_copy").props(
+                "outline dense no-caps color=blue-8"
+            ).tooltip(f"复制目标混合光谱的波长/{value_label}两列数据")
+            copy_button.on(
+                "click",
+                report_copy_result,
+                js_handler=_clipboard_click_handler(data_text),
+            )
+
         def analysis_chromaticity_options(coordinate_system: str) -> dict[str, Any]:
             """按当前分析状态生成一张色度图配置。"""
 
@@ -2274,6 +2352,8 @@ class SpectralAnalyzerTool:
                     with ui.card().classes("w-full p-1 gap-0 bg-slate-50 shadow-none border"):
                         ui.label(label).classes("text-xs text-slate-500")
                         ui.label(value).classes("text-base font-bold text-slate-800")
+            for warning in result.warnings:
+                ui.label(warning).classes("w-full text-xs text-amber-700")
 
             if bool(self.mixing_state.get("target_cri_enabled", False)):
                 actual_cri = {
@@ -2400,7 +2480,14 @@ class SpectralAnalyzerTool:
                         )
                     )
                 with ui.card().classes("w-full h-full col-span-2 p-2 rounded-xl shadow-sm min-h-0"):
-                    ui.label("实时光谱").classes("text-lg font-bold text-slate-800")
+                    with ui.row().classes("w-full items-center justify-between gap-2"):
+                        ui.label("实时光谱").classes("text-lg font-bold text-slate-800")
+                        if self.mixing_solution is not None:
+                            render_spectrum_copy_button(
+                                self.mixing_solution.result,
+                                normalized=True,
+                                button_label="复制目标混合光谱",
+                            )
                     ui.echart(
                         _spectrum_chart_options(
                             plot_results,
@@ -2603,6 +2690,7 @@ class SpectralAnalyzerTool:
                     source_inputs,
                     final_source_coefficients,
                     power_limits,
+                    name="目标混合光谱",
                 )
             except SpectralAnalysisError as exc:
                 if generation != mixing_solve_generation:
@@ -2625,7 +2713,14 @@ class SpectralAnalyzerTool:
                 return
             if generation != mixing_solve_generation:
                 return
-            self.mixing_solution = solution
+            # 最终指标、实时曲线、复制数据和功率必须来自同一条展开到全部原始
+            # 光谱后的 SPD。尤其存在前级混合节点时，不能继续展示活动节点解中
+            # 携带的旧显指结果。
+            self.mixing_solution = ThreeSpectrumMixSolution(
+                result=power_result.spectrum_result,
+                peak_ratios=solution.peak_ratios,
+                luminous_flux=solution.luminous_flux,
+            )
             self.mixing_power_result = power_result
             mixing_solve_pending = False
             mixing_solve_error = ""

@@ -318,6 +318,11 @@ class SpectralCalculationTests(unittest.TestCase):
         self.assertGreater(power_result.luminous_flux, 0)
         self.assertGreater(power_result.luminous_efficacy, 0)
         self.assertLessEqual(power_result.luminous_efficacy, 683)
+        self.assertGreater(power_result.spectrum_result.XYZ[1], 0)
+        self.assertAlmostEqual(
+            max(power_result.spectrum_result.normalized_values),
+            1.0,
+        )
         self.assertLessEqual(power_result.source_powers[0], 1.0 + 1e-9)
         self.assertLessEqual(power_result.source_powers[1], 0.4 + 1e-9)
         self.assertTrue(power_result.limiting_source_indices)

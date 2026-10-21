@@ -43,6 +43,7 @@ from src.tools.spectral_analyzer import (  # noqa: E402
     _sdcm_orders,
     _spectrum_group_key,
     _spectrum_chart_options,
+    _spectrum_data_text,
     _spectrum_reference_options,
     _spectrum_summary_rows,
 )
@@ -209,6 +210,19 @@ class SpectralAnalyzerOptionsTests(unittest.TestCase):
         self.assertTrue(hidden["legend"]["selected"][self.spectra[1].name])
         self.assertEqual(hidden["legend"]["type"], "scroll")
         self.assertLess(hidden["grid"]["top"], normalized["grid"]["top"])
+
+    def test_spectrum_copy_text_tracks_current_display_mode(self):
+        result = self.spectra[0]
+        original_rows = _spectrum_data_text(result, normalized=False).splitlines()
+        normalized_rows = _spectrum_data_text(result, normalized=True).splitlines()
+        self.assertEqual(len(original_rows), len(result.wavelengths))
+        self.assertEqual(len(normalized_rows), len(result.wavelengths))
+        self.assertEqual(original_rows[0].split("\t")[0], f"{result.wavelengths[0]:.12g}")
+        self.assertAlmostEqual(
+            max(float(row.split("\t")[1]) for row in normalized_rows),
+            1.0,
+        )
+        self.assertNotEqual(original_rows, normalized_rows)
 
     def test_cri_values_are_exposed_as_rows_instead_of_bar_series(self):
         rows = _cri_value_rows(self.spectra)

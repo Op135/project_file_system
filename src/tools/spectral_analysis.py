@@ -162,6 +162,7 @@ class ThreeSpectrumMixSolution:
 class PowerLimitedMixResult:
     """按原始光谱功率上限缩放后的绝对混光结果。"""
 
+    spectrum_result: SpectrumResult
     radiant_power: float
     luminous_flux: float
     luminous_efficacy: float
@@ -920,12 +921,20 @@ def calculate_power_limited_mix(
     luminous_flux = float(colour_module.luminous_flux(mixed_sd))
     if not math.isfinite(luminous_flux) or luminous_flux < 0:
         raise SpectralAnalysisError("混合光谱无法得到有效的光通量")
+    spectrum_result = analyze_spectrum(
+        SpectrumInput(
+            name=name,
+            wavelengths=tuple(float(value) for value in calculation_grid),
+            values=tuple(float(value) for value in mixed_values),
+        )
+    )
     limiting_source_indices = tuple(
         int(index)
         for index, (power, limit, active) in enumerate(zip(source_powers, limits, active_mask))
         if active and math.isclose(float(power), float(limit), rel_tol=1e-7, abs_tol=1e-10)
     )
     return PowerLimitedMixResult(
+        spectrum_result=spectrum_result,
         radiant_power=radiant_power,
         luminous_flux=luminous_flux,
         luminous_efficacy=luminous_flux / radiant_power,

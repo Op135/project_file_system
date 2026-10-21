@@ -4,6 +4,7 @@ logs/
 files/
 over/
 req/
+docs/
 data/*
 !data/zemax_operands.json
 .nicegui/
