@@ -45,11 +45,17 @@ def open_scheme_assignment_dialog(
     candidates = get_scheme_writer_candidates(service)
     workflow = local_data.get("workflow", {})
     workflow = workflow if isinstance(workflow, dict) else {}
-    current = workflow.get("scheme_assignees", [])
+    current_value = workflow.get("scheme_assignees", [])
+    current = current_value if isinstance(current_value, list) else []
+    scheme_authors = {
+        str(item.get("author") or "").strip()
+        for item in local_data.get("change_items", [])
+        if isinstance(item, dict) and str(item.get("author") or "").strip()
+    }
     selected = [
         str(name)
         for name in current
-        if isinstance(current, list) and str(name) in candidates
+        if str(name) in candidates
     ]
     expected = copy.deepcopy(local_data)
 
@@ -59,6 +65,16 @@ def open_scheme_assignment_dialog(
             "被指定人员会进入方案参与状态，并按现有ECN待办机制收到企业微信提醒；"
             "只有在职且具备ECN查看和方案编写权限的人员可选。"
         ).classes("text-xs text-slate-500")
+        ui.label(
+            "未填写任何方案的指定人员可以取消；已经填写方案的人员须先处理本人方案，不能直接删除。"
+        ).classes("text-xs text-orange-700")
+        protected_assignees = sorted(
+            {str(name) for name in current} & scheme_authors
+        )
+        if protected_assignees:
+            ui.label(f"当前不可直接删除：{'、'.join(protected_assignees)}").classes(
+                "text-xs font-bold text-slate-600"
+            )
         selector = ui.select(
             options=candidates,
             value=selected,

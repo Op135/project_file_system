@@ -1107,7 +1107,7 @@ class ECNConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertFalse(actions.is_ecn_scheme_ready_for_review(result.record))
 
-    async def test_removing_assignment_keeps_existing_scheme_author_responsibility(self):
+    async def test_removing_unfilled_assignee_keeps_existing_scheme_author(self):
         value = record()
         value["workflow"]["scheme_assignees"] = ["张三", "李四"]
         value["workflow"]["scheme_participants"]["李四"] = ECN_PARTICIPANT_STATUS_EDITING
@@ -1116,7 +1116,7 @@ class ECNConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         result = await actions.set_scheme_assignees(
             value["ecn_id"],
             value,
-            [],
+            ["张三"],
             "经理",
             "研发经理",
             user_service=self.service,
@@ -1125,9 +1125,31 @@ class ECNConcurrencyTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result.ok, result.message)
         assert result.record is not None
-        self.assertEqual(result.record["workflow"]["scheme_assignees"], [])
+        self.assertEqual(result.record["workflow"]["scheme_assignees"], ["张三"])
         self.assertIn("张三", result.record["workflow"]["scheme_participants"])
         self.assertNotIn("李四", result.record["workflow"]["scheme_participants"])
+
+    async def test_removing_assignee_with_own_scheme_is_rejected(self):
+        value = record()
+        value["workflow"]["scheme_assignees"] = ["张三", "李四"]
+        value["workflow"]["scheme_participants"]["李四"] = ECN_PARTICIPANT_STATUS_EDITING
+        await self.store(value)
+
+        result = await actions.set_scheme_assignees(
+            value["ecn_id"],
+            value,
+            ["李四"],
+            "经理",
+            "研发经理",
+            user_service=self.service,
+            storage=self.left,
+        )
+
+        self.assertFalse(result.ok)
+        self.assertIn("张三 已填写方案", result.message)
+        stored = await self.fresh()
+        self.assertEqual(stored["workflow"]["scheme_assignees"], ["张三", "李四"])
+        self.assertIn("张三", stored["workflow"]["scheme_participants"])
 
     async def test_stale_scheme_assignment_window_cannot_overwrite_newer_selection(self):
         value = record()

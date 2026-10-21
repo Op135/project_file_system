@@ -439,9 +439,14 @@ def assign_scheme_writers(
         for item in current.get("change_items", [])
         if isinstance(item, dict) and str(item.get("author") or "").strip()
     }
+    removed_authors = sorted((previous - selected) & authors)
+    if removed_authors:
+        raise ECNConflict(
+            f"{'、'.join(removed_authors)} 已填写方案，不能从指定人员中删除；"
+            "请先由方案作者处理其本人方案。"
+        )
     for name in previous - selected:
-        if name not in authors:
-            participants.pop(name, None)
+        participants.pop(name, None)
     current_workflow["scheme_assignees"] = normalized
     return current
 
