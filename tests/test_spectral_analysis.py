@@ -333,6 +333,14 @@ class SpectralCalculationTests(unittest.TestCase):
             places=8,
         )
 
+        with self.assertRaisesRegex(SpectralAnalysisError, "最终功率混合光谱"):
+            calculate_power_limited_mix(
+                sources,
+                (0.25, 0.75),
+                (1.0, 0.4),
+                cri_targets=(100.0,) * 16,
+            )
+
 
 class ChromaticityTests(unittest.TestCase):
     def test_parse_xy_with_header_and_convert_coordinates(self):

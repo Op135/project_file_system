@@ -36,6 +36,7 @@ from src.tools.spectral_analyzer import (  # noqa: E402
     _mixing_nodes_and_active_ids,
     _library_spectrum_inputs,
     _option_text,
+    _retained_mixing_result_notice,
     _run_spectral_calculation,
     _series_style,
     _spectral_subprocess_message,
@@ -77,6 +78,33 @@ class SpectralAnalyzerOptionsTests(unittest.TestCase):
             [0.0] * 7,
         )
         self.assertEqual(tool.spectral_state["library_spectrum_ids"], [])
+
+    def test_retained_mixing_result_notice_distinguishes_stale_results(self):
+        self.assertIsNone(
+            _retained_mixing_result_notice(
+                pending=False,
+                error="",
+                has_solution=True,
+            )
+        )
+        failed = _retained_mixing_result_notice(
+            pending=False,
+            error="无法满足 CRI",
+            has_solution=True,
+        )
+        self.assertIsNotNone(failed)
+        assert failed is not None
+        self.assertIn("以下为上一次成功结果", failed)
+        self.assertIn("不代表本次求解成功", failed)
+
+        pending = _retained_mixing_result_notice(
+            pending=True,
+            error="",
+            has_solution=True,
+        )
+        self.assertIsNotNone(pending)
+        assert pending is not None
+        self.assertIn("仍在计算", pending)
 
     def test_library_relative_spd_records_convert_to_spectrum_inputs(self):
         records = [

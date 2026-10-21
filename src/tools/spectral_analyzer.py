@@ -684,6 +684,23 @@ def _metric(value: float | None, digits: int = 3) -> str:
     return "—" if value is None else f"{value:.{digits}f}"
 
 
+def _retained_mixing_result_notice(
+    *,
+    pending: bool,
+    error: str,
+    has_solution: bool,
+) -> str | None:
+    """说明目标变化后仍显示的是上一次成功结果。"""
+
+    if not has_solution or (not pending and not error):
+        return None
+    state = "当前目标仍在计算" if pending else "当前目标求解失败"
+    return (
+        f"以下为上一次成功结果，仅供对照；{state}。"
+        "下方 CRI 表按当前目标重新对照旧结果，不代表本次求解成功。"
+    )
+
+
 def _nonnegative_number(value: object, default: float) -> float:
     """把坐标轴设置收窄为有限非负数。"""
 
@@ -2306,7 +2323,7 @@ class SpectralAnalyzerTool:
                         ui.spinner(size="20px")
                         ui.label("参数已变化，正在自动更新目标配比与光参数……").classes("text-sm")
                 elif mixing_solve_error:
-                    ui.label(f"本次自动求解失败：{mixing_solve_error}；下方保留上次有效结果。").classes(
+                    ui.label(f"本次自动求解失败：{mixing_solve_error}").classes(
                         "w-full text-sm text-amber-700"
                     )
             if self.mixing_solution is None:
@@ -2314,6 +2331,18 @@ class SpectralAnalyzerTool:
                     ui.label("修改已启用的目标后会自动计算最终配比和光参数。").classes("text-sm text-blue-700")
                 ui.element("div").classes("w-full min-h-[320px]")
                 return
+            retained_notice = _retained_mixing_result_notice(
+                pending=mixing_solve_pending,
+                error=mixing_solve_error,
+                has_solution=True,
+            )
+            if retained_notice is not None:
+                with ui.row().classes(
+                    "w-full items-start gap-2 rounded-lg border border-amber-300 "
+                    "bg-amber-50 px-3 py-2 text-amber-800"
+                ):
+                    ui.icon("history", size="20px").classes("mt-0.5")
+                    ui.label(retained_notice).classes("flex-1 text-sm font-medium")
             solution = self.mixing_solution
             ratio_rows = [
                 {
@@ -2691,6 +2720,7 @@ class SpectralAnalyzerTool:
                     final_source_coefficients,
                     power_limits,
                     name="目标混合光谱",
+                    cri_targets=cri_targets,
                 )
             except SpectralAnalysisError as exc:
                 if generation != mixing_solve_generation:

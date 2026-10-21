@@ -878,6 +878,7 @@ def calculate_power_limited_mix(
     source_power_limits: tuple[float, ...],
     *,
     name: str = "功率受限混合光谱",
+    cri_targets: tuple[float, ...] | None = None,
 ) -> PowerLimitedMixResult:
     """按各原始光谱的辐射功率上限计算最大可实现光功率和光通量。"""
 
@@ -928,6 +929,31 @@ def calculate_power_limited_mix(
             values=tuple(float(value) for value in mixed_values),
         )
     )
+    if cri_targets is not None:
+        targets = _validate_cri_targets(cri_targets)
+        actual = np.asarray(
+            [
+                spectrum_result.ra if spectrum_result.ra is not None else float("nan"),
+                *(
+                    dict(spectrum_result.ri).get(index, float("nan"))
+                    for index in range(1, 16)
+                ),
+            ],
+            dtype=float,
+        )
+        unmet = [
+            ("Ra" if index == 0 else f"R{index}", float(target), float(value))
+            for index, (target, value) in enumerate(zip(targets, actual))
+            if not math.isfinite(float(value)) or value + 0.05 < target
+        ]
+        if unmet:
+            summary = "、".join(
+                f"{label}={value:.2f}（目标≥{target:.2f}）"
+                for label, target, value in unmet[:5]
+            )
+            if len(unmet) > 5:
+                summary += f" 等 {len(unmet)} 项"
+            raise SpectralAnalysisError(f"最终功率混合光谱无法满足 CRI 下限：{summary}")
     limiting_source_indices = tuple(
         int(index)
         for index, (power, limit, active) in enumerate(zip(source_powers, limits, active_mask))
