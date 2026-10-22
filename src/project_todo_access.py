@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 
 from nicegui import app
 
@@ -93,6 +93,7 @@ def get_actionable_overview_urgent_projects(
     current_role: object,
     current_user: str,
     *,
+    recorded_projects: Collection[str] | None = None,
     user_service=None,
 ) -> list[tuple[str, int]]:
     """首页概述提醒按本人权限及项目状态计算，不按旧角色隐藏。"""
@@ -101,6 +102,7 @@ def get_actionable_overview_urgent_projects(
         overview_config_flat,
         current_role,
         current_user,
+        recorded_projects=recorded_projects,
         user_service=user_service,
     )
     return get_urgent_overview_projects(actionable, project_states)
@@ -123,6 +125,7 @@ def filter_actionable_overview_pending(
     current_role: object,
     current_user: str,
     *,
+    recorded_projects: Collection[str] | None = None,
     user_service=None,
 ) -> dict[str, dict]:
     """只保留当前用户拥有对应 label 维护权限的个人概述待办。"""
@@ -131,6 +134,8 @@ def filter_actionable_overview_pending(
 
     result: dict[str, dict] = {}
     for project_name, states in pending_projects.items():
+        if recorded_projects is not None and project_name not in recorded_projects:
+            continue
         if not isinstance(states, Mapping):
             continue
         actionable_states = {}

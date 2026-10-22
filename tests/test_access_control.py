@@ -553,6 +553,29 @@ class AccessControlTests(unittest.TestCase):
             "P100": "量产", "VOID": "作废", "WAIT": "待定",
             "LOW": "研发", "NO-PERMISSION": "量产",
         }
+        self.assertEqual(
+            filter_actionable_overview_pending(
+                pending,
+                overview_config,
+                "研发硬件",
+                "张三",
+                recorded_projects={"P100"},
+                user_service=self.service,
+            ),
+            {"P100": {"hardware_summary": "缺必填"}},
+        )
+        self.assertEqual(
+            get_actionable_overview_urgent_projects(
+                pending,
+                overview_config,
+                project_states,
+                "研发硬件",
+                "张三",
+                recorded_projects=set(),
+                user_service=self.service,
+            ),
+            [],
+        )
         for role in ("销售", "销售主管", "销售总监", "研发硬件", "普通用户"):
             with self.subTest(role=role):
                 self.assertEqual(

@@ -411,6 +411,7 @@ def main_page():
                 {project_name: project.get("state", "未知") for project_name, project in project_summary.items()},
                 current_role,
                 current_user,
+                recorded_projects=app.storage.general.get("project_req_max_ver", {}),
             )
 
             overview_urgent_count = len(overview_urgent_projects)

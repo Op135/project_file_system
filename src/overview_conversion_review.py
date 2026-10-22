@@ -398,12 +398,14 @@ def get_conversion_reviews() -> dict[str, dict]:
 
 def get_actionable_conversion_reviews(username: str) -> list[dict]:
     reviews = get_conversion_reviews()
+    recorded_projects = app.storage.general.get("project_req_max_ver", {})
     result: list[dict] = []
     for review in reviews.values():
         if (
             not isinstance(review, dict)
             or review.get("status") not in OPEN_REVIEW_STATUSES
             or review.get("assignee") != username
+            or review.get("project") not in recorded_projects
         ):
             continue
         items = collect_review_pending_items(review)

@@ -9,6 +9,8 @@ from src.overview_conversion_review import (
     build_conversion_preview,
     collect_conversion_pending_items,
     conversion_target_id,
+    get_actionable_conversion_reviews,
+    get_conversion_review_pending_count,
     process_conversion_review_batch,
     process_conversion_review_item,
     reconcile_conversion_reviews,
@@ -154,6 +156,24 @@ class OverviewConversionReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(item.has_special_reason)
         self.assertEqual([reason.category for reason in item.reasons], ["manual", "related"])
         self.assertIn("外壳材料改为PC", item.reasons[1].text)
+
+    async def test_unrecorded_project_is_hidden_from_conversion_todos(self) -> None:
+        self.store[OVERVIEW_CONVERSION_REVIEWS_KEY] = {
+            "review-1": {
+                "id": "review-1",
+                "project": "P1",
+                "role": "结构",
+                "version": "2.0",
+                "assignee": "结构工程师",
+                "status": "pending",
+            }
+        }
+        patches = self.module_patches()
+        with patches[0], patches[1], patches[2], patches[3]:
+            self.assertEqual(get_conversion_review_pending_count("结构工程师"), 1)
+            self.fake_app.storage.general["project_req_max_ver"].clear()
+            self.assertEqual(get_actionable_conversion_reviews("结构工程师"), [])
+            self.assertEqual(get_conversion_review_pending_count("结构工程师"), 0)
 
     async def test_preview_counts_active_and_preexisting_pending_by_role(self) -> None:
         patches = self.module_patches()

@@ -1,12 +1,11 @@
 from collections.abc import Mapping
 
-
 # 项目阶段与概述问题共同决定警示级别：0=低，1=还好，2=中，3=高，4=严重
 OVERVIEW_WARNING_LEVELS = {
     "研发": {"need": 0, "none": 1, "false": 2},
-    "转产": {"need": 1, "none": 2, "false": 3},
-    "试产": {"need": 1, "none": 3, "false": 4},
-    "量产": {"need": 1, "none": 3, "false": 4},
+    "转产": {"need": 1, "none": 3, "false": 3},
+    "试产": {"need": 1, "none": 4, "false": 4},
+    "量产": {"need": 1, "none": 4, "false": 4},
 }
 
 
