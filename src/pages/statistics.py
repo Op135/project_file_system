@@ -9,6 +9,7 @@ from typing import Callable, cast
 
 import pandas as pd
 from nicegui import app, ui
+from nicegui.functions.refreshable import refreshable
 
 from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, PROJECT_STATE_LIST, REQ_DIR, REQ_REMOVE_DIR
 from ..statistics_access import (
@@ -48,6 +49,25 @@ OVERVIEW_COMPLETION_COLORS = {
     "概述已完成": "#10b981",
 }
 UNRECORDED_REQUIREMENT_TEXT_COLOR = "#6b7280"
+CONVERSION_RECORDED_STATE = "转产(已录需求)"
+CONVERSION_UNRECORDED_STATE = "转产(未录需求)"
+CONVERSION_LEGACY_STATE = "转产(历史未区分)"
+
+
+def statistics_project_state(state: str, has_requirement: bool) -> str:
+    """按需求录入情况细分统计用的转产状态。"""
+    if state == "转产":
+        return CONVERSION_RECORDED_STATE if has_requirement else CONVERSION_UNRECORDED_STATE
+    return state
+
+
+def recorded_pending_snapshot(pending_snapshot, recorded_projects):
+    """仅保留已录需求项目的概述待办，且不改变原始历史快照。"""
+    return {
+        user: {project: issues for project, issues in projects.items() if project in recorded_projects}
+        for user, projects in pending_snapshot.items()
+        if any(project in recorded_projects for project in projects)
+    }
 
 
 def sort_projects_by_type(
@@ -144,13 +164,14 @@ def classify_overview_completion(statuses, has_unassigned_owner=False):
     return "概述已完成"
 
 
-def record_daily_stats(project_summary, pending_data, overview_role=None):
+def record_daily_stats(project_summary, pending_data, overview_role=None, req_ver_data=None):
     """
     持久化记录函数 (由 APScheduler 每日定时调用)
     处理逻辑：计算当天快照数据，并追加到 Excel 中
     """
     today = datetime.now().strftime("%Y-%m-%d")
     row_map = {}
+    recorded_projects = req_ver_data or {}
 
     def get_row(user, state):
         return row_map.setdefault(
@@ -171,7 +192,9 @@ def record_daily_stats(project_summary, pending_data, overview_role=None):
         if user == "待定负责人":
             continue  # 跳过“待定负责人”用户
         for proj, issues in p_dict.items():
-            state = project_summary.get(proj, {}).get("state", "未知")
+            state = statistics_project_state(
+                project_summary.get(proj, {}).get("state", "未知"), proj in recorded_projects
+            )
             row = get_row(user, state)
             issue_types = set(issues.values())
             if "缺必填" in issue_types:
@@ -185,7 +208,9 @@ def record_daily_stats(project_summary, pending_data, overview_role=None):
     for user, stats in management_snapshot.items():
         completed_projects = set(stats["completed_projects"])
         for project_name in stats["managed_projects"]:
-            state = project_summary.get(project_name, {}).get("state", "未知")
+            state = statistics_project_state(
+                project_summary.get(project_name, {}).get("state", "未知"), project_name in recorded_projects
+            )
             row = get_row(user, state)
             row["负责项目数"] += 1
             if project_name in completed_projects:
@@ -520,10 +545,14 @@ def statistics_page():
                                 )
 
                         with ui.row().classes("w-full flex-wrap items-center gap-3 px-2"):
-                            project_search = ui.input(
-                                label="搜索项目名称",
-                                placeholder="输入项目名关键词",
-                            ).props("clearable dense outlined prepend-icon=search").classes("flex-1 min-w-[220px]")
+                            project_search = (
+                                ui.input(
+                                    label="搜索项目名称",
+                                    placeholder="输入项目名关键词",
+                                )
+                                .props("clearable dense outlined prepend-icon=search")
+                                .classes("flex-1 min-w-[220px]")
+                            )
                             available_types = sorted(
                                 {get_project_type(project_name) for project_name in project_list},
                                 key=lambda type_name: (
@@ -531,11 +560,15 @@ def statistics_page():
                                     type_name,
                                 ),
                             )
-                            project_type_filter = ui.select(
-                                options={"": "全部", **{type_name: type_name for type_name in available_types}},
-                                value="",
-                                label=type_filter_label,
-                            ).props("dense outlined options-dense").classes("w-48")
+                            project_type_filter = (
+                                ui.select(
+                                    options={"": "全部", **{type_name: type_name for type_name in available_types}},
+                                    value="",
+                                    label=type_filter_label,
+                                )
+                                .props("dense outlined options-dense")
+                                .classes("w-48")
+                            )
                             filtered_count_label = ui.label(f"显示 {len(project_list)} 项").classes(
                                 "text-xs text-gray-500 whitespace-nowrap"
                             )
@@ -624,12 +657,21 @@ def statistics_page():
                             ui_card_header("团队待办概览", "bar_chart", "indigo-500")
 
                             # 增加状态筛选器，默认选中主要阶段
-                            default_states = ["研发", "转产", "试产", "量产"]
+                            default_states = ["研发", CONVERSION_RECORDED_STATE, "试产", "量产"]
+                            statistics_states = [
+                                state
+                                for project_state in PROJECT_STATE_LIST
+                                for state in (
+                                    [CONVERSION_RECORDED_STATE, CONVERSION_UNRECORDED_STATE]
+                                    if project_state == "转产"
+                                    else [project_state]
+                                )
+                            ]
 
                             # z-10 确保不会被 Echarts 图表层遮挡
                             status_select = (
                                 ui.select(
-                                    options=PROJECT_STATE_LIST,
+                                    options=statistics_states,
                                     value=default_states,
                                     multiple=True,
                                     label="项目状态筛选",
@@ -638,7 +680,6 @@ def statistics_page():
                                 .classes("max-w-1/3 min-w-1/4 px-4 mb-2 absolute top-0 right-0 z-10")
                             )
 
-                            @ui.refreshable
                             def render_pending_overview(target_states):
                                 # 动态过滤数据
                                 filtered_pending_data = {}
@@ -646,7 +687,10 @@ def statistics_page():
                                     filtered_projects = {}
                                     for project_name, p_state_dic in pending_project_dic.items():
                                         # 获取当前项目状态，如果查不到默认为"未知"
-                                        state = project_summary.get(project_name, {}).get("state", "未知")
+                                        state = statistics_project_state(
+                                            project_summary.get(project_name, {}).get("state", "未知"),
+                                            project_name in req_ver_data,
+                                        )
                                         if state in target_states:
                                             filtered_projects[project_name] = p_state_dic
                                     if filtered_projects:
@@ -1019,16 +1063,23 @@ def statistics_page():
                                                             project
                                                             for project, group in project_groups.items()
                                                             if major == "所有"
-                                                            or (group[0] == major and (sub == "所有" or group[1] == sub))
+                                                            or (
+                                                                group[0] == major and (sub == "所有" or group[1] == sub)
+                                                            )
                                                         ]
                                                         selected = project_select.value
                                                         if selected not in matching_projects:
-                                                            selected = matching_projects[0] if matching_projects else None
+                                                            selected = (
+                                                                matching_projects[0] if matching_projects else None
+                                                            )
                                                         project_select.set_options(matching_projects, value=selected)
 
                                                     def update_project_sub_options():
                                                         major = project_major_select.value
-                                                        if not isinstance(major, str) or major not in project_categories:
+                                                        if (
+                                                            not isinstance(major, str)
+                                                            or major not in project_categories
+                                                        ):
                                                             major = "所有"
                                                         project_sub_select.set_options(
                                                             project_categories[major], value="所有"
@@ -1040,16 +1091,19 @@ def statistics_page():
                                 else:
                                     ui.label("当前筛选状态下暂无积压数据").classes("p-4 text-gray-400 text-sm mt-4")
 
+                            pending_overview_view = refreshable(render_pending_overview)
                             # 初始渲染
-                            render_pending_overview(status_select.value)
+                            pending_overview_view(status_select.value)
                             # 监听筛选框的值变化，并触发刷新
-                            status_select.on_value_change(lambda e: render_pending_overview.refresh(e.value))
+                            status_select.on_value_change(lambda e: pending_overview_view.refresh(e.value))
 
                         # ----------------- 图表 2：近7日待办项趋势 (新增) -----------------
                         with ui.card().classes(
                             "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white relative"
                         ):
-                            ui_card_header("近一周待办项趋势（概述项数量）", "trending_up", "teal-500")
+                            ui_card_header(
+                                "近一周待办项趋势（概述项数量，忽略未录需求项目）", "trending_up", "teal-500"
+                            )
                             # history 数据结构示例：{"2024-06-01": {"人名": {"项目名": label:状态,...},...}, "2024-06-02": {...},...}
                             history = app.storage.general.get("overview_pending_history", {})
                             # 每次查阅都会刷新当前日期的待办快照，确保数据的时效性和准确性
@@ -1061,6 +1115,10 @@ def statistics_page():
                             #     current_pending.pop("待定负责人", None)
                             # 记录当天的最新快照（如果服务器一天内多次重启，会不断刷新当天的最终结果）
                             history[today_str] = current_pending
+                            eligible_history = {
+                                date: recorded_pending_snapshot(snapshot, req_ver_data)
+                                for date, snapshot in history.items()
+                            }
 
                             # 1. 强制生成固定的连续 7 天日期列表
                             if history:
@@ -1078,10 +1136,10 @@ def statistics_page():
                             all_users = set()
                             for d in full_dates:
                                 # 使用 .get(d, {}) 防御性读取，即使某天没数据也不会报错
-                                all_users.update(history.get(d, {}).keys())
+                                all_users.update(eligible_history.get(d, {}).keys())
 
                             def get_user_pending_count(date_str, user):
-                                user_state = history.get(date_str, {}).get(user, {})
+                                user_state = eligible_history.get(date_str, {}).get(user, {})
                                 return sum(len(v) for v in user_state.values())
 
                             latest_day = full_dates[-1]
@@ -1126,15 +1184,15 @@ def statistics_page():
                                         user_data = []
                                         for i, d in enumerate(full_dates):
                                             # 1. 判断当天该人员是否有数据，如果没有，则填入 None，ECharts 会自动断开折线
-                                            if user not in history.get(d, {}):
+                                            if user not in eligible_history.get(d, {}):
                                                 user_data.append({"value": None, "name": d})
                                                 continue
 
-                                            curr_state = history.get(d, {}).get(user, {})
+                                            curr_state = eligible_history.get(d, {}).get(user, {})
                                             curr_item_count = sum(len(v) for v in curr_state.values())
 
                                             prev_state = (
-                                                history.get(full_dates[i - 1], {}).get(user, {})
+                                                eligible_history.get(full_dates[i - 1], {}).get(user, {})
                                                 if i > 0
                                                 else curr_state
                                             )
@@ -1225,13 +1283,29 @@ def statistics_page():
                             ).copy()
                             if not df.empty:
                                 df["日期_str"] = cast(pd.Series, df["日期"]).dt.strftime("%m-%d")
+                                df["项目状态"] = cast(pd.Series, df["项目状态"]).replace(
+                                    {"转产": CONVERSION_LEGACY_STATE}
+                                )
 
                             if df.empty:
                                 ui.label("暂无历史统计数据，数据将在每日工作日 18:00 自动累积生成。").classes(
                                     "p-8 text-gray-400 text-center w-full"
                                 )
                             else:
-                                # 计算转产阶段总积压最多的前三人作为默认项
+                                available_states = cast(pd.Series, df["项目状态"]).unique().tolist()
+                                default_state = next(
+                                    (
+                                        state
+                                        for state in (
+                                            CONVERSION_RECORDED_STATE,
+                                            CONVERSION_UNRECORDED_STATE,
+                                            CONVERSION_LEGACY_STATE,
+                                        )
+                                        if state in available_states
+                                    ),
+                                    available_states[0],
+                                )
+                                # 计算默认阶段总积压最多的前三人作为默认项
                                 recent_date = cast(pd.Series, df["日期"]).max()
                                 latest_data = cast(
                                     pd.DataFrame,
@@ -1239,9 +1313,7 @@ def statistics_page():
                                 )
                                 top_users_df = cast(
                                     pd.DataFrame,
-                                    latest_data.loc[
-                                        cast(pd.Series, latest_data["项目状态"]) == "转产"
-                                    ],
+                                    latest_data.loc[cast(pd.Series, latest_data["项目状态"]) == default_state],
                                 ).copy()
                                 top_users_df["total_issues"] = (
                                     top_users_df["缺必填数"] + top_users_df["有待定数"] + top_users_df["缺需填数"]
@@ -1268,8 +1340,8 @@ def statistics_page():
                                     ).classes("w-1/3 min-w-[150px]")
 
                                     sel_states = ui.select(
-                                        options=cast(pd.Series, df["项目状态"]).unique().tolist(),
-                                        value=["转产"],
+                                        options=available_states,
+                                        value=[default_state],
                                         multiple=True,
                                         label="阶段过滤",
                                     ).classes("w-1/4 min-w-[120px]")
@@ -1758,8 +1830,7 @@ def statistics_page():
                                     pd.DataFrame,
                                     management_history_df.groupby(["日期", "用户"], as_index=False)[
                                         ["负责项目数", "填写完成项目数"]
-                                    ]
-                                    .sum(),
+                                    ].sum(),
                                 )
                                 management_history_df = grouped_management_history.sort_values(by="日期")
                             else:
@@ -1774,9 +1845,7 @@ def statistics_page():
                                 history_date_series = cast(pd.Series, management_history_df["日期"])
                                 management_history_df = cast(
                                     pd.DataFrame,
-                                    management_history_df.loc[
-                                        history_date_series.dt.normalize() != today_timestamp
-                                    ],
+                                    management_history_df.loc[history_date_series.dt.normalize() != today_timestamp],
                                 )
                             live_rows = []
                             for user in all_management_users:
@@ -1837,8 +1906,7 @@ def statistics_page():
                                     person_df = cast(
                                         pd.DataFrame,
                                         management_history_df.loc[
-                                            cast(pd.Series, management_history_df["用户"])
-                                            == selected_user
+                                            cast(pd.Series, management_history_df["用户"]) == selected_user
                                         ],
                                     ).copy()
                                     if person_df.empty:
@@ -1850,13 +1918,9 @@ def statistics_page():
                                         cutoff = cast(pd.Period, current_period - 11).start_time
                                         person_df = cast(
                                             pd.DataFrame,
-                                            person_df.loc[
-                                                cast(pd.Series, person_df["日期"]) >= cutoff
-                                            ],
+                                            person_df.loc[cast(pd.Series, person_df["日期"]) >= cutoff],
                                         ).sort_values(by="日期")
-                                        person_df["周期"] = cast(
-                                            pd.Series, person_df["日期"]
-                                        ).dt.to_period("M")
+                                        person_df["周期"] = cast(pd.Series, person_df["日期"]).dt.to_period("M")
                                         chart_df = person_df.groupby("周期", as_index=False).tail(1)
                                         x_axis = cast(pd.Series, chart_df["周期"]).astype(str).tolist()
                                         period_note = "每月采用当月最后一份快照，本月为实时数据"
@@ -1864,9 +1928,7 @@ def statistics_page():
                                         cutoff = today_timestamp - timedelta(days=29)
                                         chart_df = cast(
                                             pd.DataFrame,
-                                            person_df.loc[
-                                                cast(pd.Series, person_df["日期"]) >= cutoff
-                                            ],
+                                            person_df.loc[cast(pd.Series, person_df["日期"]) >= cutoff],
                                         ).sort_values(by="日期")
                                         x_axis = cast(pd.Series, chart_df["日期"]).dt.strftime("%m-%d").tolist()
                                         period_note = "每日快照，今天为实时数据"

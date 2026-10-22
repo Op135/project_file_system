@@ -11,6 +11,22 @@ from src.pages import statistics
 
 
 class OverviewCompletionClassificationTests(unittest.TestCase):
+    def test_conversion_state_depends_on_requirement_record(self):
+        self.assertEqual(statistics.statistics_project_state("转产", True), "转产(已录需求)")
+        self.assertEqual(statistics.statistics_project_state("转产", False), "转产(未录需求)")
+        self.assertEqual(statistics.statistics_project_state("研发", False), "研发")
+
+    def test_weekly_snapshot_excludes_projects_without_requirements(self):
+        snapshot = {
+            "张三": {"P1": {"A": "缺必填"}, "P2": {"B": "有待定"}},
+            "李四": {"P2": {"C": "缺需填"}},
+        }
+        self.assertEqual(
+            statistics.recorded_pending_snapshot(snapshot, {"P1": "1.0"}),
+            {"张三": {"P1": {"A": "缺必填"}}},
+        )
+        self.assertIn("P2", snapshot["张三"])
+
     def test_unassigned_owner_has_the_highest_priority(self):
         self.assertEqual(
             statistics.classify_overview_completion({"缺必填", "有待定"}, has_unassigned_owner=True),
@@ -87,15 +103,18 @@ class DailyStatisticsPersistenceTests(unittest.TestCase):
             "P1": {"state": "研发"},
             "P2": {"state": "研发"},
             "P3": {"state": "转产"},
+            "P4": {"state": "转产"},
         }
         overview_role = {
             "P1": {"光学": {"latest_user": "最近：张三"}},
             "P2": {"光学": {"latest_user": "张三"}},
             "P3": {"光学": {"latest_user": "李四"}},
+            "P4": {"光学": {"latest_user": "王五"}},
         }
         pending_data = {
             "张三": {"P1": {"optional": "缺需填"}, "P2": {"required": "有待定"}},
             "待定负责人": {"P3": {"required": "缺必填"}},
+            "王五": {"P4": {"required": "有待定"}},
         }
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -115,20 +134,26 @@ class DailyStatisticsPersistenceTests(unittest.TestCase):
             ).to_excel(stats_file, index=False)
 
             with patch.object(statistics, "STATS_FILE", str(stats_file)):
-                statistics.record_daily_stats(project_summary, pending_data, overview_role)
-                statistics.record_daily_stats(project_summary, pending_data, overview_role)
+                for _ in range(2):
+                    statistics.record_daily_stats(
+                        project_summary, pending_data, overview_role, {"P3": "1.0"}
+                    )
 
             result = pd.read_excel(stats_file)
             today = datetime.now().strftime("%Y-%m-%d")
             today_rows = result[pd.to_datetime(result["日期"]).dt.strftime("%Y-%m-%d") == today]
             zhang_rows = today_rows[today_rows["用户"] == "张三"]
             li_rows = today_rows[today_rows["用户"] == "李四"]
+            wang_rows = today_rows[today_rows["用户"] == "王五"]
 
             self.assertEqual(len(result[result["用户"] == "历史用户"]), 1)
             self.assertEqual(zhang_rows["负责项目数"].sum(), 2)
             self.assertEqual(zhang_rows["填写完成项目数"].sum(), 1)
             self.assertEqual(li_rows["负责项目数"].sum(), 1)
             self.assertEqual(li_rows["填写完成项目数"].sum(), 1)
+            self.assertEqual(li_rows["项目状态"].tolist(), ["转产(已录需求)"])
+            self.assertEqual(wang_rows["项目状态"].tolist(), ["转产(未录需求)"])
+            self.assertEqual(wang_rows["有待定数"].sum(), 1)
 
 
 if __name__ == "__main__":

@@ -10,16 +10,16 @@ from ..config import IMG_DIR, PRESET_AVATARS
 from ..dashboard_layout import get_dashboard_layout_css
 from ..ecn_access import can_view_ecn, get_ecn_dashboard_pending_count
 from ..ecn_management_config import ECN_DATA_KEY
+from ..overview_add_approval import OVERVIEW_ADD_REQUESTS_KEY, get_overview_add_pending_count
 from ..overview_batch_operations import (
     BATCH_OVERVIEW_REQUESTS_KEY,
     get_batch_overview_pending_count,
 )
-from ..overview_add_approval import OVERVIEW_ADD_REQUESTS_KEY, get_overview_add_pending_count
-from ..overview_corrections import OVERVIEW_CORRECTION_REQUESTS_KEY, get_correction_pending_count
 from ..overview_conversion_review import (
     get_conversion_covered_labels,
     get_conversion_review_pending_count,
 )
+from ..overview_corrections import OVERVIEW_CORRECTION_REQUESTS_KEY, get_correction_pending_count
 from ..project_overview_access import can_review_overview_correction
 from ..project_requirement_access import (
     can_edit_project_requirement,
@@ -200,14 +200,14 @@ def main_page():
         ("assignment", "项目资料", "录入与查看项目资料", "/project_table"),
         ("description", "项目概述待办", "处理项目概述相关待办", "/project_overview_todo"),
         ("rule", "项目需求待办", "处理项目需求相关待办", "/project_requirement_todo"),
-        ("handyman", "分析工具", "专业分析计算工具", "/tool"),
-        ("account_tree", "需求项结构", "查阅需求项结构", "/question_tree_tabs"),
-        ("equalizer", "统计信息", "查阅系统统计信息", "/statistics"),
         ("published_with_changes", "工程变更", "ECR与ECN流程管理", "/ecn_management"),
-        ("error", "批量产品问题跟进", "查阅记录产品问题处理进度", "/error_management"),
-        ("science", "样品问题跟进", "查阅记录样品问题处理进度", "/sample_issue_collection"),
         ("fact_check", "样品订单看板", "录入并跟踪样品订单交期", "/sample_order_dashboard"),
+        ("science", "样品问题跟进", "查阅记录样品问题处理进度", "/sample_issue_collection"),
+        ("error", "批量产品问题跟进", "查阅记录产品问题处理进度", "/error_management"),
+        ("handyman", "分析工具", "专业分析计算工具", "/tool"),
+        ("equalizer", "统计信息", "查阅系统统计信息", "/statistics"),
         ("menu_book", "设计知识库", "沉淀规范与设计案例", "/design_knowledge"),
+        ("account_tree", "需求项结构", "查阅需求项结构", "/question_tree_tabs"),
     ]
     menu_items = []
     for items in menu_items_metadata:
@@ -328,9 +328,9 @@ def main_page():
             "调试控制中心",
             icon="developer_mode",
             on_click=lambda: ui.navigate.to("/dev/identity-switcher"),
-        ).props("color=amber-8 unelevated").classes(
-            "fixed right-5 bottom-5 z-50 shadow-lg"
-        ).tooltip("切换身份、控制企业微信发送与后台任务")
+        ).props("color=amber-8 unelevated").classes("fixed right-5 bottom-5 z-50 shadow-lg").tooltip(
+            "切换身份、控制企业微信发送与后台任务"
+        )
 
     # 限制内容区高度并开启局部滚动。
     with ui.column().classes("w-full h-[calc(100vh-3rem)] overflow-y-auto items-center justify-center"):
@@ -381,10 +381,9 @@ def main_page():
                 app.storage.general.get("wait_review", {}),
                 current_user=current_user,
                 can_edit_requirements=can_edit_requirements,
-                can_review_requirement=lambda project_name: can_review_all_requirements
-                or (
-                    can_review_assigned_requirements
-                    and project_name in assigned_requirement_projects
+                can_review_requirement=lambda project_name: (
+                    can_review_all_requirements
+                    or (can_review_assigned_requirements and project_name in assigned_requirement_projects)
                 ),
             )
             requirement_pending_keys = requirement_todos["待审"] | requirement_todos["待修改"]
@@ -409,10 +408,7 @@ def main_page():
             overview_urgent_projects = get_actionable_overview_urgent_projects(
                 current_overview_pending,
                 app.storage.general.get("over_config_data_flat", {}),
-                {
-                    project_name: project.get("state", "未知")
-                    for project_name, project in project_summary.items()
-                },
+                {project_name: project.get("state", "未知") for project_name, project in project_summary.items()},
                 current_role,
                 current_user,
             )
@@ -447,10 +443,7 @@ def main_page():
                     request.get("status") == "pending"
                     and can_review_overview_correction(request, current_role, current_user)
                 )
-                or (
-                    request.get("submitter") == current_user
-                    and request.get("status") in ["rejected", "withdrawn"]
-                )
+                or (request.get("submitter") == current_user and request.get("status") in ["rejected", "withdrawn"])
             )
 
             for icon, title, subtitle, target in menu_items:

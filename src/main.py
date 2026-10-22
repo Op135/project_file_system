@@ -181,7 +181,8 @@ def init_pending_history_task():
             if record_daily_stats:
                 project_summary = app.storage.general.get("project_summary", {})
                 overview_role = app.storage.general.get("overview_role", {})
-                record_daily_stats(project_summary, current_pending, overview_role)
+                req_ver_data = app.storage.general.get("project_req_max_ver", {})
+                record_daily_stats(project_summary, current_pending, overview_role, req_ver_data)
 
         except Exception as e:
             logger.error(f"每日待办项快照记录出错: {e}")
