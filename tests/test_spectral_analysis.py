@@ -306,17 +306,33 @@ class SpectralCalculationTests(unittest.TestCase):
             solve_spectrum_mix_targets(sources, cri_targets=(90.0,) * 15)
 
     def test_cri_only_solver_accepts_more_than_three_independent_sources(self):
-        standard = analyze_standard_illuminant("D65")
+        standards = tuple(
+            analyze_standard_illuminant(key) for key in ("D65", "A", "LED-B3", "LED-B5")
+        )
         sources = tuple(
-            SpectrumInput(f"D65-{index}", standard.wavelengths, standard.values)
-            for index in range(4)
+            SpectrumInput(result.name, result.wavelengths, result.values)
+            for result in standards
         )
         solution = solve_spectrum_mix_targets(sources, cri_targets=(90.0,) * 16)
         self.assertEqual(len(solution.peak_ratios), 4)
         self.assertAlmostEqual(sum(solution.peak_ratios), 1.0, places=8)
         self.assertGreaterEqual(solution.result.ra or 0, 90.0)
-        with self.assertRaisesRegex(SpectralAnalysisError, "恰好三条"):
-            solve_spectrum_mix_targets(sources, target_xy=standard.xy)
+        xy_only = solve_spectrum_mix_targets(sources, target_xy=standards[0].xy)
+        both = solve_spectrum_mix_targets(
+            sources, target_xy=standards[0].xy, cri_targets=(90.0,) * 16,
+        )
+        for result in (xy_only, both):
+            self.assertEqual(len(result.peak_ratios), 4)
+            self.assertAlmostEqual(result.result.xy[0], standards[0].xy[0], places=6)
+            self.assertAlmostEqual(result.result.xy[1], standards[0].xy[1], places=6)
+        self.assertGreaterEqual(both.result.ra or 0, 90.0)
+        powered = calculate_power_limited_mix(
+            sources, both.peak_ratios, (1.0,) * 4, cri_targets=(90.0,) * 16,
+        )
+        self.assertAlmostEqual(powered.spectrum_result.xy[0], standards[0].xy[0], places=6)
+        self.assertGreaterEqual(powered.spectrum_result.ra or 0, 90.0)
+        with self.assertRaisesRegex(SpectralAnalysisError, "可混合范围之外"):
+            solve_spectrum_mix_targets(sources, target_xy=(0.7, 0.2))
 
     def test_cri_recovers_from_polluted_colour_scale_and_stays_stable_across_threads(self):
         import colour

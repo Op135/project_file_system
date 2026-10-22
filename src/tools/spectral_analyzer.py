@@ -872,15 +872,15 @@ def _target_mixing_graph_details(
     source_results: list[SpectrumResult],
     steps: list[dict[str, Any]],
     *,
-    direct_cri_sources: bool,
+    direct_source_mode: bool,
 ) -> tuple[
     dict[str, MixingSpectrumResult],
     list[str],
     dict[str, tuple[float, ...]],
 ]:
-    """直接 CRI 模式完全忽略组合层，其余模式保留既有活动节点。"""
+    """原始光谱直算模式完全忽略组合层，其余模式保留既有活动节点。"""
 
-    return _mixing_graph_details(source_results, [] if direct_cri_sources else steps)
+    return _mixing_graph_details(source_results, [] if direct_source_mode else steps)
 
 
 def _mixing_node_options(
@@ -1486,7 +1486,7 @@ class SpectralAnalyzerTool:
             "source_b": "",
             "target_xy_enabled": True,
             "target_cri_enabled": False,
-            "direct_cri_sources": False,
+            "direct_source_mode": False,
             "target_x": 0.3127,
             "target_y": 0.3290,
             "target_ra": 90.0,
@@ -2281,14 +2281,10 @@ class SpectralAnalyzerTool:
 
             return _mixing_nodes_and_active_ids(self.spectrum_results, self.mixing_steps)
 
-        def direct_cri_mode() -> bool:
-            """只有单独启用 CRI 时才允许绕过组合层。"""
+        def direct_source_mode() -> bool:
+            """按用户开关决定是否绕过组合层使用全部原始光谱。"""
 
-            return (
-                bool(self.mixing_state.get("target_cri_enabled", False))
-                and not bool(self.mixing_state.get("target_xy_enabled", True))
-                and bool(self.mixing_state.get("direct_cri_sources", False))
-            )
+            return bool(self.mixing_state.get("direct_source_mode", False))
 
         def current_target_graph_details() -> tuple[
             dict[str, MixingSpectrumResult],
@@ -2300,7 +2296,7 @@ class SpectralAnalyzerTool:
             return _target_mixing_graph_details(
                 self.spectrum_results,
                 self.mixing_steps,
-                direct_cri_sources=direct_cri_mode(),
+                direct_source_mode=direct_source_mode(),
             )
 
         def clear_mixing_solution() -> None:
@@ -2341,10 +2337,10 @@ class SpectralAnalyzerTool:
             except SpectralAnalysisError as exc:
                 ui.label(str(exc)).classes("text-sm text-rose-600")
                 return
-            if (direct_cri_mode() and len(active_ids) < 2) or (
-                not direct_cri_mode() and len(active_ids) != 3
+            if (direct_source_mode() and len(active_ids) < 2) or (
+                not direct_source_mode() and len(active_ids) != 3
             ):
-                requirement = "请至少导入 2 条原始光谱。" if direct_cri_mode() else "请继续组合，直至恰好剩余 3 条。"
+                requirement = "请至少导入 2 条原始光谱。" if direct_source_mode() else "请继续组合，直至恰好剩余 3 条。"
                 ui.label(f"当前有 {len(active_ids)} 条光谱；{requirement}").classes(
                     "text-sm text-slate-500"
                 )
@@ -2580,8 +2576,8 @@ class SpectralAnalyzerTool:
                 mixing_solve_error = str(exc)
                 refresh_mixing_outputs()
                 return
-            if (direct_cri_mode() and len(active_ids) < 2) or (
-                not direct_cri_mode() and len(active_ids) != 3
+            if (direct_source_mode() and len(active_ids) < 2) or (
+                not direct_source_mode() and len(active_ids) != 3
             ):
                 return
             mixing_solve_generation += 1
@@ -2606,16 +2602,12 @@ class SpectralAnalyzerTool:
         def update_mixing_goal_mode(_=None) -> None:
             """切换求解路径时清除不兼容的旧配比并重新显示模式按钮。"""
 
-            if not bool(self.mixing_state.get("target_cri_enabled", False)) or bool(
-                self.mixing_state.get("target_xy_enabled", True)
-            ):
-                self.mixing_state["direct_cri_sources"] = False
             clear_mixing_solution()
             render_mixing_workspace.refresh()
             schedule_dynamic_mixing_solve()
 
-        def toggle_direct_cri_sources() -> None:
-            self.mixing_state["direct_cri_sources"] = not direct_cri_mode()
+        def toggle_direct_source_mode() -> None:
+            self.mixing_state["direct_source_mode"] = not direct_source_mode()
             clear_mixing_solution()
             render_mixing_workspace.refresh()
             schedule_dynamic_mixing_solve()
@@ -2716,9 +2708,9 @@ class SpectralAnalyzerTool:
             nonlocal mixing_solve_task, mixing_solve_pending, mixing_solve_error
             try:
                 nodes, active_ids, source_coefficients = current_target_graph_details()
-                if direct_cri_mode():
+                if direct_source_mode():
                     if len(active_ids) < 2:
-                        raise SpectralAnalysisError("直接计算 CRI 目标至少需要两条原始光谱")
+                        raise SpectralAnalysisError("原始光谱直算至少需要两条光谱")
                 elif len(active_ids) != 3:
                     raise SpectralAnalysisError("必须先组合到恰好剩余三条光谱")
                 xy_enabled = bool(self.mixing_state.get("target_xy_enabled", True))
@@ -2948,21 +2940,17 @@ class SpectralAnalyzerTool:
                                     self.mixing_state,
                                     "target_cri_enabled",
                                 ).on_value_change(update_mixing_goal_mode)
-                                if (
-                                    bool(self.mixing_state.get("target_cri_enabled", False))
-                                    and not bool(self.mixing_state.get("target_xy_enabled", True))
-                                ):
-                                    ui.button(
-                                        "原始光谱直算：已开启" if direct_cri_mode() else "原始光谱直算：未开启",
-                                        icon="check_circle" if direct_cri_mode() else "tune",
-                                        on_click=toggle_direct_cri_sources,
-                                    ).props(
-                                        "dense no-caps "
-                                        + ("unelevated color=blue-8" if direct_cri_mode() else "outline color=blue-8")
-                                    ).tooltip("开启后忽略组合层，直接优化全部原始光谱的峰值配比")
-                            if direct_cri_mode():
+                                ui.button(
+                                    "原始光谱直算：已开启" if direct_source_mode() else "原始光谱直算：未开启",
+                                    icon="check_circle" if direct_source_mode() else "tune",
+                                    on_click=toggle_direct_source_mode,
+                                ).props(
+                                    "dense no-caps "
+                                    + ("unelevated color=blue-8" if direct_source_mode() else "outline color=blue-8")
+                                ).tooltip("开启后忽略组合层，直接用全部原始光谱求解已启用的目标")
+                            if direct_source_mode():
                                 ui.label(
-                                    "直接模式：组合层不参与求解；全部原始光谱独立优化，至少需要两条。"
+                                    "直接模式：组合层不参与求解；全部原始光谱独立优化当前目标，至少需要两条。"
                                 ).classes("text-xs text-blue-700")
                             with ui.row().classes("w-full items-center gap-2 flex-wrap mt-1"):
                                 ui.number(

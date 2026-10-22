@@ -16,7 +16,7 @@ from itertools import combinations
 from typing import Any, Callable, ParamSpec, TypeVar
 
 import numpy as np
-from scipy.optimize import minimize
+from scipy.optimize import linprog, minimize
 
 colour: Any | None = None
 _COLOUR_LOCK = threading.RLock()
@@ -1115,6 +1115,163 @@ def _mixed_luminous_flux(calculation_grid: np.ndarray, mixed_values: np.ndarray,
     return float(colour_module.luminous_flux(mixed_sd))
 
 
+@_serialized_colour_calculation
+def _mixing_xyz_matrix(
+    spectra: tuple[SpectrumInput, ...],
+    calculation_grid: np.ndarray,
+    basis_values: tuple[np.ndarray, ...],
+) -> np.ndarray:
+    """返回各条峰值归一化原始光谱的 XYZ 列矩阵。"""
+
+    colour_module = _require_colour()
+    columns = []
+    for spectrum, values in zip(spectra, basis_values):
+        sd = colour_module.SpectralDistribution(
+            dict(zip(calculation_grid.tolist(), values.tolist())),
+            name=spectrum.name,
+        )
+        columns.append(np.asarray(colour_module.sd_to_XYZ(sd), dtype=float))
+    matrix = np.column_stack(columns)
+    if not np.all(np.isfinite(matrix)):
+        raise SpectralAnalysisError("原始光谱无法得到有效的三刺激值")
+    return matrix
+
+
+def _solve_multi_spectrum_xy_targets(
+    spectra: tuple[SpectrumInput, ...],
+    target_xy: tuple[float, float],
+    targets: np.ndarray | None,
+    name: str,
+) -> ThreeSpectrumMixSolution:
+    """在多光谱精确 xy 可行域内选择均衡配比或满足 CRI 下限的配比。"""
+
+    _validate_xy(target_xy)
+    grid, basis_values = _aligned_peak_spectra(spectra)
+    basis_matrix = np.vstack(basis_values)
+    XYZ = _mixing_xyz_matrix(spectra, grid, basis_values)
+    x, y = target_xy
+    total_XYZ = np.sum(XYZ, axis=0)
+    constraints_matrix = np.vstack((
+        XYZ[0] - x * total_XYZ,
+        XYZ[1] - y * total_XYZ,
+        np.ones(len(spectra), dtype=float),
+    ))
+    constraints_values = np.asarray((0.0, 0.0, 1.0), dtype=float)
+    feasible = linprog(
+        np.zeros(len(spectra), dtype=float),
+        A_eq=constraints_matrix,
+        b_eq=constraints_values,
+        bounds=(0.0, 1.0),
+        method="highs",
+    )
+    if not feasible.success or feasible.x is None:
+        raise SpectralAnalysisError("目标色坐标位于原始光谱可混合范围之外")
+
+    bounds = [(0.0, 1.0)] * len(spectra)
+    equalities = {"type": "eq", "fun": lambda weights: constraints_matrix @ weights - constraints_values}
+    uniform = np.full(len(spectra), 1 / len(spectra), dtype=float)
+    balanced = minimize(
+        lambda weights: float(np.sum((weights - uniform) ** 2)),
+        uniform,
+        jac=lambda weights: 2 * (weights - uniform),
+        method="SLSQP",
+        bounds=bounds,
+        constraints=equalities,
+        options={"maxiter": 200, "ftol": 1e-12},
+    )
+    starts = [np.asarray(feasible.x, dtype=float)]
+    if balanced.success and np.max(np.abs(constraints_matrix @ balanced.x - constraints_values)) < 1e-7:
+        starts.insert(0, np.asarray(balanced.x, dtype=float))
+    if targets is None:
+        best_weights = starts[0]
+    else:
+        for indices in combinations(range(len(spectra)), 3):
+            if len(starts) >= 12:
+                break
+            try:
+                triple = np.linalg.solve(constraints_matrix[:, indices], constraints_values)
+            except np.linalg.LinAlgError:
+                continue
+            if np.min(triple) < -1e-8:
+                continue
+            seed = np.zeros(len(spectra), dtype=float)
+            seed[list(indices)] = np.maximum(triple, 0)
+            starts.append(seed / np.sum(seed))
+
+        metric_cache: dict[tuple[float, ...], np.ndarray] = {}
+
+        def objective(weights: np.ndarray) -> float:
+            key = tuple(float(round(value, 10)) for value in weights)
+            metrics = metric_cache.get(key)
+            if metrics is None:
+                try:
+                    metrics = _cri_metrics_for_mixed_values(grid, weights @ basis_matrix)
+                except SpectralAnalysisError:
+                    return 1e9
+                metric_cache[key] = metrics
+            shortfall = np.maximum(targets - metrics, 0.0)
+            return float(np.sum(shortfall * shortfall) - 1e-5 * np.mean(metrics))
+
+        best_weights = None
+        best_score = math.inf
+        for start in starts:
+            optimized = minimize(
+                objective,
+                start,
+                method="SLSQP",
+                bounds=bounds,
+                constraints=equalities,
+                options={"maxiter": 120, "ftol": 1e-10},
+            )
+            for candidate in (start, np.asarray(optimized.x, dtype=float)):
+                candidate = np.maximum(candidate, 0)
+                candidate_sum = float(np.sum(candidate))
+                if candidate_sum <= 0:
+                    continue
+                candidate /= candidate_sum
+                if np.max(np.abs(constraints_matrix @ candidate - constraints_values)) > 1e-7:
+                    continue
+                score = objective(candidate)
+                if score < best_score:
+                    best_score = score
+                    best_weights = candidate.copy()
+        if best_weights is None or best_score >= 1e9:
+            raise SpectralAnalysisError("精确色坐标范围内无法得到有效的 CRI 配比")
+
+    mixed_values = best_weights @ basis_matrix
+    result = analyze_spectrum(SpectrumInput(
+        name=name,
+        wavelengths=tuple(float(value) for value in grid),
+        values=tuple(float(value) for value in mixed_values),
+    ))
+    if max(abs(result.xy[0] - x), abs(result.xy[1] - y)) > 1e-6:
+        raise SpectralAnalysisError("多光谱配比未能精确达到目标色坐标")
+    if targets is not None:
+        actual = np.asarray(
+            [result.ra if result.ra is not None else float("nan"),
+             *(dict(result.ri).get(index, float("nan")) for index in range(1, 16))],
+            dtype=float,
+        )
+        unmet = [
+            ("Ra" if index == 0 else f"R{index}", float(target), float(value))
+            for index, (target, value) in enumerate(zip(targets, actual))
+            if not math.isfinite(float(value)) or value + 0.05 < target
+        ]
+        if unmet:
+            summary = "、".join(
+                f"{label}={value:.2f}（目标≥{target:.2f}）"
+                for label, target, value in unmet[:5]
+            )
+            if len(unmet) > 5:
+                summary += f" 等 {len(unmet)} 项"
+            raise SpectralAnalysisError(f"精确色坐标配比无法同时满足 CRI 下限：{summary}")
+    return ThreeSpectrumMixSolution(
+        result=result,
+        peak_ratios=tuple(float(value) for value in best_weights),
+        luminous_flux=_mixed_luminous_flux(grid, mixed_values, name),
+    )
+
+
 def solve_spectrum_mix_targets(
     spectra: tuple[SpectrumInput, ...],
     *,
@@ -1124,19 +1281,21 @@ def solve_spectrum_mix_targets(
 ) -> ThreeSpectrumMixSolution:
     """按可独立启用的 xy 与 CRI 下限目标反求峰值配比。
 
-    三光谱 xy 目标继续复用原有线性精确解；只启用 CRI 时可对多条光谱使用有界非线性
-    优化。三光谱同时启用两类目标时，xy 已唯一确定配比，因此在精确 xy 解上
-    校验全部 CRI 下限，避免以牺牲色坐标的方式静默满足显色目标。
+    三光谱 xy 目标继续复用原有线性精确解；多光谱 xy 目标在可行域内求解。
+    只启用 CRI 时使用有界非线性优化；同时启用两类目标时严格保持 xy，
+    再寻找满足 CRI 下限的配比，不以牺牲色坐标换取显色指数。
     """
 
     if target_xy is None and cri_targets is None:
         raise SpectralAnalysisError("请至少启用色坐标或 CRI 目标")
-    if target_xy is not None and len(spectra) != 3:
-        raise SpectralAnalysisError("色坐标目标求解要求恰好三条活动光谱")
+    if target_xy is not None and len(spectra) < 2:
+        raise SpectralAnalysisError("色坐标目标求解至少需要两条光谱")
     if target_xy is None and len(spectra) < 2:
         raise SpectralAnalysisError("CRI 目标求解至少需要两条光谱")
 
     targets = _validate_cri_targets(cri_targets) if cri_targets is not None else None
+    if target_xy is not None and len(spectra) != 3:
+        return _solve_multi_spectrum_xy_targets(spectra, target_xy, targets, name)
     if target_xy is not None:
         solution = solve_three_spectrum_mix(
             (spectra[0], spectra[1], spectra[2]),
