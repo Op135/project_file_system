@@ -11,8 +11,8 @@ import pandas as pd
 from nicegui import app, ui
 from nicegui.functions.refreshable import refreshable
 
-from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, PROJECT_STATE_LIST, REQ_DIR, REQ_REMOVE_DIR
 from .. import db_storage
+from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, PROJECT_STATE_LIST, REQ_DIR, REQ_REMOVE_DIR
 from ..overview_file_health import OVERVIEW_FILE_HEALTH_KEY, scan_overview_file_health, summarize_file_health
 from ..statistics_access import (
     can_manage_overview_owners,
@@ -649,10 +649,780 @@ def statistics_page():
                 # 左侧列 (主要工作流)
                 # =========================================================
                 with ui.column().classes("col-span-12 lg:col-span-6 gap-4"):
-                    # C. 概述统计图表 (Statistics)
+                    # 整体普通统计信息
+                    if can_view_statistics(current_role, current_user):
+                        with ui.card().classes(
+                            "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white mb-2"
+                        ):
+                            ui_card_header("项目需求录入与概述填写统计", "insights", "purple-500")
+
+                            # ==========================================
+                            # 新增：点击图表柱子弹窗显示项目明细的回调函数
+                            # ==========================================
+                            def show_status_project_details(e):
+                                category_name = e.args.get("name")
+                                if not category_name:
+                                    return
+                                show_project_list_dialog(
+                                    f"项目明细：{category_name}",
+                                    ordered_status_dict.get(category_name, []),
+                                    show_state=False,
+                                    project_text_colors=project_overview_text_colors,
+                                    project_types=project_overview_categories,
+                                    type_order=list(OVERVIEW_COMPLETION_COLORS),
+                                    type_filter_label="概述完成度",
+                                    unknown_type="未录需求",
+                                )
+
+                            def show_overview_project_details(e):
+                                category_name = e.args.get("name")
+                                if not category_name:
+                                    return
+                                show_project_list_dialog(
+                                    f"项目明细：{category_name}",
+                                    overview_categories.get(category_name, []),
+                                    project_types={
+                                        project_name: project_summary.get(project_name, {}).get("state", "未知状态")
+                                        for project_name in overview_categories.get(category_name, [])
+                                    },
+                                    type_order=list(status_color_map),
+                                    type_filter_label="项目状态",
+                                    unknown_type="未知状态",
+                                )
+
+                            # 2. 数据处理与清洗
+                            # 2.1 统计公司总项目及状态分布 (由计数改为收集项目列表)
+                            total_projects = len(project_summary)
+                            status_counts_dict = {}  # 结构变为：{"研发": ["项目A", "项目B"]}
+                            for p_name, p_info in project_summary.items():
+                                p_status = p_info.get("state", "未知状态")
+                                if p_status not in status_counts_dict:
+                                    status_counts_dict[p_status] = []
+                                status_counts_dict[p_status].append(p_name)
+
+                            # 为不同状态预设颜色映射
+                            status_color_map = {
+                                "作废": "#555555",
+                                "待定": "#f59e0b",
+                                "研发": "#3b82f6",
+                                "转产": "#ef4444",
+                                "试产": "#06b6d4",
+                                "量产": "#10b981",
+                            }
+                            fallback_colors = ["#8b5cf6", "#ec4899", "#f97316", "#14b8a6"]
+
+                            # 将预设颜色的状态排在前面，未预设颜色的状态排在后面
+                            ordered_status_dict = {}
+                            for k in status_color_map.keys():
+                                if k in status_counts_dict:
+                                    ordered_status_dict[k] = status_counts_dict.pop(k)
+                            ordered_status_dict.update(status_counts_dict)
+
+                            status_chart_data = []
+                            fallback_idx = 0
+                            for k, proj_list in ordered_status_dict.items():
+                                color = status_color_map.get(k)
+                                if not color:
+                                    color = fallback_colors[fallback_idx % len(fallback_colors)]
+                                    fallback_idx += 1
+
+                                status_chart_data.append(
+                                    {
+                                        "value": len(proj_list),
+                                        "name": k,
+                                        "projects": proj_list,  # 将项目列表挂载到 ECharts 的数据项中
+                                        "itemStyle": {"color": color},
+                                    }
+                                )
+
+                            # 2.2 聚合 pending_data 中的待办状态到项目维度
+                            project_issues = {}  # 数据结构为：{"项目A": set("缺必填", "有待定"), "项目B": set("缺需填"), ...}
+                            for user, p_dict in pending_data.items():
+                                if not isinstance(p_dict, dict):
+                                    continue
+                                for proj, issues in p_dict.items():
+                                    if proj not in project_issues:
+                                        project_issues[proj] = set()
+                                    project_issues[proj].update(issues.values())
+
+                            # 2.3 统计已录入需求的项目概述完成度 (由计数改为收集项目列表)
+                            overview_categories = {
+                                "概述无负责人": [],
+                                "存在缺必填": [],
+                                "有待定": [],
+                                "仅缺需填": [],
+                                "概述已完成": [],
+                            }
+                            project_overview_text_colors = {}
+                            project_overview_categories = {}
+
+                            # 遍历所有有需求版本记录的项目
+                            for proj in req_ver_data.keys():
+                                statuses = project_issues.get(proj, set())
+                                category = classify_overview_completion(
+                                    statuses,
+                                    has_unassigned_owner=proj in overview_pending_projects,
+                                )
+                                overview_categories[category].append(proj)
+                                project_overview_text_colors[proj] = OVERVIEW_COMPLETION_COLORS[category]
+                                project_overview_categories[proj] = category
+
+                                # 同步供项目表使用的完成/仅缺需填缓存，防止旧分类残留。
+                                if category == "概述已完成":
+                                    if proj not in app.storage.general["overview_completed"]:
+                                        app.storage.general["overview_completed"].append(proj)
+                                else:
+                                    if proj in app.storage.general["overview_completed"]:
+                                        app.storage.general["overview_completed"].remove(proj)
+
+                                if category == "仅缺需填":
+                                    if proj not in app.storage.general["overview_only_need"]:
+                                        app.storage.general["overview_only_need"].append(proj)
+                                elif proj in app.storage.general["overview_only_need"]:
+                                    app.storage.general["overview_only_need"].remove(proj)
+
+                            # 准备柱状图系列数据
+                            overview_chart_data = [
+                                {
+                                    "value": len(overview_categories["概述无负责人"]),
+                                    "name": "概述无负责人",
+                                    "projects": overview_categories["概述无负责人"],
+                                    "itemStyle": {"color": OVERVIEW_COMPLETION_COLORS["概述无负责人"]},
+                                },
+                                {
+                                    "value": len(overview_categories["存在缺必填"]),
+                                    "name": "存在缺必填",
+                                    "projects": overview_categories["存在缺必填"],
+                                    "itemStyle": {"color": OVERVIEW_COMPLETION_COLORS["存在缺必填"]},
+                                },
+                                {
+                                    "value": len(overview_categories["有待定"]),
+                                    "name": "有待定",
+                                    "projects": overview_categories["有待定"],
+                                    "itemStyle": {"color": OVERVIEW_COMPLETION_COLORS["有待定"]},
+                                },
+                                {
+                                    "value": len(overview_categories["仅缺需填"]),
+                                    "name": "仅缺需填",
+                                    "projects": overview_categories["仅缺需填"],
+                                    "itemStyle": {"color": OVERVIEW_COMPLETION_COLORS["仅缺需填"]},
+                                },
+                                {
+                                    "value": len(overview_categories["概述已完成"]),
+                                    "name": "概述已完成",
+                                    "projects": overview_categories["概述已完成"],
+                                    "itemStyle": {"color": OVERVIEW_COMPLETION_COLORS["概述已完成"]},
+                                },
+                            ]
+
+                            with ui.element("div").classes("grid grid-cols-1 md:grid-cols-2 w-full gap-4 mt-4"):
+                                # ==========================================
+                                # 图表 A：公司现有项目状态占比
+                                # ==========================================
+                                status_x_axis_data = (
+                                    [item["name"] for item in status_chart_data] if status_chart_data else ["暂无数据"]
+                                )
+
+                                echart_status_config = {
+                                    "title": {
+                                        "text": "项目总体状态分布",
+                                        "subtext": f"项目总计: {total_projects} 个",
+                                        "itemGap": 15,
+                                        "left": "center",
+                                    },
+                                    "tooltip": {
+                                        "trigger": "item",
+                                        "confine": True,
+                                        ":formatter": CLICK_DETAIL_TOOLTIP_FORMATTER,
+                                    },
+                                    "grid": {
+                                        "top": 100,
+                                        "left": "3%",
+                                        "right": "4%",
+                                        "bottom": "15%",
+                                        "containLabel": True,
+                                    },
+                                    "xAxis": {
+                                        "type": "category",
+                                        "data": status_x_axis_data,
+                                        "axisLabel": {"interval": 0, "rotate": 0},
+                                    },
+                                    "yAxis": {"type": "value", "minInterval": 1},
+                                    "series": [
+                                        {
+                                            "name": "项目数量",
+                                            "type": "bar",
+                                            "barWidth": "50%",
+                                            "colorBy": "data",
+                                            "data": status_chart_data
+                                            if status_chart_data
+                                            else [{"value": 0, "name": "暂无数据"}],
+                                            "itemStyle": {"borderRadius": [4, 4, 0, 0]},
+                                            "label": {"show": True, "position": "top"},
+                                        }
+                                    ],
+                                }
+                                # 渲染图表并绑定点击事件
+                                status_chart = ui.echart(echart_status_config).classes("w-full h-80 cursor-pointer")
+
+                                # ==========================================
+                                # 图表 B：已录入需求的项目概述质量分析
+                                # ==========================================
+                                overview_x_axis_data = [item["name"] for item in overview_chart_data]
+
+                                echart_overview_config = {
+                                    "title": {
+                                        "text": "已录需求项目概述完成度",
+                                        "subtext": f"已录需求项目: {len(req_ver_data)} 个",
+                                        "itemGap": 15,
+                                        "left": "center",
+                                    },
+                                    "tooltip": {
+                                        "trigger": "item",
+                                        "confine": True,
+                                        ":formatter": CLICK_DETAIL_TOOLTIP_FORMATTER,
+                                    },
+                                    "grid": {
+                                        "top": 100,
+                                        "left": "3%",
+                                        "right": "4%",
+                                        "bottom": "15%",
+                                        "containLabel": True,
+                                    },
+                                    "xAxis": {
+                                        "type": "category",
+                                        "data": overview_x_axis_data,
+                                        "axisLabel": {"interval": 0, "rotate": 0},
+                                    },
+                                    "yAxis": {"type": "value", "minInterval": 1},
+                                    "series": [
+                                        {
+                                            "name": "项目数量",
+                                            "type": "bar",
+                                            "barWidth": "50%",
+                                            "colorBy": "data",
+                                            "data": overview_chart_data,
+                                            "itemStyle": {"borderRadius": [4, 4, 0, 0]},
+                                            "label": {"show": True, "position": "top"},
+                                        }
+                                    ],
+                                }
+                                # 渲染图表并绑定点击事件
+                                overview_chart = ui.echart(echart_overview_config).classes("w-full h-80 cursor-pointer")
+
+                                bind_project_detail_click(status_chart, show_status_project_details)
+                                bind_project_detail_click(overview_chart, show_overview_project_details)
                     if can_view_overview_stats:
-                        # ----------------- 图表 1：团队待办概览 (已修改横纵轴及排序) -----------------
-                        # 增加 relative 类以支持绝对定位下拉框
+                        # 概述健康检测
+                        with ui.card().classes(
+                            "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white"
+                        ):
+                            snapshot = db_storage.get_item(OVERVIEW_FILE_HEALTH_KEY, {})
+                            if not isinstance(snapshot, dict):
+                                snapshot = {}
+                            raw_items = snapshot.get("items", [])
+                            health_items = (
+                                [item for item in raw_items if isinstance(item, dict)]
+                                if isinstance(raw_items, list)
+                                else []
+                            )
+                            checked_at = str(snapshot.get("checked_at") or "尚未检测")
+
+                            ui_card_header("文件性概述健康检测", "health_and_safety", "teal-700")
+
+                            async def run_health_check() -> None:
+                                check_button.disable()
+                                try:
+                                    await scan_overview_file_health()
+                                    ui.notify("检测完成，正在更新结果", type="positive")
+                                    ui.navigate.reload()
+                                except Exception:
+                                    logger.exception("手动检测文件性概述失败")
+                                    ui.notify("检测失败，请查看服务日志", type="negative")
+                                finally:
+                                    check_button.enable()
+
+                            with ui.row().classes("w-full items-center justify-between gap-2 flex-wrap"):
+                                ui.label(
+                                    f"上次检测：{checked_at}（每天 02:30 自动更新；仅检查当前需求版本已激活的图片、视频、文档、服务器检索文件和 SVN）"
+                                ).classes("text-sm text-gray-500")
+                                check_button = ui.button("立即检测", icon="refresh", on_click=run_health_check).props(
+                                    "outline dense color=primary"
+                                )
+                            if not snapshot:
+                                ui.label("暂无检测结果，可点击“立即检测”生成首次快照。")
+                            else:
+                                healthy_count = sum(bool(item.get("healthy")) for item in health_items)
+                                ui.label(
+                                    f"共 {len(health_items)} 条｜健康 {healthy_count} 条｜不健康 {len(health_items) - healthy_count} 条"
+                                ).classes("text-sm font-medium text-gray-700")
+
+                                health_dialog = ui.dialog()
+
+                                def show_unhealthy_details(title: str, issues: list[dict]) -> None:
+                                    health_dialog.clear()
+                                    with health_dialog, ui.card().classes("w-full max-w-4xl max-h-[85vh]"):
+                                        with ui.row().classes("w-full items-center justify-between"):
+                                            ui.label(f"{title}：不健康概述 {len(issues)} 条").classes(
+                                                "text-lg font-bold"
+                                            )
+                                            ui.button(icon="close", on_click=health_dialog.close).props("flat round")
+                                        with ui.scroll_area().classes("w-full max-h-[65vh]"):
+                                            for item in issues:
+                                                with ui.column().classes("w-full gap-1 p-3 border-b border-gray-100"):
+                                                    ui.label(
+                                                        f"{item.get('project', '')}｜{item.get('title', '')}｜{item.get('content', '')}"
+                                                    ).classes("font-medium break-all")
+                                                    ui.label(
+                                                        f"职能：{item.get('role', '')}｜负责人：{item.get('owner', '')}｜原因：{item.get('reason', '')}"
+                                                    ).classes("text-sm text-red-700 break-all")
+                                    health_dialog.open()
+
+                                with ui.row().classes("w-full items-center justify-between gap-2 flex-wrap"):
+                                    ui.label("点击红色柱段查看不健康概述条目").classes("text-sm text-gray-500")
+                                    health_group_select = (
+                                        ui.select(
+                                            options={"role": "按职能", "owner": "按负责人"},
+                                            value="role",
+                                            label="展示维度",
+                                        )
+                                        .props("outlined dense options-dense")
+                                        .classes("w-40")
+                                    )
+
+                                def build_health_chart(field: str) -> dict:
+                                    groups = summarize_file_health(health_items, field)
+                                    names = [group["name"] for group in groups]
+                                    return {
+                                        "tooltip": {"trigger": "item", "formatter": "{b}<br/>{a}：{c} 条"},
+                                        "legend": {"top": 0},
+                                        "grid": {
+                                            "top": 40,
+                                            "bottom": 65,
+                                            "left": 30,
+                                            "right": 20,
+                                            "containLabel": True,
+                                        },
+                                        "xAxis": {
+                                            "type": "category",
+                                            "data": names,
+                                            "axisLabel": {"interval": 0, "rotate": 25, "hideOverlap": True},
+                                        },
+                                        "yAxis": {"type": "value", "minInterval": 1},
+                                        "dataZoom": [
+                                            {"type": "inside", "xAxisIndex": 0},
+                                            {
+                                                "type": "slider",
+                                                "xAxisIndex": 0,
+                                                "bottom": 8,
+                                                "height": 16,
+                                                "start": 0,
+                                                "end": min(100, 1200 / max(len(groups), 1)),
+                                                "show": len(groups) > 12,
+                                            },
+                                        ],
+                                        "series": [
+                                            {
+                                                "name": "健康",
+                                                "type": "bar",
+                                                "stack": "health",
+                                                "barMaxWidth": 48,
+                                                "itemStyle": {"color": "#10b981"},
+                                                "data": [
+                                                    {
+                                                        "value": group["total"] - len(group["unhealthy"]),
+                                                        "itemStyle": {
+                                                            "borderRadius": [4, 4, 0, 0]
+                                                            if not group["unhealthy"]
+                                                            else [0, 0, 0, 0]
+                                                        },
+                                                    }
+                                                    for group in groups
+                                                ],
+                                            },
+                                            {
+                                                "name": "不健康",
+                                                "type": "bar",
+                                                "stack": "health",
+                                                "barMaxWidth": 48,
+                                                "itemStyle": {"color": "#ef4444"},
+                                                "data": [
+                                                    {
+                                                        "value": len(group["unhealthy"]),
+                                                        "itemStyle": {"borderRadius": [4, 4, 0, 0]},
+                                                    }
+                                                    for group in groups
+                                                ],
+                                            },
+                                        ],
+                                    }
+
+                                health_chart = ui.echart(build_health_chart("role")).classes(
+                                    "w-full h-96 cursor-pointer"
+                                )
+
+                                def show_health_chart_details(e) -> None:
+                                    if e.args.get("series_name") != "不健康":
+                                        return
+                                    field = str(health_group_select.value or "role")
+                                    name = str(e.args.get("name") or "")
+                                    group = next(
+                                        (
+                                            item
+                                            for item in summarize_file_health(health_items, field)
+                                            if item["name"] == name
+                                        ),
+                                        None,
+                                    )
+                                    if group is not None and group["unhealthy"]:
+                                        heading = "按职能" if field == "role" else "按负责人"
+                                        show_unhealthy_details(f"{heading} · {name}", group["unhealthy"])
+
+                                bind_project_detail_click(health_chart, show_health_chart_details)
+
+                                def update_health_chart(e) -> None:
+                                    health_chart.options.update(build_health_chart(str(e.value or "role")))
+                                    health_chart.update()
+
+                                health_group_select.on_value_change(update_health_chart)
+
+                        # 近7日待办项趋势
+                        with ui.card().classes(
+                            "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white relative"
+                        ):
+                            ui_card_header(
+                                "近一周待办项趋势（概述项数量，忽略未录需求项目）", "trending_up", "teal-500"
+                            )
+                            # history 数据结构示例：{"2024-06-01": {"人名": {"项目名": label:状态,...},...}, "2024-06-02": {...},...}
+                            history = app.storage.general.get("overview_pending_history", {})
+                            # 每次查阅都会刷新当前日期的待办快照，确保数据的时效性和准确性
+                            now = datetime.now()
+                            today_str = now.strftime("%Y-%m-%d")
+                            # 获取存储结构
+                            current_pending = copy.deepcopy(app.storage.general.get("overview_charge_pending", {}))
+                            # if "待定负责人" in current_pending:
+                            #     current_pending.pop("待定负责人", None)
+                            # 记录当天的最新快照（如果服务器一天内多次重启，会不断刷新当天的最终结果）
+                            history[today_str] = current_pending
+                            eligible_history = {
+                                date: recorded_pending_snapshot(snapshot, req_ver_data)
+                                for date, snapshot in history.items()
+                            }
+
+                            # 1. 强制生成固定的连续 7 天日期列表
+                            if history:
+                                latest_date_str = max(history.keys())
+                                latest_date = datetime.strptime(latest_date_str, "%Y-%m-%d")
+                            else:
+                                latest_date = datetime.now()
+
+                            # full_dates: 用于在字典中查询实际数据 (例如 "2026-03-21")
+                            full_dates = [(latest_date - timedelta(days=6 - i)).strftime("%Y-%m-%d") for i in range(7)]
+                            # display_dates: 截取掉 "YYYY-"，仅保留 "MM-DD" 用于横轴显示 (例如 "03-21")
+                            display_dates = [d[5:] for d in full_dates]
+
+                            # 2. 找出这 7 天内有过待办项的所有人员
+                            all_users = set()
+                            for d in full_dates:
+                                # 使用 .get(d, {}) 防御性读取，即使某天没数据也不会报错
+                                all_users.update(eligible_history.get(d, {}).keys())
+
+                            def get_user_pending_count(date_str, user):
+                                user_state = eligible_history.get(date_str, {}).get(user, {})
+                                return sum(len(v) for v in user_state.values())
+
+                            latest_day = full_dates[-1]
+                            previous_day = full_dates[-2] if len(full_dates) > 1 else full_dates[-1]
+
+                            all_users_list = sorted(
+                                list(all_users),
+                                # 3. 排序逻辑：先按近一天待办项数与前一天的差值降序，再按近一天待办项数降序，最后按姓名升序
+                                key=lambda user: (
+                                    -(
+                                        get_user_pending_count(latest_day, user)
+                                        - get_user_pending_count(previous_day, user)
+                                    ),
+                                    -get_user_pending_count(latest_day, user),
+                                    user,
+                                ),
+                            )
+
+                            if not all_users_list:
+                                ui.label("近一周暂无待办记录。").classes("p-4 text-gray-400 text-sm")
+                            else:
+                                if "待定负责人" in all_users_list:
+                                    all_users_list.remove("待定负责人")
+                                # 默认选择前3名人员，防止图表拥挤
+                                default_selected = all_users_list[:3] if len(all_users_list) > 3 else all_users_list
+
+                                ui_select_user = (
+                                    ui.select(
+                                        options=all_users_list,
+                                        value=default_selected,
+                                        multiple=True,
+                                        label="请选择要查看的人员趋势",
+                                    )
+                                    .props("borderless")
+                                    .classes("max-w-1/3 min-w-1/4 px-4 mb-2 absolute top-0 right-0")
+                                )
+
+                                # 辅助函数：依据当前勾选的人员动态生成图表数据
+                                def get_series_data(selected_users):
+                                    series_list = []
+                                    for user in selected_users:
+                                        user_data = []
+                                        for i, d in enumerate(full_dates):
+                                            # 1. 判断当天该人员是否有数据，如果没有，则填入 None，ECharts 会自动断开折线
+                                            if user not in eligible_history.get(d, {}):
+                                                user_data.append({"value": None, "name": d})
+                                                continue
+
+                                            curr_state = eligible_history.get(d, {}).get(user, {})
+                                            curr_item_count = sum(len(v) for v in curr_state.values())
+
+                                            prev_state = (
+                                                eligible_history.get(full_dates[i - 1], {}).get(user, {})
+                                                if i > 0
+                                                else curr_state
+                                            )
+
+                                            diff_texts = []
+                                            all_projs = set(curr_state.keys()) | set(prev_state.keys())
+                                            for p in all_projs:
+                                                c_count = len(curr_state.get(p, {}))
+                                                p_count = len(prev_state.get(p, {}))
+                                                if c_count > p_count:
+                                                    diff_texts.append(f"• {p} (+{c_count - p_count}项)")
+                                                elif c_count < p_count:
+                                                    diff_texts.append(f"• {p} ({c_count - p_count}项)")
+
+                                            # 2. 使用 \n 作为换行符，配合 tooltip 的 white-space: pre-wrap 样式实现优雅换行
+                                            if diff_texts:
+                                                diff_str = "\n".join(diff_texts)
+                                                point_name = f"{d} [较昨日变化]\n{diff_str}"
+                                            else:
+                                                point_name = f"{d} [较昨日变化: 无增减]"
+
+                                            user_data.append({"value": curr_item_count, "name": point_name})
+
+                                        series_list.append(
+                                            # 3. 将 smooth 改为 False，使用直线折线图
+                                            {
+                                                "name": user,
+                                                "type": "line",
+                                                "smooth": False,
+                                                "symbolSize": 6,
+                                                # connectNulls: ECharts 系列配置项，设为 True 可以在包含 null 的数据点之间连线
+                                                "connectNulls": True,
+                                                "data": user_data,
+                                            }
+                                        )
+                                    return series_list
+
+                                trend_chart = ui.echart(
+                                    {
+                                        "tooltip": {
+                                            "trigger": "item",
+                                            "formatter": "<b>{a}</b> <br/> {b} <br/><br/> 当日总待办项: <b>{c}</b>",
+                                            # 开启 pre-wrap，使得字符串中的 \n 能被 CSS 识别为真实的换行
+                                            "extraCssText": "white-space: pre-wrap;",
+                                        },
+                                        "legend": {"type": "scroll", "bottom": 0},
+                                        "grid": {
+                                            "top": 30,
+                                            "bottom": 50,
+                                            "left": 40,
+                                            "right": 20,
+                                            "containLabel": True,
+                                        },
+                                        "xAxis": {
+                                            "type": "category",
+                                            "data": display_dates,
+                                            "axisTick": {"show": False},
+                                            "boundaryGap": False,
+                                            "splitLine": {"show": True, "lineStyle": {"type": "dashed"}},
+                                        },
+                                        "yAxis": {
+                                            "type": "value",
+                                            "minInterval": 1,
+                                            "splitLine": {"lineStyle": {"type": "dashed"}},
+                                        },
+                                        "series": get_series_data(default_selected),
+                                    }
+                                ).classes("w-full h-80")
+
+                                def update_chart(e):
+                                    trend_chart.options["series"] = get_series_data(e.value)
+                                    trend_chart.update()
+
+                                ui_select_user.on_value_change(update_chart)
+
+                        # 30日多维趋势分析
+                        with ui.card().classes(
+                            "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white relative"
+                        ):
+                            ui_card_header("近30日待办状态趋势（项目数）", "history", "amber-600")
+
+                            cutoff_date = datetime.now() - timedelta(days=30)
+                            history_dates = cast(pd.Series, statistics_history_df["日期"])
+                            df = cast(
+                                pd.DataFrame,
+                                statistics_history_df.loc[history_dates >= cutoff_date],
+                            ).copy()
+                            if not df.empty:
+                                df["日期_str"] = cast(pd.Series, df["日期"]).dt.strftime("%m-%d")
+                                df["项目状态"] = cast(pd.Series, df["项目状态"]).replace(
+                                    {"转产": CONVERSION_LEGACY_STATE}
+                                )
+
+                            if df.empty:
+                                ui.label("暂无历史统计数据，数据将在每日工作日 18:00 自动累积生成。").classes(
+                                    "p-8 text-gray-400 text-center w-full"
+                                )
+                            else:
+                                available_states = cast(pd.Series, df["项目状态"]).unique().tolist()
+                                default_state = next(
+                                    (
+                                        state
+                                        for state in (
+                                            CONVERSION_RECORDED_STATE,
+                                            CONVERSION_UNRECORDED_STATE,
+                                            CONVERSION_LEGACY_STATE,
+                                        )
+                                        if state in available_states
+                                    ),
+                                    available_states[0],
+                                )
+                                # 计算默认阶段总积压最多的前三人作为默认项
+                                recent_date = cast(pd.Series, df["日期"]).max()
+                                latest_data = cast(
+                                    pd.DataFrame,
+                                    df.loc[cast(pd.Series, df["日期"]) == recent_date],
+                                )
+                                top_users_df = cast(
+                                    pd.DataFrame,
+                                    latest_data.loc[cast(pd.Series, latest_data["项目状态"]) == default_state],
+                                ).copy()
+                                top_users_df["total_issues"] = (
+                                    top_users_df["缺必填数"] + top_users_df["有待定数"] + top_users_df["缺需填数"]
+                                )
+                                grouped_top_users = cast(
+                                    pd.DataFrame,
+                                    top_users_df.groupby("用户").sum(numeric_only=True),
+                                )
+                                top_user_totals = cast(
+                                    pd.Series,
+                                    grouped_top_users.loc[:, "total_issues"],
+                                )
+                                default_top_users = top_user_totals.nlargest(3).index.tolist()
+
+                                if not default_top_users:
+                                    default_top_users = cast(pd.Series, df["用户"]).unique()[:3].tolist()
+
+                                with ui.row().classes("w-full px-4 gap-4 items-center justify-between"):
+                                    sel_users = ui.select(
+                                        options=cast(pd.Series, df["用户"]).unique().tolist(),
+                                        value=default_top_users,
+                                        multiple=True,
+                                        label="人员选择",
+                                    ).classes("w-1/3 min-w-[150px]")
+
+                                    sel_states = ui.select(
+                                        options=available_states,
+                                        value=[default_state],
+                                        multiple=True,
+                                        label="阶段过滤",
+                                    ).classes("w-1/4 min-w-[120px]")
+
+                                    sel_metric = ui.select(
+                                        options={
+                                            "缺必填数": "缺必填数",
+                                            "有待定数": "有待定数",
+                                            "缺需填数": "缺需填数",
+                                        },
+                                        value="缺必填数",
+                                        label="考察指标",
+                                    ).classes("w-1/4 min-w-[120px]")
+
+                                @ui.refreshable
+                                def render_history_chart(users, states, metric):
+                                    if not users or not states:
+                                        ui.label("请至少选择一名人员和一个阶段。").classes("p-4 text-gray-400")
+                                        return
+
+                                    mask = cast(pd.Series, df["用户"]).isin(users) & cast(
+                                        pd.Series, df["项目状态"]
+                                    ).isin(states)
+                                    filtered_df = (
+                                        cast(pd.DataFrame, df.loc[mask])
+                                        .groupby(["日期_str", "用户"])[metric]
+                                        .sum()
+                                        .unstack()
+                                        .fillna(0)
+                                    )
+
+                                    dates = filtered_df.index.tolist()
+                                    series = []
+                                    for user in filtered_df.columns:
+                                        series.append(
+                                            {
+                                                "name": user,
+                                                "type": "line",
+                                                "smooth": False,
+                                                "symbolSize": 6,
+                                                "data": filtered_df[user].tolist(),
+                                            }
+                                        )
+
+                                    echart_config = {
+                                        "tooltip": {"trigger": "axis"},
+                                        "legend": {"bottom": 0, "type": "scroll"},
+                                        "grid": {
+                                            "top": 40,
+                                            "bottom": 60,
+                                            "left": 40,
+                                            "right": 20,
+                                            "containLabel": True,
+                                        },
+                                        "xAxis": {
+                                            "type": "category",
+                                            "data": dates,
+                                            "boundaryGap": False,
+                                            "splitLine": {"show": True, "lineStyle": {"type": "dashed"}},
+                                        },
+                                        "yAxis": {
+                                            "type": "value",
+                                            "minInterval": 1,
+                                            "splitLine": {"lineStyle": {"type": "dashed"}},
+                                        },
+                                        "series": series,
+                                    }
+                                    ui.echart(echart_config).classes("w-full h-80")
+
+                                render_history_chart(sel_users.value, sel_states.value, sel_metric.value)
+
+                                sel_users.on_value_change(
+                                    lambda: render_history_chart.refresh(
+                                        sel_users.value, sel_states.value, sel_metric.value
+                                    )
+                                )
+                                sel_states.on_value_change(
+                                    lambda: render_history_chart.refresh(
+                                        sel_users.value, sel_states.value, sel_metric.value
+                                    )
+                                )
+                                sel_metric.on_value_change(
+                                    lambda: render_history_chart.refresh(
+                                        sel_users.value, sel_states.value, sel_metric.value
+                                    )
+                                )
+
+                # =========================================================
+                # 右侧列
+                # =========================================================
+                with ui.column().classes("col-span-12 lg:col-span-6 gap-4"):
+                    if can_view_overview_stats:
+                        # 团队待办概览
                         with ui.card().classes(
                             "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white mb-2 relative"
                         ):
@@ -1099,606 +1869,7 @@ def statistics_page():
                             # 监听筛选框的值变化，并触发刷新
                             status_select.on_value_change(lambda e: pending_overview_view.refresh(e.value))
 
-                        # ----------------- 图表 2：近7日待办项趋势 (新增) -----------------
-                        with ui.card().classes(
-                            "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white relative"
-                        ):
-                            ui_card_header(
-                                "近一周待办项趋势（概述项数量，忽略未录需求项目）", "trending_up", "teal-500"
-                            )
-                            # history 数据结构示例：{"2024-06-01": {"人名": {"项目名": label:状态,...},...}, "2024-06-02": {...},...}
-                            history = app.storage.general.get("overview_pending_history", {})
-                            # 每次查阅都会刷新当前日期的待办快照，确保数据的时效性和准确性
-                            now = datetime.now()
-                            today_str = now.strftime("%Y-%m-%d")
-                            # 获取存储结构
-                            current_pending = copy.deepcopy(app.storage.general.get("overview_charge_pending", {}))
-                            # if "待定负责人" in current_pending:
-                            #     current_pending.pop("待定负责人", None)
-                            # 记录当天的最新快照（如果服务器一天内多次重启，会不断刷新当天的最终结果）
-                            history[today_str] = current_pending
-                            eligible_history = {
-                                date: recorded_pending_snapshot(snapshot, req_ver_data)
-                                for date, snapshot in history.items()
-                            }
-
-                            # 1. 强制生成固定的连续 7 天日期列表
-                            if history:
-                                latest_date_str = max(history.keys())
-                                latest_date = datetime.strptime(latest_date_str, "%Y-%m-%d")
-                            else:
-                                latest_date = datetime.now()
-
-                            # full_dates: 用于在字典中查询实际数据 (例如 "2026-03-21")
-                            full_dates = [(latest_date - timedelta(days=6 - i)).strftime("%Y-%m-%d") for i in range(7)]
-                            # display_dates: 截取掉 "YYYY-"，仅保留 "MM-DD" 用于横轴显示 (例如 "03-21")
-                            display_dates = [d[5:] for d in full_dates]
-
-                            # 2. 找出这 7 天内有过待办项的所有人员
-                            all_users = set()
-                            for d in full_dates:
-                                # 使用 .get(d, {}) 防御性读取，即使某天没数据也不会报错
-                                all_users.update(eligible_history.get(d, {}).keys())
-
-                            def get_user_pending_count(date_str, user):
-                                user_state = eligible_history.get(date_str, {}).get(user, {})
-                                return sum(len(v) for v in user_state.values())
-
-                            latest_day = full_dates[-1]
-                            previous_day = full_dates[-2] if len(full_dates) > 1 else full_dates[-1]
-
-                            all_users_list = sorted(
-                                list(all_users),
-                                # 3. 排序逻辑：先按近一天待办项数与前一天的差值降序，再按近一天待办项数降序，最后按姓名升序
-                                key=lambda user: (
-                                    -(
-                                        get_user_pending_count(latest_day, user)
-                                        - get_user_pending_count(previous_day, user)
-                                    ),
-                                    -get_user_pending_count(latest_day, user),
-                                    user,
-                                ),
-                            )
-
-                            if not all_users_list:
-                                ui.label("近一周暂无待办记录。").classes("p-4 text-gray-400 text-sm")
-                            else:
-                                if "待定负责人" in all_users_list:
-                                    all_users_list.remove("待定负责人")
-                                # 默认选择前3名人员，防止图表拥挤
-                                default_selected = all_users_list[:3] if len(all_users_list) > 3 else all_users_list
-
-                                ui_select_user = (
-                                    ui.select(
-                                        options=all_users_list,
-                                        value=default_selected,
-                                        multiple=True,
-                                        label="请选择要查看的人员趋势",
-                                    )
-                                    .props("borderless")
-                                    .classes("max-w-1/3 min-w-1/4 px-4 mb-2 absolute top-0 right-0")
-                                )
-
-                                # 辅助函数：依据当前勾选的人员动态生成图表数据
-                                def get_series_data(selected_users):
-                                    series_list = []
-                                    for user in selected_users:
-                                        user_data = []
-                                        for i, d in enumerate(full_dates):
-                                            # 1. 判断当天该人员是否有数据，如果没有，则填入 None，ECharts 会自动断开折线
-                                            if user not in eligible_history.get(d, {}):
-                                                user_data.append({"value": None, "name": d})
-                                                continue
-
-                                            curr_state = eligible_history.get(d, {}).get(user, {})
-                                            curr_item_count = sum(len(v) for v in curr_state.values())
-
-                                            prev_state = (
-                                                eligible_history.get(full_dates[i - 1], {}).get(user, {})
-                                                if i > 0
-                                                else curr_state
-                                            )
-
-                                            diff_texts = []
-                                            all_projs = set(curr_state.keys()) | set(prev_state.keys())
-                                            for p in all_projs:
-                                                c_count = len(curr_state.get(p, {}))
-                                                p_count = len(prev_state.get(p, {}))
-                                                if c_count > p_count:
-                                                    diff_texts.append(f"• {p} (+{c_count - p_count}项)")
-                                                elif c_count < p_count:
-                                                    diff_texts.append(f"• {p} ({c_count - p_count}项)")
-
-                                            # 2. 使用 \n 作为换行符，配合 tooltip 的 white-space: pre-wrap 样式实现优雅换行
-                                            if diff_texts:
-                                                diff_str = "\n".join(diff_texts)
-                                                point_name = f"{d} [较昨日变化]\n{diff_str}"
-                                            else:
-                                                point_name = f"{d} [较昨日变化: 无增减]"
-
-                                            user_data.append({"value": curr_item_count, "name": point_name})
-
-                                        series_list.append(
-                                            # 3. 将 smooth 改为 False，使用直线折线图
-                                            {
-                                                "name": user,
-                                                "type": "line",
-                                                "smooth": False,
-                                                "symbolSize": 6,
-                                                # connectNulls: ECharts 系列配置项，设为 True 可以在包含 null 的数据点之间连线
-                                                "connectNulls": True,
-                                                "data": user_data,
-                                            }
-                                        )
-                                    return series_list
-
-                                trend_chart = ui.echart(
-                                    {
-                                        "tooltip": {
-                                            "trigger": "item",
-                                            "formatter": "<b>{a}</b> <br/> {b} <br/><br/> 当日总待办项: <b>{c}</b>",
-                                            # 开启 pre-wrap，使得字符串中的 \n 能被 CSS 识别为真实的换行
-                                            "extraCssText": "white-space: pre-wrap;",
-                                        },
-                                        "legend": {"type": "scroll", "bottom": 0},
-                                        "grid": {
-                                            "top": 30,
-                                            "bottom": 50,
-                                            "left": 40,
-                                            "right": 20,
-                                            "containLabel": True,
-                                        },
-                                        "xAxis": {
-                                            "type": "category",
-                                            "data": display_dates,
-                                            "axisTick": {"show": False},
-                                            "boundaryGap": False,
-                                            "splitLine": {"show": True, "lineStyle": {"type": "dashed"}},
-                                        },
-                                        "yAxis": {
-                                            "type": "value",
-                                            "minInterval": 1,
-                                            "splitLine": {"lineStyle": {"type": "dashed"}},
-                                        },
-                                        "series": get_series_data(default_selected),
-                                    }
-                                ).classes("w-full h-80")
-
-                                def update_chart(e):
-                                    trend_chart.options["series"] = get_series_data(e.value)
-                                    trend_chart.update()
-
-                                ui_select_user.on_value_change(update_chart)
-
-                        # F. 待办项历史趋势 (Pending Items Historical Trend Analysis)
-                        # ----------------- 图表 0：30日多维趋势分析 -----------------
-                        with ui.card().classes(
-                            "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white relative"
-                        ):
-                            ui_card_header("近30日待办状态趋势（项目数）", "history", "amber-600")
-
-                            cutoff_date = datetime.now() - timedelta(days=30)
-                            history_dates = cast(pd.Series, statistics_history_df["日期"])
-                            df = cast(
-                                pd.DataFrame,
-                                statistics_history_df.loc[history_dates >= cutoff_date],
-                            ).copy()
-                            if not df.empty:
-                                df["日期_str"] = cast(pd.Series, df["日期"]).dt.strftime("%m-%d")
-                                df["项目状态"] = cast(pd.Series, df["项目状态"]).replace(
-                                    {"转产": CONVERSION_LEGACY_STATE}
-                                )
-
-                            if df.empty:
-                                ui.label("暂无历史统计数据，数据将在每日工作日 18:00 自动累积生成。").classes(
-                                    "p-8 text-gray-400 text-center w-full"
-                                )
-                            else:
-                                available_states = cast(pd.Series, df["项目状态"]).unique().tolist()
-                                default_state = next(
-                                    (
-                                        state
-                                        for state in (
-                                            CONVERSION_RECORDED_STATE,
-                                            CONVERSION_UNRECORDED_STATE,
-                                            CONVERSION_LEGACY_STATE,
-                                        )
-                                        if state in available_states
-                                    ),
-                                    available_states[0],
-                                )
-                                # 计算默认阶段总积压最多的前三人作为默认项
-                                recent_date = cast(pd.Series, df["日期"]).max()
-                                latest_data = cast(
-                                    pd.DataFrame,
-                                    df.loc[cast(pd.Series, df["日期"]) == recent_date],
-                                )
-                                top_users_df = cast(
-                                    pd.DataFrame,
-                                    latest_data.loc[cast(pd.Series, latest_data["项目状态"]) == default_state],
-                                ).copy()
-                                top_users_df["total_issues"] = (
-                                    top_users_df["缺必填数"] + top_users_df["有待定数"] + top_users_df["缺需填数"]
-                                )
-                                grouped_top_users = cast(
-                                    pd.DataFrame,
-                                    top_users_df.groupby("用户").sum(numeric_only=True),
-                                )
-                                top_user_totals = cast(
-                                    pd.Series,
-                                    grouped_top_users.loc[:, "total_issues"],
-                                )
-                                default_top_users = top_user_totals.nlargest(3).index.tolist()
-
-                                if not default_top_users:
-                                    default_top_users = cast(pd.Series, df["用户"]).unique()[:3].tolist()
-
-                                with ui.row().classes("w-full px-4 gap-4 items-center justify-between"):
-                                    sel_users = ui.select(
-                                        options=cast(pd.Series, df["用户"]).unique().tolist(),
-                                        value=default_top_users,
-                                        multiple=True,
-                                        label="人员选择",
-                                    ).classes("w-1/3 min-w-[150px]")
-
-                                    sel_states = ui.select(
-                                        options=available_states,
-                                        value=[default_state],
-                                        multiple=True,
-                                        label="阶段过滤",
-                                    ).classes("w-1/4 min-w-[120px]")
-
-                                    sel_metric = ui.select(
-                                        options={
-                                            "缺必填数": "缺必填数",
-                                            "有待定数": "有待定数",
-                                            "缺需填数": "缺需填数",
-                                        },
-                                        value="缺必填数",
-                                        label="考察指标",
-                                    ).classes("w-1/4 min-w-[120px]")
-
-                                @ui.refreshable
-                                def render_history_chart(users, states, metric):
-                                    if not users or not states:
-                                        ui.label("请至少选择一名人员和一个阶段。").classes("p-4 text-gray-400")
-                                        return
-
-                                    mask = cast(pd.Series, df["用户"]).isin(users) & cast(
-                                        pd.Series, df["项目状态"]
-                                    ).isin(states)
-                                    filtered_df = (
-                                        cast(pd.DataFrame, df.loc[mask])
-                                        .groupby(["日期_str", "用户"])[metric]
-                                        .sum()
-                                        .unstack()
-                                        .fillna(0)
-                                    )
-
-                                    dates = filtered_df.index.tolist()
-                                    series = []
-                                    for user in filtered_df.columns:
-                                        series.append(
-                                            {
-                                                "name": user,
-                                                "type": "line",
-                                                "smooth": False,
-                                                "symbolSize": 6,
-                                                "data": filtered_df[user].tolist(),
-                                            }
-                                        )
-
-                                    echart_config = {
-                                        "tooltip": {"trigger": "axis"},
-                                        "legend": {"bottom": 0, "type": "scroll"},
-                                        "grid": {
-                                            "top": 40,
-                                            "bottom": 60,
-                                            "left": 40,
-                                            "right": 20,
-                                            "containLabel": True,
-                                        },
-                                        "xAxis": {
-                                            "type": "category",
-                                            "data": dates,
-                                            "boundaryGap": False,
-                                            "splitLine": {"show": True, "lineStyle": {"type": "dashed"}},
-                                        },
-                                        "yAxis": {
-                                            "type": "value",
-                                            "minInterval": 1,
-                                            "splitLine": {"lineStyle": {"type": "dashed"}},
-                                        },
-                                        "series": series,
-                                    }
-                                    ui.echart(echart_config).classes("w-full h-80")
-
-                                render_history_chart(sel_users.value, sel_states.value, sel_metric.value)
-
-                                sel_users.on_value_change(
-                                    lambda: render_history_chart.refresh(
-                                        sel_users.value, sel_states.value, sel_metric.value
-                                    )
-                                )
-                                sel_states.on_value_change(
-                                    lambda: render_history_chart.refresh(
-                                        sel_users.value, sel_states.value, sel_metric.value
-                                    )
-                                )
-                                sel_metric.on_value_change(
-                                    lambda: render_history_chart.refresh(
-                                        sel_users.value, sel_states.value, sel_metric.value
-                                    )
-                                )
-                # =========================================================
-                # 右侧列
-                # =========================================================
-                with ui.column().classes("col-span-12 lg:col-span-6 gap-4"):
-                    # D. 其他统计信息 (Other Statistics)
-                    if can_view_statistics(current_role, current_user):
-                        with ui.card().classes(
-                            "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white mb-2"
-                        ):
-                            ui_card_header("项目需求录入与概述填写统计", "insights", "purple-500")
-
-                            # ==========================================
-                            # 新增：点击图表柱子弹窗显示项目明细的回调函数
-                            # ==========================================
-                            def show_status_project_details(e):
-                                category_name = e.args.get("name")
-                                if not category_name:
-                                    return
-                                show_project_list_dialog(
-                                    f"项目明细：{category_name}",
-                                    ordered_status_dict.get(category_name, []),
-                                    show_state=False,
-                                    project_text_colors=project_overview_text_colors,
-                                    project_types=project_overview_categories,
-                                    type_order=list(OVERVIEW_COMPLETION_COLORS),
-                                    type_filter_label="概述完成度",
-                                    unknown_type="未录需求",
-                                )
-
-                            def show_overview_project_details(e):
-                                category_name = e.args.get("name")
-                                if not category_name:
-                                    return
-                                show_project_list_dialog(
-                                    f"项目明细：{category_name}",
-                                    overview_categories.get(category_name, []),
-                                    project_types={
-                                        project_name: project_summary.get(project_name, {}).get("state", "未知状态")
-                                        for project_name in overview_categories.get(category_name, [])
-                                    },
-                                    type_order=list(status_color_map),
-                                    type_filter_label="项目状态",
-                                    unknown_type="未知状态",
-                                )
-
-                            # 2. 数据处理与清洗
-                            # 2.1 统计公司总项目及状态分布 (由计数改为收集项目列表)
-                            total_projects = len(project_summary)
-                            status_counts_dict = {}  # 结构变为：{"研发": ["项目A", "项目B"]}
-                            for p_name, p_info in project_summary.items():
-                                p_status = p_info.get("state", "未知状态")
-                                if p_status not in status_counts_dict:
-                                    status_counts_dict[p_status] = []
-                                status_counts_dict[p_status].append(p_name)
-
-                            # 为不同状态预设颜色映射
-                            status_color_map = {
-                                "作废": "#555555",
-                                "待定": "#f59e0b",
-                                "研发": "#3b82f6",
-                                "转产": "#ef4444",
-                                "试产": "#06b6d4",
-                                "量产": "#10b981",
-                            }
-                            fallback_colors = ["#8b5cf6", "#ec4899", "#f97316", "#14b8a6"]
-
-                            # 将预设颜色的状态排在前面，未预设颜色的状态排在后面
-                            ordered_status_dict = {}
-                            for k in status_color_map.keys():
-                                if k in status_counts_dict:
-                                    ordered_status_dict[k] = status_counts_dict.pop(k)
-                            ordered_status_dict.update(status_counts_dict)
-
-                            status_chart_data = []
-                            fallback_idx = 0
-                            for k, proj_list in ordered_status_dict.items():
-                                color = status_color_map.get(k)
-                                if not color:
-                                    color = fallback_colors[fallback_idx % len(fallback_colors)]
-                                    fallback_idx += 1
-
-                                status_chart_data.append(
-                                    {
-                                        "value": len(proj_list),
-                                        "name": k,
-                                        "projects": proj_list,  # 将项目列表挂载到 ECharts 的数据项中
-                                        "itemStyle": {"color": color},
-                                    }
-                                )
-
-                            # 2.2 聚合 pending_data 中的待办状态到项目维度
-                            project_issues = {}  # 数据结构为：{"项目A": set("缺必填", "有待定"), "项目B": set("缺需填"), ...}
-                            for user, p_dict in pending_data.items():
-                                if not isinstance(p_dict, dict):
-                                    continue
-                                for proj, issues in p_dict.items():
-                                    if proj not in project_issues:
-                                        project_issues[proj] = set()
-                                    project_issues[proj].update(issues.values())
-
-                            # 2.3 统计已录入需求的项目概述完成度 (由计数改为收集项目列表)
-                            overview_categories = {
-                                "概述无负责人": [],
-                                "存在缺必填": [],
-                                "有待定": [],
-                                "仅缺需填": [],
-                                "概述已完成": [],
-                            }
-                            project_overview_text_colors = {}
-                            project_overview_categories = {}
-
-                            # 遍历所有有需求版本记录的项目
-                            for proj in req_ver_data.keys():
-                                statuses = project_issues.get(proj, set())
-                                category = classify_overview_completion(
-                                    statuses,
-                                    has_unassigned_owner=proj in overview_pending_projects,
-                                )
-                                overview_categories[category].append(proj)
-                                project_overview_text_colors[proj] = OVERVIEW_COMPLETION_COLORS[category]
-                                project_overview_categories[proj] = category
-
-                                # 同步供项目表使用的完成/仅缺需填缓存，防止旧分类残留。
-                                if category == "概述已完成":
-                                    if proj not in app.storage.general["overview_completed"]:
-                                        app.storage.general["overview_completed"].append(proj)
-                                else:
-                                    if proj in app.storage.general["overview_completed"]:
-                                        app.storage.general["overview_completed"].remove(proj)
-
-                                if category == "仅缺需填":
-                                    if proj not in app.storage.general["overview_only_need"]:
-                                        app.storage.general["overview_only_need"].append(proj)
-                                elif proj in app.storage.general["overview_only_need"]:
-                                    app.storage.general["overview_only_need"].remove(proj)
-
-                            # 准备柱状图系列数据
-                            overview_chart_data = [
-                                {
-                                    "value": len(overview_categories["概述无负责人"]),
-                                    "name": "概述无负责人",
-                                    "projects": overview_categories["概述无负责人"],
-                                    "itemStyle": {"color": OVERVIEW_COMPLETION_COLORS["概述无负责人"]},
-                                },
-                                {
-                                    "value": len(overview_categories["存在缺必填"]),
-                                    "name": "存在缺必填",
-                                    "projects": overview_categories["存在缺必填"],
-                                    "itemStyle": {"color": OVERVIEW_COMPLETION_COLORS["存在缺必填"]},
-                                },
-                                {
-                                    "value": len(overview_categories["有待定"]),
-                                    "name": "有待定",
-                                    "projects": overview_categories["有待定"],
-                                    "itemStyle": {"color": OVERVIEW_COMPLETION_COLORS["有待定"]},
-                                },
-                                {
-                                    "value": len(overview_categories["仅缺需填"]),
-                                    "name": "仅缺需填",
-                                    "projects": overview_categories["仅缺需填"],
-                                    "itemStyle": {"color": OVERVIEW_COMPLETION_COLORS["仅缺需填"]},
-                                },
-                                {
-                                    "value": len(overview_categories["概述已完成"]),
-                                    "name": "概述已完成",
-                                    "projects": overview_categories["概述已完成"],
-                                    "itemStyle": {"color": OVERVIEW_COMPLETION_COLORS["概述已完成"]},
-                                },
-                            ]
-
-                            with ui.element("div").classes("grid grid-cols-1 md:grid-cols-2 w-full gap-4 mt-4"):
-                                # ==========================================
-                                # 图表 A：公司现有项目状态占比
-                                # ==========================================
-                                status_x_axis_data = (
-                                    [item["name"] for item in status_chart_data] if status_chart_data else ["暂无数据"]
-                                )
-
-                                echart_status_config = {
-                                    "title": {
-                                        "text": "项目总体状态分布",
-                                        "subtext": f"项目总计: {total_projects} 个",
-                                        "itemGap": 15,
-                                        "left": "center",
-                                    },
-                                    "tooltip": {
-                                        "trigger": "item",
-                                        "confine": True,
-                                        ":formatter": CLICK_DETAIL_TOOLTIP_FORMATTER,
-                                    },
-                                    "grid": {
-                                        "top": 100,
-                                        "left": "3%",
-                                        "right": "4%",
-                                        "bottom": "15%",
-                                        "containLabel": True,
-                                    },
-                                    "xAxis": {
-                                        "type": "category",
-                                        "data": status_x_axis_data,
-                                        "axisLabel": {"interval": 0, "rotate": 0},
-                                    },
-                                    "yAxis": {"type": "value", "minInterval": 1},
-                                    "series": [
-                                        {
-                                            "name": "项目数量",
-                                            "type": "bar",
-                                            "barWidth": "50%",
-                                            "colorBy": "data",
-                                            "data": status_chart_data
-                                            if status_chart_data
-                                            else [{"value": 0, "name": "暂无数据"}],
-                                            "itemStyle": {"borderRadius": [4, 4, 0, 0]},
-                                            "label": {"show": True, "position": "top"},
-                                        }
-                                    ],
-                                }
-                                # 渲染图表并绑定点击事件
-                                status_chart = ui.echart(echart_status_config).classes("w-full h-80 cursor-pointer")
-
-                                # ==========================================
-                                # 图表 B：已录入需求的项目概述质量分析
-                                # ==========================================
-                                overview_x_axis_data = [item["name"] for item in overview_chart_data]
-
-                                echart_overview_config = {
-                                    "title": {
-                                        "text": "已录需求项目概述完成度",
-                                        "subtext": f"已录需求项目: {len(req_ver_data)} 个",
-                                        "itemGap": 15,
-                                        "left": "center",
-                                    },
-                                    "tooltip": {
-                                        "trigger": "item",
-                                        "confine": True,
-                                        ":formatter": CLICK_DETAIL_TOOLTIP_FORMATTER,
-                                    },
-                                    "grid": {
-                                        "top": 100,
-                                        "left": "3%",
-                                        "right": "4%",
-                                        "bottom": "15%",
-                                        "containLabel": True,
-                                    },
-                                    "xAxis": {
-                                        "type": "category",
-                                        "data": overview_x_axis_data,
-                                        "axisLabel": {"interval": 0, "rotate": 0},
-                                    },
-                                    "yAxis": {"type": "value", "minInterval": 1},
-                                    "series": [
-                                        {
-                                            "name": "项目数量",
-                                            "type": "bar",
-                                            "barWidth": "50%",
-                                            "colorBy": "data",
-                                            "data": overview_chart_data,
-                                            "itemStyle": {"borderRadius": [4, 4, 0, 0]},
-                                            "label": {"show": True, "position": "top"},
-                                        }
-                                    ],
-                                }
-                                # 渲染图表并绑定点击事件
-                                overview_chart = ui.echart(echart_overview_config).classes("w-full h-80 cursor-pointer")
-
-                                bind_project_detail_click(status_chart, show_status_project_details)
-                                bind_project_detail_click(overview_chart, show_overview_project_details)
-                    # E. 概述负责人项目完成统计
-                    if can_view_overview_stats:
+                        # 概述负责人项目完成统计
                         with ui.card().classes(
                             "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white relative"
                         ):
@@ -1997,136 +2168,3 @@ def statistics_page():
                                 management_period_select.on_value_change(
                                     lambda e: render_management_history.refresh(management_user_select.value, e.value)
                                 )
-
-                if can_view_overview_stats:
-                    with ui.card().classes("col-span-12 lg:col-span-6 w-full rounded-xl shadow-sm border border-gray-100 bg-white"):
-                        snapshot = db_storage.get_item(OVERVIEW_FILE_HEALTH_KEY, {})
-                        if not isinstance(snapshot, dict):
-                            snapshot = {}
-                        raw_items = snapshot.get("items", [])
-                        health_items = [item for item in raw_items if isinstance(item, dict)] if isinstance(raw_items, list) else []
-                        checked_at = str(snapshot.get("checked_at") or "尚未检测")
-
-                        ui_card_header("文件性概述健康检测", "health_and_safety", "teal-700")
-
-                        async def run_health_check() -> None:
-                            check_button.disable()
-                            try:
-                                await scan_overview_file_health()
-                                ui.notify("检测完成，正在更新结果", type="positive")
-                                ui.navigate.reload()
-                            except Exception:
-                                logger.exception("手动检测文件性概述失败")
-                                ui.notify("检测失败，请查看服务日志", type="negative")
-                            finally:
-                                check_button.enable()
-
-                        with ui.row().classes("w-full items-center justify-between gap-3 flex-wrap"):
-                            ui.label(f"上次检测：{checked_at}（每天 02:30 自动更新；仅检查当前需求版本已激活的图片、视频、文档、服务器检索文件和 SVN）").classes(
-                                "text-sm text-gray-500"
-                            )
-                            check_button = ui.button("立即检测", icon="refresh", on_click=run_health_check).props(
-                                "outline dense color=primary"
-                            )
-                        if not snapshot:
-                            ui.label("暂无检测结果，可点击“立即检测”生成首次快照。")
-                        else:
-                            healthy_count = sum(bool(item.get("healthy")) for item in health_items)
-                            ui.label(
-                                f"共 {len(health_items)} 条｜健康 {healthy_count} 条｜不健康 {len(health_items) - healthy_count} 条"
-                            ).classes("text-sm font-medium text-gray-700")
-
-                            health_dialog = ui.dialog()
-
-                            def show_unhealthy_details(title: str, issues: list[dict]) -> None:
-                                health_dialog.clear()
-                                with health_dialog, ui.card().classes("w-full max-w-4xl max-h-[85vh]"):
-                                    with ui.row().classes("w-full items-center justify-between"):
-                                        ui.label(f"{title}：不健康概述 {len(issues)} 条").classes("text-lg font-bold")
-                                        ui.button(icon="close", on_click=health_dialog.close).props("flat round")
-                                    with ui.scroll_area().classes("w-full max-h-[65vh]"):
-                                        for item in issues:
-                                            with ui.column().classes("w-full gap-1 p-3 border-b border-gray-100"):
-                                                ui.label(
-                                                    f"{item.get('project', '')}｜{item.get('title', '')}｜{item.get('content', '')}"
-                                                ).classes("font-medium break-all")
-                                                ui.label(
-                                                    f"职能：{item.get('role', '')}｜负责人：{item.get('owner', '')}｜原因：{item.get('reason', '')}"
-                                                ).classes("text-sm text-red-700 break-all")
-                                health_dialog.open()
-
-                            with ui.row().classes("w-full items-center justify-between gap-3 flex-wrap"):
-                                ui.label("点击红色柱段查看不健康概述条目").classes("text-sm text-gray-500")
-                                health_group_select = ui.select(
-                                    options={"role": "按职能", "owner": "按负责人"},
-                                    value="role",
-                                    label="展示维度",
-                                ).props("outlined dense options-dense").classes("w-40")
-
-                            def build_health_chart(field: str) -> dict:
-                                groups = summarize_file_health(health_items, field)
-                                names = [group["name"] for group in groups]
-                                return {
-                                    "tooltip": {"trigger": "item", "formatter": "{b}<br/>{a}：{c} 条"},
-                                    "legend": {"top": 0},
-                                    "grid": {"top": 40, "bottom": 75, "left": 30, "right": 20, "containLabel": True},
-                                    "xAxis": {
-                                        "type": "category",
-                                        "data": names,
-                                        "axisLabel": {"interval": 0, "rotate": 25, "hideOverlap": True},
-                                    },
-                                    "yAxis": {"type": "value", "minInterval": 1},
-                                    "dataZoom": [
-                                        {"type": "inside", "xAxisIndex": 0},
-                                        {
-                                            "type": "slider",
-                                            "xAxisIndex": 0,
-                                            "bottom": 8,
-                                            "height": 16,
-                                            "start": 0,
-                                            "end": min(100, 1200 / max(len(groups), 1)),
-                                            "show": len(groups) > 12,
-                                        },
-                                    ],
-                                    "series": [
-                                        {
-                                            "name": "健康",
-                                            "type": "bar",
-                                            "stack": "health",
-                                            "barMaxWidth": 48,
-                                            "itemStyle": {"color": "#10b981"},
-                                            "data": [group["total"] - len(group["unhealthy"]) for group in groups],
-                                        },
-                                        {
-                                            "name": "不健康",
-                                            "type": "bar",
-                                            "stack": "health",
-                                            "barMaxWidth": 48,
-                                            "itemStyle": {"color": "#ef4444"},
-                                            "data": [len(group["unhealthy"]) for group in groups],
-                                        },
-                                    ],
-                                }
-
-                            health_chart = ui.echart(build_health_chart("role")).classes("w-full h-96 cursor-pointer")
-
-                            def show_health_chart_details(e) -> None:
-                                if e.args.get("series_name") != "不健康":
-                                    return
-                                field = str(health_group_select.value or "role")
-                                name = str(e.args.get("name") or "")
-                                group = next(
-                                    (item for item in summarize_file_health(health_items, field) if item["name"] == name),
-                                    None,
-                                )
-                                if group is not None and group["unhealthy"]:
-                                    heading = "按职能" if field == "role" else "按负责人"
-                                    show_unhealthy_details(f"{heading} · {name}", group["unhealthy"])
-
-                            bind_project_detail_click(health_chart, show_health_chart_details)
-
-                            def update_health_chart(e) -> None:
-                                health_chart.options.update(build_health_chart(str(e.value or "role")))
-                                health_chart.update()
-
-                            health_group_select.on_value_change(update_health_chart)
