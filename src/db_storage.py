@@ -1544,18 +1544,17 @@ async def _rotate_backups(backup_dir: Path, retention_days: int):
         # 修改时间早于该时间点的备份会被视为过期。
         cutoff_date = datetime.datetime.now() - datetime.timedelta(days=retention_days)
 
-        # 遍历目录下所有 .db 文件
-        for file_path in backup_dir.glob("storage_backup_*.db"):
-            # 获取文件修改时间
-            mtime = datetime.datetime.fromtimestamp(file_path.stat().st_mtime)
-
-            # 只删除本模块命名规则匹配且确实超过保留期的文件。
-            if mtime < cutoff_date:
-                try:
-                    file_path.unlink()  # 删除文件
-                    logger.info(f"已清理过期备份: {file_path.name}")
-                except Exception as e:
-                    logger.warning(f"清理文件失败 {file_path.name}: {e}")
+        # backups 是专用备份目录；递归覆盖 JSON、紧急备份和配置导入前备份。
+        for file_path in backup_dir.rglob("*"):
+            if not file_path.is_file() or file_path.is_symlink():
+                continue
+            try:
+                mtime = datetime.datetime.fromtimestamp(file_path.stat().st_mtime)
+                if mtime < cutoff_date:
+                    file_path.unlink()
+                    logger.info("已清理过期备份: %s", file_path)
+            except OSError as exc:
+                logger.warning("清理备份文件失败 %s: %s", file_path, exc)
 
     except Exception:
         logger.error("执行备份轮转清理时出错", exc_info=True)

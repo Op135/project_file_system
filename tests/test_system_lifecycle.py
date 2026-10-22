@@ -1,7 +1,9 @@
 import asyncio
 import importlib.util
+import os
 import sqlite3
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from typing import Any
@@ -126,6 +128,35 @@ class SystemLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
 
 class VerifiedBackupTests(unittest.IsolatedAsyncioTestCase):
+    async def test_backup_rotation_covers_all_backup_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            backup_directory = root / "backups"
+            import_directory = backup_directory / "config_import"
+            import_directory.mkdir(parents=True)
+            old_files = [
+                backup_directory / "storage_backup_old.db",
+                backup_directory / "storage-general_DAILY_SCHEDULE_old.json",
+                backup_directory / "nicegui_storage_EMERGENCY_old.db-wal",
+                import_directory / "identity_config_before_import_old.db",
+            ]
+            old_time = time.time() - 31 * 86400
+            for path in old_files:
+                path.write_bytes(b"backup")
+                os.utime(path, (old_time, old_time))
+            recent_backup = backup_directory / "storage-general_recent.json"
+            recent_backup.write_bytes(b"recent")
+            outside_file = root / "outside.db"
+            outside_file.write_bytes(b"outside")
+            os.utime(outside_file, (old_time, old_time))
+
+            storage = load_isolated_db_storage("test_all_backup_rotation", root / "source.db")
+            await storage._rotate_backups(backup_directory, 30)
+
+            self.assertTrue(all(not path.exists() for path in old_files))
+            self.assertTrue(recent_backup.exists())
+            self.assertTrue(outside_file.exists())
+
     async def test_online_backups_are_distinct_and_recoverable(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_path = Path(temporary_directory)
