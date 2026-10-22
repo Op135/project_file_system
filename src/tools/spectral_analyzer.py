@@ -251,30 +251,6 @@ def _compact_legend_options(names: list[Any]) -> dict[str, Any]:
     return options
 
 
-def _side_legend_options(names: list[Any]) -> dict[str, Any]:
-    """生成位于 CIE 绘图区右侧的纵向图例。"""
-
-    return {
-        "type": "plain",
-        "orient": "vertical",
-        "left": "76%",
-        "right": 4,
-        "top": "16%",
-        "bottom": "8%",
-        "itemGap": 11,
-        "itemWidth": 18,
-        "itemHeight": 10,
-        "tooltip": {"show": True},
-        "textStyle": {
-            "fontSize": 12,
-            "width": 160,
-            "overflow": "breakAll",
-            "lineHeight": 17,
-        },
-        "data": names,
-    }
-
-
 def _cie_data_zoom() -> list[dict[str, Any]]:
     """生成同时控制横纵坐标的滚轮缩放与拖拽平移配置。"""
 
@@ -466,8 +442,28 @@ def _cie_clicked_point_series(
     }
 
 
-def _render_cie_chart(options: dict[str, Any], viewport_offset: int = 245) -> Any:
+def _render_cie_chart(
+    options: dict[str, Any],
+    viewport_offset: int = 245,
+    *,
+    external_legend: bool = False,
+) -> Any:
     """以正方形容器渲染支持缩放、平移和智能十字指示的 CIE 图。"""
+
+    if external_legend:
+        with ui.element("div").classes("w-full flex justify-center items-stretch").style(
+            f"height:max(680px, calc(100vh - {viewport_offset}px));container-type:size;"
+        ):
+            with ui.element("div").classes("flex w-max max-w-full h-full items-center gap-3"):
+                with ui.element("div").classes("min-w-0").style(
+                    "width:100cqh;flex:0 1 auto;aspect-ratio:1/1;"
+                ):
+                    chart = ui.echart(options).classes("w-full h-full").style("cursor:grab;")
+                with ui.element("div").classes("w-max max-w-[45%] h-full min-h-0 shrink-0 overflow-auto"):
+                    _render_external_cie_legend(options, chart)
+        coordinate_system = "xy" if options.get("xAxis", {}).get("name") == "x" else "upvp"
+        _bind_cie_pointer_events(chart, coordinate_system)
+        return chart
 
     chart = (
         ui.echart(options)
@@ -523,16 +519,90 @@ def _bind_cie_pointer_events(chart: Any, coordinate_system: str) -> None:
 
 
 def _render_fitted_cie_chart(options: dict[str, Any]) -> None:
-    """在现有卡片剩余空间内渲染自适应 CIE 图。"""
+    """实时色坐标图左侧绘图、右侧滚动显示完整图例。"""
 
-    with ui.element("div").classes("w-full flex-1 min-h-0 flex items-center justify-center"):
-        chart = (
-            ui.echart(options)
-            .classes("h-full max-w-full max-h-full")
-            .style("width: auto; aspect-ratio: 1 / 1; cursor: grab;")
-        )
-        coordinate_system = "xy" if options.get("xAxis", {}).get("name") == "x" else "upvp"
-        _bind_cie_pointer_events(chart, coordinate_system)
+    with ui.element("div").classes("w-full flex-1 min-h-0 flex justify-center items-stretch").style(
+        "container-type:size;"
+    ):
+        with ui.element("div").classes("flex w-max max-w-full h-full items-center gap-2"):
+            with ui.element("div").classes("min-w-0").style(
+                "width:100cqh;flex:0 1 auto;aspect-ratio:1/1;"
+            ):
+                chart = ui.echart(options).classes("w-full h-full").style("cursor:grab;")
+            with ui.element("div").classes("w-max max-w-[45%] h-full min-h-0 shrink-0 overflow-auto"):
+                _render_external_cie_legend(options, chart)
+    coordinate_system = "xy" if options.get("xAxis", {}).get("name") == "x" else "upvp"
+    _bind_cie_pointer_events(chart, coordinate_system)
+
+
+def _render_external_cie_legend(options: dict[str, Any], chart: Any) -> None:
+    """渲染可内部滚动、单行显示名称且支持切换曲线的外部图例。"""
+
+    selected: dict[str, bool] = {}
+    buttons: dict[str, Any] = {}
+
+    def toggle_legend(name: str) -> None:
+        selected[name] = not selected[name]
+        chart.run_chart_method("setOption", {"legend": {"selected": {name: selected[name]}}})
+        if selected[name]:
+            buttons[name].classes(remove="opacity-40")
+        else:
+            buttons[name].classes(add="opacity-40")
+
+    with ui.column().classes("w-max items-start gap-0"):
+        for item in _cie_external_legend_items(options):
+            name = item["name"]
+            selected[name] = True
+            with ui.button(
+                on_click=lambda _event, selected_name=name: toggle_legend(selected_name),
+            ).props("flat dense no-caps").classes("text-slate-700 px-1 shrink-0") as button:
+                if item["kind"] == "line":
+                    ui.element("span").style(
+                        f"display:inline-block;flex-shrink:0;width:18px;height:3px;background:{item['color']};"
+                    )
+                elif item["kind"] == "triangle":
+                    ui.element("span").style(
+                        "display:inline-block;flex-shrink:0;width:0;height:0;"
+                        "border-left:6px solid transparent;border-right:6px solid transparent;"
+                        f"border-bottom:11px solid {item['color']};"
+                    )
+                elif item["kind"] == "diamond":
+                    ui.element("span").style(
+                        f"display:inline-block;flex-shrink:0;width:9px;height:9px;"
+                        f"transform:rotate(45deg);background:{item['color']};"
+                    )
+                elif item["kind"] in {"rect", "roundRect"}:
+                    radius = "3px" if item["kind"] == "roundRect" else "0"
+                    ui.element("span").style(
+                        f"display:inline-block;flex-shrink:0;width:10px;height:10px;"
+                        f"border-radius:{radius};background:{item['color']};"
+                    )
+                elif item["kind"] in {"pin", "arrow"}:
+                    icon_name = "place" if item["kind"] == "pin" else "arrow_forward"
+                    ui.icon(icon_name, size="14px").style(f"color:{item['color']};")
+                else:
+                    ui.element("span").style(
+                        f"display:inline-block;flex-shrink:0;width:10px;height:10px;border-radius:50%;"
+                        f"background:{item['color']};border:1px solid white;"
+                    )
+                ui.label(name).classes("text-xs whitespace-nowrap")
+            buttons[name] = button
+
+
+def _cie_external_legend_items(options: dict[str, Any]) -> list[dict[str, str]]:
+    """从现有 ECharts 图例与系列提取外部图例标签及色标。"""
+
+    series_by_name = {item.get("name"): item for item in options.get("series", [])}
+    items: list[dict[str, str]] = []
+    for entry in options.get("legend", {}).get("data", []):
+        name = entry if isinstance(entry, str) else entry.get("name", "")
+        if not name or name not in series_by_name:
+            continue
+        series = series_by_name[name]
+        kind = "line" if series.get("type") == "line" else str(series.get("symbol", "circle"))
+        style = series.get("lineStyle", {}) if kind == "line" else series.get("itemStyle", {})
+        items.append({"name": name, "kind": kind, "color": str(style.get("color", "#475569"))})
+    return items
 
 
 def _chromaticity_tooltip(coordinate_system: str, include_cri: bool = False) -> str:
@@ -603,6 +673,7 @@ def _cie_axis_text_options() -> dict[str, Any]:
             "fontWeight": 500,
             "color": "#334155",
             "margin": 10,
+            "hideOverlap": True,
         },
         "nameTextStyle": {
             "fontSize": 18,
@@ -1254,17 +1325,12 @@ def _chromaticity_chart_options(
     return {
         "animation": False,
         "tooltip": _cie_tooltip_options(coordinate_system),
-        "legend": (_side_legend_options(legend_items) if compact else _legend_options(legend_items)),
+        "legend": ({"show": False, "data": legend_items} if compact else _legend_options(legend_items)),
         "grid": (
-            {"left": "5%", "top": "15%", "width": "70%", "height": "70%"}
+            {"left": "16%", "top": "7%", "width": "75%", "height": "75%"}
             if compact
             else {"left": 100, "right": 100, "top": 100, "bottom": 100}
         ),
-        "toolbox": {
-            "right": 10,
-            "top": 5,
-            "feature": {"saveAsImage": {}, "restore": {}},
-        },
         "dataZoom": _cie_data_zoom(),
         "xAxis": {
             "z": 1,
@@ -1407,11 +1473,6 @@ def _cri_pair_chromaticity_chart_options(
             ]
         ),
         "grid": {"left": 125, "right": 125, "top": 125, "bottom": 125},
-        "toolbox": {
-            "right": 10,
-            "top": 5,
-            "feature": {"saveAsImage": {}, "restore": {}},
-        },
         "dataZoom": _cie_data_zoom(),
         "xAxis": {
             "z": 1,
@@ -1636,6 +1697,7 @@ class SpectralAnalyzerTool:
                 ),
                 axis_interval=_nonnegative_number(self.chart_state.get(interval_key), 0.1),
                 show_isotherms=bool(self.coordinate_state.get("show_isotherms", False)),
+                compact=True,
             )
 
         def analysis_chromaticity_items() -> list[
@@ -1893,9 +1955,13 @@ class SpectralAnalyzerTool:
                         on_change=synchronize_analysis_cie_tab,
                     ).classes("w-full"):
                         with ui.tab_panel(cie_xy_tab).classes("p-0"):
-                            cie_charts["xy"] = _render_cie_chart(analysis_chromaticity_options("xy"))
+                            cie_charts["xy"] = _render_cie_chart(
+                                analysis_chromaticity_options("xy"), external_legend=True,
+                            )
                         with ui.tab_panel(cie_upvp_tab).classes("p-0"):
-                            cie_charts["upvp"] = _render_cie_chart(analysis_chromaticity_options("upvp"))
+                            cie_charts["upvp"] = _render_cie_chart(
+                                analysis_chromaticity_options("upvp"), external_legend=True,
+                            )
                 with ui.column().classes("w-80 shrink-0 gap-3 sticky top-2"):
                     render_coordinate_connection_controls()
                     render_sdcm_controls()

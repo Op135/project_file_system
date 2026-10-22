@@ -23,6 +23,7 @@ from src.tools.spectral_analysis import (  # noqa: E402
 from src.tools.spectral_analyzer import (  # noqa: E402
     SpectralAnalyzerTool,
     _chromaticity_chart_options,
+    _cie_external_legend_items,
     _chromaticity_result_key,
     _cie_clicked_point_series,
     _cie_interaction_setup_js,
@@ -287,6 +288,7 @@ class SpectralAnalyzerOptionsTests(unittest.TestCase):
         self.assertEqual(xy_options["series"][2]["lineStyle"]["color"], "#111827")
         self.assertEqual(xy_options["series"][2]["z"], 4)
         self.assertEqual(xy_options["dataZoom"][0]["type"], "inside")
+        self.assertNotIn("toolbox", xy_options)
         self.assertEqual(len(xy_options["dataZoom"]), 2)
         self.assertTrue(xy_options["dataZoom"][0]["moveOnMouseMove"])
         self.assertEqual(xy_options["dataZoom"][0]["xAxisIndex"], [0])
@@ -303,13 +305,20 @@ class SpectralAnalyzerOptionsTests(unittest.TestCase):
             compact=True,
         )
         self.assertEqual(compact_options["grid"]["width"], compact_options["grid"]["height"])
-        self.assertEqual(compact_options["legend"]["type"], "plain")
-        self.assertEqual(compact_options["legend"]["orient"], "vertical")
-        self.assertTrue(str(compact_options["legend"]["left"]).endswith("%"))
-        self.assertEqual(compact_options["legend"]["textStyle"]["overflow"], "breakAll")
-        self.assertNotIn("ellipsis", compact_options["legend"]["textStyle"])
+        self.assertFalse(compact_options["legend"]["show"])
+        self.assertNotIn("toolbox", compact_options)
+        self.assertGreater(int(compact_options["grid"]["width"].rstrip("%")), 70)
+        external_items = _cie_external_legend_items(compact_options)
+        self.assertEqual(
+            [item["name"] for item in external_items],
+            ["光谱轨迹", "普朗克轨迹", *(item.name for item in self.spectra)],
+        )
+        self.assertEqual(external_items[0]["kind"], "line")
+        self.assertEqual(external_items[-1]["kind"], compact_options["series"][-1]["symbol"])
         self.assertEqual(xy_options["xAxis"]["axisLabel"]["fontSize"], 15)
         self.assertEqual(xy_options["yAxis"]["axisLabel"]["fontSize"], 15)
+        self.assertTrue(xy_options["xAxis"]["axisLabel"]["hideOverlap"])
+        self.assertTrue(compact_options["xAxis"]["axisLabel"]["hideOverlap"])
         self.assertEqual(xy_options["xAxis"]["nameTextStyle"]["fontSize"], 18)
         self.assertEqual(xy_options["yAxis"]["nameTextStyle"]["fontSize"], 18)
         self.assertNotIn("interval", xy_options["xAxis"])
@@ -449,6 +458,7 @@ class SpectralAnalyzerOptionsTests(unittest.TestCase):
         self.assertTrue(options["xAxis"]["splitLine"]["show"])
         self.assertTrue(options["yAxis"]["splitLine"]["show"])
         self.assertEqual(options["tooltip"]["trigger"], "item")
+        self.assertNotIn("toolbox", options)
         self.assertEqual(options["xAxis"]["axisLabel"]["fontSize"], 15)
         self.assertEqual(options["yAxis"]["nameTextStyle"]["fontSize"], 18)
 
