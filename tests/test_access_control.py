@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.access_control import can_use_tool
+from src.access_control import can_use_tool, can_view_tools
 from src.ecn_management_config import ECNState
 from src.ecn_access import (
     can_approve_ecn_validation_report,
@@ -180,6 +180,23 @@ class AccessControlTests(unittest.TestCase):
                 legacy_allowed_roles=["研发经理"],
             )
         )
+
+    def test_tool_entry_follows_available_tool_permissions(self):
+        org_unit_id = self.service.save_org_unit(code="org.tools", name="工具测试部")
+        position_id = self.service.save_position(code="position.tools", name="工具测试岗位")
+        self.service.set_primary_membership(
+            "张三", org_unit_id=org_unit_id, position_id=position_id,
+        )
+        self.assertFalse(can_view_tools(self.service, "张三"))
+
+        self.service.set_position_permissions(
+            position_id, [tool_permission_code("mode_calc")], actor_username="admin",
+        )
+        self.assertTrue(can_view_tools(self.service, "张三"))
+        self.assertTrue(can_use_tool(self.service, "张三", "mode_calc"))
+
+        self.service.set_position_permissions(position_id, [], actor_username="admin")
+        self.assertFalse(can_view_tools(self.service, "张三"))
 
     def test_catalog_registers_tool_permissions_without_legacy_role_grants(self):
 

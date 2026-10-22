@@ -5,7 +5,7 @@ from datetime import timedelta
 from nicegui import app, ui
 
 from .. import db_storage  # 导入我们创建的模块
-from ..access_control import can
+from ..access_control import can, can_view_tools
 from ..config import IMG_DIR, PRESET_AVATARS
 from ..dashboard_layout import get_dashboard_layout_css
 from ..ecn_access import can_view_ecn, get_ecn_dashboard_pending_count
@@ -211,6 +211,12 @@ def main_page():
     ]
     menu_items = []
     for items in menu_items_metadata:
+        if items[3] == "/tool" and not can_view_tools(
+            app.state.user_service,
+            current_user,
+            legacy_role=current_role,
+        ):
+            continue
         # 项目资料总表使用稳定权限控制入口。
         if items[3] == "/project_table" and not can_view_project_table(
             current_role,

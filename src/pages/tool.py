@@ -16,7 +16,7 @@ from src.tools.simple_coupling_calculator import SimpleCouplingCalculator
 from src.tools.spectral_analyzer import SpectralAnalyzerTool
 from src.tools.spherical_lens_calculator import SphericalLensCalculator
 
-from ..access_control import can_use_tool
+from ..access_control import can_use_tool, can_view_tools
 from ..config import IMG_DIR, PRESET_AVATARS
 from ..utils import (
     get_cache_busted_path,
@@ -52,6 +52,13 @@ def tool_page():
     # 获取用户信息
     current_user = stored_current_user
     current_role = sync_current_user_role()
+    if not can_view_tools(
+        app.state.user_service,
+        current_user,
+        legacy_role=current_role,
+    ):
+        ui.navigate.to("/main")
+        return
 
     # 从全局存储中获取用户当前的头像设置
     # (在 main.py 中定义 "user_preferences")

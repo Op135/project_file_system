@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from .permission_catalog import tool_permission_code
+from .permission_catalog import TOOL_PERMISSIONS, tool_permission_code
 
 
 def can(
@@ -46,4 +46,22 @@ def can_use_tool(
         tool_permission_code(tool_key),
         legacy_role=legacy_role,
         legacy_allowed_roles=legacy_allowed_roles,
+    )
+
+
+def can_view_tools(
+    user_service: Any,
+    username: str,
+    *,
+    legacy_role: str = "",
+) -> bool:
+    """至少拥有一项工具权限时才显示分析工具入口。"""
+    return any(
+        can(
+            user_service,
+            username,
+            permission.code,
+            legacy_role=legacy_role,
+        )
+        for permission in TOOL_PERMISSIONS
     )
