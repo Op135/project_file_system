@@ -195,6 +195,27 @@ def init_pending_history_task():
     logger.info("数据统计定时器已挂载 (触发规则: 工作日 18:00)")
 
 
+def init_overview_file_health_task() -> None:
+    """每天凌晨检测激活的文件性概述，供统计页面读取上次快照。"""
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+    from .overview_file_health import scan_overview_file_health
+
+    scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
+    scheduler.add_job(
+        scan_overview_file_health,
+        "cron",
+        hour=2,
+        minute=30,
+        id="overview_file_health",
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.start()
+    app.state.overview_file_health_scheduler = scheduler
+    logger.info("概述文件健康检测定时器已挂载 (每天 02:30)")
+
+
 def init_wecom_retry_task():
     """初始化企业微信失败消息全局重试任务。"""
 
@@ -384,6 +405,7 @@ async def master_startup():
 
     # 第四顺位：启动每日历史记录统一定时任务
     init_pending_history_task()
+    init_overview_file_health_task()
 
     # 第五顺位：启动企业微信通讯录缓存刷新任务
     init_wecom_contacts_task()

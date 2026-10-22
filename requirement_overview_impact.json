@@ -84,22 +84,14 @@
             "fan_model"
         ],
         "12": [
-            "optical_materials",
-            "light_source",
-            "photoelectric_sensors",
             "drive_output_testing",
             "craft_key_requirements",
-            "drive_simplify_diagram",
-            "product_simplify_diagram",
             "product_color",
-            "product_weight",
             "product_treatment_process",
             "product_material_selection",
             "product_type_noise",
             "product_type_ambient",
-            "product_temperature_rise",
-            "sensor_type",
-            "fan_model"
+            "product_temperature_rise"
         ],
         "13": [
             "product_simplify_diagram",

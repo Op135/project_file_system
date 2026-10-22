@@ -12,6 +12,8 @@ from nicegui import app, ui
 from nicegui.functions.refreshable import refreshable
 
 from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, PROJECT_STATE_LIST, REQ_DIR, REQ_REMOVE_DIR
+from .. import db_storage
+from ..overview_file_health import OVERVIEW_FILE_HEALTH_KEY, scan_overview_file_health, summarize_file_health
 from ..statistics_access import (
     can_manage_overview_owners,
     can_view_overview_statistics,
@@ -1995,3 +1997,136 @@ def statistics_page():
                                 management_period_select.on_value_change(
                                     lambda e: render_management_history.refresh(management_user_select.value, e.value)
                                 )
+
+                if can_view_overview_stats:
+                    with ui.card().classes("col-span-12 lg:col-span-6 w-full rounded-xl shadow-sm border border-gray-100 bg-white"):
+                        snapshot = db_storage.get_item(OVERVIEW_FILE_HEALTH_KEY, {})
+                        if not isinstance(snapshot, dict):
+                            snapshot = {}
+                        raw_items = snapshot.get("items", [])
+                        health_items = [item for item in raw_items if isinstance(item, dict)] if isinstance(raw_items, list) else []
+                        checked_at = str(snapshot.get("checked_at") or "尚未检测")
+
+                        ui_card_header("文件性概述健康检测", "health_and_safety", "teal-700")
+
+                        async def run_health_check() -> None:
+                            check_button.disable()
+                            try:
+                                await scan_overview_file_health()
+                                ui.notify("检测完成，正在更新结果", type="positive")
+                                ui.navigate.reload()
+                            except Exception:
+                                logger.exception("手动检测文件性概述失败")
+                                ui.notify("检测失败，请查看服务日志", type="negative")
+                            finally:
+                                check_button.enable()
+
+                        with ui.row().classes("w-full items-center justify-between gap-3 flex-wrap"):
+                            ui.label(f"上次检测：{checked_at}（每天 02:30 自动更新；仅检查当前需求版本已激活的图片、视频、文档、服务器检索文件和 SVN）").classes(
+                                "text-sm text-gray-500"
+                            )
+                            check_button = ui.button("立即检测", icon="refresh", on_click=run_health_check).props(
+                                "outline dense color=primary"
+                            )
+                        if not snapshot:
+                            ui.label("暂无检测结果，可点击“立即检测”生成首次快照。")
+                        else:
+                            healthy_count = sum(bool(item.get("healthy")) for item in health_items)
+                            ui.label(
+                                f"共 {len(health_items)} 条｜健康 {healthy_count} 条｜不健康 {len(health_items) - healthy_count} 条"
+                            ).classes("text-sm font-medium text-gray-700")
+
+                            health_dialog = ui.dialog()
+
+                            def show_unhealthy_details(title: str, issues: list[dict]) -> None:
+                                health_dialog.clear()
+                                with health_dialog, ui.card().classes("w-full max-w-4xl max-h-[85vh]"):
+                                    with ui.row().classes("w-full items-center justify-between"):
+                                        ui.label(f"{title}：不健康概述 {len(issues)} 条").classes("text-lg font-bold")
+                                        ui.button(icon="close", on_click=health_dialog.close).props("flat round")
+                                    with ui.scroll_area().classes("w-full max-h-[65vh]"):
+                                        for item in issues:
+                                            with ui.column().classes("w-full gap-1 p-3 border-b border-gray-100"):
+                                                ui.label(
+                                                    f"{item.get('project', '')}｜{item.get('title', '')}｜{item.get('content', '')}"
+                                                ).classes("font-medium break-all")
+                                                ui.label(
+                                                    f"职能：{item.get('role', '')}｜负责人：{item.get('owner', '')}｜原因：{item.get('reason', '')}"
+                                                ).classes("text-sm text-red-700 break-all")
+                                health_dialog.open()
+
+                            with ui.row().classes("w-full items-center justify-between gap-3 flex-wrap"):
+                                ui.label("点击红色柱段查看不健康概述条目").classes("text-sm text-gray-500")
+                                health_group_select = ui.select(
+                                    options={"role": "按职能", "owner": "按负责人"},
+                                    value="role",
+                                    label="展示维度",
+                                ).props("outlined dense options-dense").classes("w-40")
+
+                            def build_health_chart(field: str) -> dict:
+                                groups = summarize_file_health(health_items, field)
+                                names = [group["name"] for group in groups]
+                                return {
+                                    "tooltip": {"trigger": "item", "formatter": "{b}<br/>{a}：{c} 条"},
+                                    "legend": {"top": 0},
+                                    "grid": {"top": 40, "bottom": 75, "left": 30, "right": 20, "containLabel": True},
+                                    "xAxis": {
+                                        "type": "category",
+                                        "data": names,
+                                        "axisLabel": {"interval": 0, "rotate": 25, "hideOverlap": True},
+                                    },
+                                    "yAxis": {"type": "value", "minInterval": 1},
+                                    "dataZoom": [
+                                        {"type": "inside", "xAxisIndex": 0},
+                                        {
+                                            "type": "slider",
+                                            "xAxisIndex": 0,
+                                            "bottom": 8,
+                                            "height": 16,
+                                            "start": 0,
+                                            "end": min(100, 1200 / max(len(groups), 1)),
+                                            "show": len(groups) > 12,
+                                        },
+                                    ],
+                                    "series": [
+                                        {
+                                            "name": "健康",
+                                            "type": "bar",
+                                            "stack": "health",
+                                            "barMaxWidth": 48,
+                                            "itemStyle": {"color": "#10b981"},
+                                            "data": [group["total"] - len(group["unhealthy"]) for group in groups],
+                                        },
+                                        {
+                                            "name": "不健康",
+                                            "type": "bar",
+                                            "stack": "health",
+                                            "barMaxWidth": 48,
+                                            "itemStyle": {"color": "#ef4444"},
+                                            "data": [len(group["unhealthy"]) for group in groups],
+                                        },
+                                    ],
+                                }
+
+                            health_chart = ui.echart(build_health_chart("role")).classes("w-full h-96 cursor-pointer")
+
+                            def show_health_chart_details(e) -> None:
+                                if e.args.get("series_name") != "不健康":
+                                    return
+                                field = str(health_group_select.value or "role")
+                                name = str(e.args.get("name") or "")
+                                group = next(
+                                    (item for item in summarize_file_health(health_items, field) if item["name"] == name),
+                                    None,
+                                )
+                                if group is not None and group["unhealthy"]:
+                                    heading = "按职能" if field == "role" else "按负责人"
+                                    show_unhealthy_details(f"{heading} · {name}", group["unhealthy"])
+
+                            bind_project_detail_click(health_chart, show_health_chart_details)
+
+                            def update_health_chart(e) -> None:
+                                health_chart.options.update(build_health_chart(str(e.value or "role")))
+                                health_chart.update()
+
+                            health_group_select.on_value_change(update_health_chart)

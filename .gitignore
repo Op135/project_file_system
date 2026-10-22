@@ -20,6 +20,7 @@ uploads/
 tests/*
 !tests/test_overview_safety_batch.py
 !tests/test_storage_safety.py
+!tests/test_overview_file_health.py
 .env.local
 .pyright_tool/
 *.pyc
