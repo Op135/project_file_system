@@ -1257,15 +1257,18 @@ def get_ecn_execution_verification_label(ecn_data: Any) -> str:
     verification = execution.get("verification", {})
     verification = verification if isinstance(verification, dict) else {}
     status = str(verification.get("status") or ECN_EXECUTION_VERIFICATION_PENDING)
-    is_closed = (
+    is_ready_for_verification = (
+        workflow.get("current_state") == ECNState.ECN_EXECUTING
+        and execution.get("stage") == ECN_EXECUTION_STAGE_READY_TO_CLOSE
+    ) or (
         workflow.get("current_state") == ECNState.CLOSED
         and execution.get("stage") == ECN_EXECUTION_STAGE_COMPLETED
     )
     if status == ECN_EXECUTION_VERIFICATION_VERIFIED:
-        return "已核验" if is_closed else "待整改"
+        return "已核验" if is_ready_for_verification else "待整改"
     if status == ECN_EXECUTION_VERIFICATION_CORRECTION_REQUIRED:
-        return "待复核" if is_closed else "待整改"
-    return "待核验" if is_closed else "未到核验"
+        return "待复核" if is_ready_for_verification else "待整改"
+    return "待核验" if is_ready_for_verification else "未到核验"
 
 
 def get_ecn_execution_pending_assignees(ecn_data: Any) -> dict[str, list[str]]:

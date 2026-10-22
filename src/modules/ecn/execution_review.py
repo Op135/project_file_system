@@ -95,13 +95,11 @@ def _special_target(record: dict, item_id: str) -> tuple[dict, str]:
     return target, special_task_label(record, item_id)
 
 
-def _all_execution_confirmations_complete(record: dict) -> bool:
+def _all_execution_confirmations_verified(record: dict) -> bool:
     execution = record.get("execution_info", {})
     if not isinstance(execution, dict):
         return False
-    special = get_ecn_special_confirmations(execution)
-    if any(value.get("confirmed") is not True for value in special.values()):
-        return False
+    confirmations = list(get_ecn_special_confirmations(execution).values())
     material = execution.get("material_confirmations", {})
     if not isinstance(material, dict):
         return False
@@ -109,12 +107,16 @@ def _all_execution_confirmations_complete(record: dict) -> bool:
         if not isinstance(entry, dict):
             return False
         tasks = entry.get("traceability_tasks", {})
-        if not isinstance(tasks, dict) or any(
-            not isinstance(task, dict) or task.get("confirmed") is not True
-            for task in tasks.values()
-        ):
+        if not isinstance(tasks, dict):
             return False
-    return True
+        if any(not isinstance(task, dict) for task in tasks.values()):
+            return False
+        confirmations.extend(tasks.values())
+    return bool(confirmations) and all(
+        confirmation.get("confirmed") is True
+        and isinstance(confirmation.get("review_verification"), dict)
+        for confirmation in confirmations
+    )
 
 
 def _require_reviewer(user: str, role: str, service: Any) -> str:
@@ -218,6 +220,7 @@ async def revoke_execution_confirmation(
             "time": now,
         }
         target["confirmed"] = False
+        target.pop("review_verification", None)
         target["review_revocation"] = copy.deepcopy(event)
         target.setdefault("history", []).append(
             {
@@ -300,15 +303,19 @@ async def revoke_execution_confirmation(
     return result
 
 
-async def verify_execution_result(
+async def verify_execution_confirmation(
     ecn_id: str,
+    target_kind: ExecutionTargetKind,
+    item_id: str,
+    task_key: str,
+    expected_confirmation: dict,
     user: str,
     role: str,
     *,
     user_service=None,
     storage=None,
 ):
-    """全部执行勾选项完成后，记录独立的最终核验结论。"""
+    """核验单个已确认执行项，并在全部项目核验后更新整单核验状态。"""
     service = user_service or getattr(app.state, "user_service", None)
 
     async def operation(record: dict, connection: Any) -> dict:
@@ -316,44 +323,65 @@ async def verify_execution_result(
         actor_role = _require_reviewer(user, role, service)
         workflow = record.get("workflow", {})
         execution = record.get("execution_info", {})
-        if (
-            not isinstance(workflow, dict)
-            or workflow.get("current_state") != ECNState.CLOSED
-            or not isinstance(execution, dict)
-            or execution.get("stage") != ECN_EXECUTION_STAGE_COMPLETED
-            or not _all_execution_confirmations_complete(record)
-        ):
-            raise ECNConflict("仍有执行勾选项未完成，不能标记核验无误。")
+        if not isinstance(workflow, dict) or not isinstance(execution, dict):
+            raise ECNConflict("ECN执行数据异常，请刷新后重试。")
+        if workflow.get("current_state") not in {ECNState.ECN_EXECUTING, ECNState.CLOSED}:
+            raise ECNConflict("当前ECN不在执行或已关闭状态，不能核验执行项。")
+        if execution.get("stage") == ECN_EXECUTION_STAGE_OVERVIEW_RUNNING:
+            raise ECNConflict("系统内资料正在执行，请等待执行结束后再核验。")
+        if target_kind == "special":
+            target, subject = _special_target(record, item_id)
+        elif target_kind == "material":
+            _, _, target, subject = _material_target(record, item_id, task_key)
+        else:
+            raise ECNConflict("执行核验目标无效。")
+        if target != expected_confirmation:
+            raise ECNConflict("该执行项已被其他人修改，请刷新后重试。")
+        if target.get("confirmed") is not True:
+            raise ECNConflict("该执行项尚未确认完成，不能核验。")
+        if isinstance(target.get("review_verification"), dict):
+            raise ECNConflict("该执行项已经核验无误。")
         verification = execution.setdefault("verification", {})
         if not isinstance(verification, dict):
             verification = {}
             execution["verification"] = verification
-        if verification.get("status") == ECN_EXECUTION_VERIFICATION_VERIFIED:
-            raise ECNConflict("该ECN已经核验无误。")
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         event = {
             "event_id": uuid.uuid4().hex,
-            "action": "verified",
+            "action": "item_verified",
+            "target_kind": target_kind,
+            "item_id": item_id,
+            "task_key": task_key,
+            "subject": subject,
             "reviewer": user,
             "reviewer_role": actor_role,
             "time": now,
         }
+        target["review_verification"] = copy.deepcopy(event)
+        all_verified = _all_execution_confirmations_verified(record)
         verification.update(
-            status=ECN_EXECUTION_VERIFICATION_VERIFIED,
-            verified_by=user,
-            verified_role=actor_role,
-            verified_at=now,
+            status=(
+                ECN_EXECUTION_VERIFICATION_VERIFIED
+                if all_verified
+                else verification.get("status", "pending")
+            ),
             last_event_id=event["event_id"],
             last_reviewer=user,
             last_time=now,
         )
+        if all_verified:
+            verification.update(
+                verified_by=user,
+                verified_role=actor_role,
+                verified_at=now,
+            )
         verification.setdefault("history", []).append(event)
         append_ecn_approval_log_once(
             record.setdefault("approval_log", []),
             {
                 "user": user,
                 "role": actor_role,
-                "action": "ECN执行结果已核验无误",
+                "action": f"执行项核验无误：{subject}",
                 "time": now,
             },
         )

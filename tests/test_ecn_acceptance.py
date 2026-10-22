@@ -199,9 +199,22 @@ class ECNAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             "李四",
             confirmed=True,
         )
+        self.assertEqual(self.value["execution_info"]["stage"], "ready_to_close")
+        confirmation = copy.deepcopy(self.value["execution_info"]["ordinary_confirmations"]["ordinary"])
+        self.accept(await execution_review.verify_execution_confirmation(
+            self.value["ecn_id"],
+            "special",
+            "ordinary",
+            "",
+            confirmation,
+            "王五",
+            "复核",
+            user_service=self.service,
+            storage=self.storage,
+        ))
+        self.assertEqual(self.value["execution_info"]["verification"]["status"], "verified")
         await self.close()
         self.assertEqual(self.value["workflow"]["current_state"], ECNState.CLOSED)
-        self.accept(await execution_review.verify_execution_result(self.value["ecn_id"], "王五", "复核", user_service=self.service, storage=self.storage))
         confirmation = copy.deepcopy(self.value["execution_info"]["ordinary_confirmations"]["ordinary"])
         self.accept(await execution_review.revoke_execution_confirmation(self.value["ecn_id"], "special", "ordinary", "", confirmation, "需重新落实", [], "王五", "复核", user_service=self.service, storage=self.storage))
         self.assertEqual(self.value["workflow"]["current_state"], ECNState.ECN_EXECUTING)
@@ -211,7 +224,11 @@ class ECNAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             confirmed=True,
         )
         await self.close()
-        self.accept(await execution_review.verify_execution_result(self.value["ecn_id"], "王五", "复核", user_service=self.service, storage=self.storage))
+        confirmation = copy.deepcopy(self.value["execution_info"]["ordinary_confirmations"]["ordinary"])
+        self.accept(await execution_review.verify_execution_confirmation(
+            self.value["ecn_id"], "special", "ordinary", "", confirmation,
+            "王五", "复核", user_service=self.service, storage=self.storage,
+        ))
         self.assertEqual(self.value["execution_info"]["verification"]["status"], "verified")
 
     async def test_reject_resubmit_and_stale_votes_cannot_cross_rounds(self):
@@ -266,7 +283,11 @@ class ECNAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse((await self.material(second, "王五"))["reason"])
         await self.close()
         self.assertEqual(self.value["workflow"]["current_state"], ECNState.CLOSED)
-        self.accept(await execution_review.verify_execution_result(self.value["ecn_id"], "张三", "复核", user_service=self.service, storage=self.storage))
+        confirmation = copy.deepcopy(self.value["execution_info"]["material_confirmations"]["material"]["traceability_tasks"][second])
+        self.accept(await execution_review.verify_execution_confirmation(
+            self.value["ecn_id"], "material", "material", second, confirmation,
+            "张三", "复核", user_service=self.service, storage=self.storage,
+        ))
         confirmation = copy.deepcopy(self.value["execution_info"]["material_confirmations"]["material"]["traceability_tasks"][second])
         self.accept(await execution_review.revoke_execution_confirmation(self.value["ecn_id"], "material", "material", second, confirmation, "核对数量", [], "张三", "复核", user_service=self.service, storage=self.storage))
         self.assertFalse((await self.material(second, "王五"))["reason"])

@@ -645,8 +645,12 @@ class ECNConcurrencyTests(unittest.IsolatedAsyncioTestCase):
             patch.object(execution_review, "can_view_ecn", return_value=True),
             patch.object(execution_review, "can_verify_ecn_execution", return_value=True),
         ):
-            verified = await execution_review.verify_execution_result(
+            verified = await execution_review.verify_execution_confirmation(
                 value["ecn_id"],
+                "special",
+                "S1",
+                "",
+                copy.deepcopy(corrected_confirmation),
                 "复核人",
                 "质量经理",
                 user_service=self.service,

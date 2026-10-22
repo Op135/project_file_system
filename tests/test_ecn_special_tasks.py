@@ -18,7 +18,7 @@ from src.ecn_management_config import (
     load_ecn_config,
 )
 from src.modules.ecn import notifications
-from src.modules.ecn.execution_review import revoke_execution_confirmation, verify_execution_result
+from src.modules.ecn.execution_review import revoke_execution_confirmation, verify_execution_confirmation
 from src.modules.ecn.special_tasks import (
     close_ecn_execution,
     finish_if_complete,
@@ -223,8 +223,14 @@ class SpecialTasksTests(unittest.IsolatedAsyncioTestCase):
                     confirmed=True, storage=self.storage,
                 )
                 self.assertFalse(repeated.ok)
-                verified = await verify_execution_result(
-                    "ECN-test", "writer", "研发硬件", user_service=self.service, storage=self.storage,
+                verified_target = (
+                    self.record["execution_info"]["erp_confirmation"]
+                    if key == "__erp__"
+                    else self.record["execution_info"]["ordinary_confirmations"][key]
+                )
+                verified = await verify_execution_confirmation(
+                    "ECN-test", "special", key, "", copy.deepcopy(verified_target),
+                    "writer", "研发硬件", user_service=self.service, storage=self.storage,
                 )
                 self.assertTrue(verified.ok, verified.message)
 

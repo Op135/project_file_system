@@ -17,6 +17,7 @@ from ...ecn_management_config import (
     ECN_EXECUTION_STAGE_READY_TO_CLOSE,
     ECN_EXECUTION_STAGE_OVERVIEW_RUNNING,
     ECN_EXECUTION_STAGE_OVERVIEW_FAILED,
+    ECN_EXECUTION_VERIFICATION_PENDING,
     get_ecn_special_confirmations,
     is_ecn_special_execution_complete,
     can_ecn_assistant_confirm_special,
@@ -173,9 +174,17 @@ async def update_special_task(
                 raise ECNConflict("当前用户或阶段不允许确认未移交事项。")
             if not old and execution.get("stage") != ECN_EXECUTION_STAGE_ASSISTANT and confirmed is not True:
                 raise ECNConflict("后续阶段的复核退回项只能重新确认完成。")
+            had_review_verification = isinstance(item.pop("review_verification", None), dict)
             item.update(confirmed=confirmed, user=username, role=actor_role, time=now)
             if confirmed:
                 item.pop("review_revocation", None)
+            if had_review_verification:
+                verification = execution.get("verification", {})
+                if isinstance(verification, dict):
+                    verification["status"] = ECN_EXECUTION_VERIFICATION_PENDING
+                    verification.pop("verified_by", None)
+                    verification.pop("verified_role", None)
+                    verification.pop("verified_at", None)
             item.setdefault("history", []).append(
                 {"confirmed": confirmed, "user": username, "role": actor_role, "time": now}
             )

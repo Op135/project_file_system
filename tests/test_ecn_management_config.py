@@ -4,7 +4,11 @@ from unittest.mock import patch
 
 from src.ecn_management_config import (
     ECN_CONFIG_PATH,
+    ECN_EXECUTION_STAGE_COMPLETED,
     ECN_EXECUTION_STAGE_MATERIAL,
+    ECN_EXECUTION_STAGE_READY_TO_CLOSE,
+    ECN_EXECUTION_VERIFICATION_CORRECTION_REQUIRED,
+    ECN_EXECUTION_VERIFICATION_VERIFIED,
     ECN_SCHEME_GROUP_MATERIAL,
     ECN_SCHEME_GROUP_ORDINARY_DOCUMENT,
     ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT,
@@ -38,6 +42,7 @@ from src.ecn_management_config import (
     get_ecn_traceability_closure_summary,
     get_ecn_execution_pending_role_keywords,
     get_ecn_execution_pending_usernames,
+    get_ecn_execution_verification_label,
     get_ecn_material_execution_specs,
     get_ecn_stage_index,
     has_unrevised_rejected_scheme_items,
@@ -833,6 +838,28 @@ def test_execution_checklists_skip_absent_scheme_groups_and_erp_without_material
     legacy_without_material["erp_confirmation"] = {"confirmed": False}
     assert is_ecn_assistant_execution_ready(legacy_without_material)
     assert "__erp__" not in get_ecn_special_confirmations(legacy_without_material)
+
+
+def test_execution_verification_becomes_available_at_ready_to_close():
+    record: dict[str, Any] = {
+        "workflow": {"current_state": ECNState.ECN_EXECUTING},
+        "execution_info": {"stage": ECN_EXECUTION_STAGE_READY_TO_CLOSE},
+    }
+    assert get_ecn_execution_verification_label(record) == "待核验"
+
+    record["execution_info"]["verification"] = {
+        "status": ECN_EXECUTION_VERIFICATION_CORRECTION_REQUIRED,
+    }
+    assert get_ecn_execution_verification_label(record) == "待复核"
+
+    record["execution_info"]["verification"] = {
+        "status": ECN_EXECUTION_VERIFICATION_VERIFIED,
+    }
+    assert get_ecn_execution_verification_label(record) == "已核验"
+
+    record["workflow"]["current_state"] = ECNState.CLOSED
+    record["execution_info"]["stage"] = ECN_EXECUTION_STAGE_COMPLETED
+    assert get_ecn_execution_verification_label(record) == "已核验"
 
 
 def test_material_specs_use_only_persisted_workflow_snapshot():
