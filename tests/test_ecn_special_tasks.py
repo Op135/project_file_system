@@ -60,7 +60,7 @@ class SpecialTasksTests(unittest.IsolatedAsyncioTestCase):
                 "stage": ECN_EXECUTION_STAGE_ASSISTANT,
                 "ordinary_confirmations": {"A": {"confirmed": False, "history": []}},
                 "erp_confirmation": {"confirmed": True},
-                "material_confirmations": {},
+                "material_confirmations": {"M": {"status": "closed", "traceability_tasks": {}}},
             },
         }
         await self.storage.set_item("ecn_management_data", {"ECN-test": self.record})

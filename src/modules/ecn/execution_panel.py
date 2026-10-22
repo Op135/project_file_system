@@ -718,7 +718,7 @@ def build_execution_panel(
                         blocked["reason"] = "系统内资料仍在执行，请勿重复操作。"
                         return db_storage.ATOMIC_NO_UPDATE
                 if stage == ECN_EXECUTION_STAGE_ASSISTANT and not is_ecn_assistant_execution_ready(execution_info):
-                    blocked["reason"] = "请先确认所有未移交的事项/资料及ERP。"
+                    blocked["reason"] = "请先确认所有未移交的事项/资料及适用的ERP项。"
                     return db_storage.ATOMIC_NO_UPDATE
 
                 execution_info["stage"] = ECN_EXECUTION_STAGE_OVERVIEW_RUNNING
@@ -749,9 +749,20 @@ def build_execution_panel(
 
             ACTIVE_ECN_OVERVIEW_EXECUTIONS.add(execution_ecn_id)
             try:
+                claimed_execution_info = local_data.get("execution_info", {})
+                claimed_overview_results = (
+                    claimed_execution_info.get("overview_results", {})
+                    if isinstance(claimed_execution_info, dict)
+                    else {}
+                )
+                has_claimed_overview_schemes = (
+                    isinstance(claimed_overview_results, dict) and bool(claimed_overview_results)
+                )
                 notify_execution_safely(
                     event_client,
-                    "已开始逐条执行系统内资料方案，请稍候。",
+                    "已开始逐条执行系统内资料方案，请稍候。"
+                    if has_claimed_overview_schemes
+                    else "正在完成资料准备并推进执行阶段，请稍候。",
                     "info",
                     4000,
                 )
@@ -849,11 +860,19 @@ def build_execution_panel(
                             isinstance(material_confirmations, dict) and material_confirmations
                         ) or not is_ecn_special_execution_complete(execution_info):
                             execution_info["stage"] = ECN_EXECUTION_STAGE_MATERIAL
-                            action_text = "系统内资料执行完成，继续跟进物料及移交事项"
+                            action_text = (
+                                "系统内资料执行完成，继续跟进物料及移交事项"
+                                if has_claimed_overview_schemes
+                                else "资料准备完成，继续跟进物料及移交事项"
+                            )
                         else:
                             execution_info["stage"] = ECN_EXECUTION_STAGE_READY_TO_CLOSE
                             execution_info["ready_to_close_time"] = operation_time
-                            action_text = "系统内资料执行完成，ECN进入待关闭"
+                            action_text = (
+                                "系统内资料执行完成，ECN进入待关闭"
+                                if has_claimed_overview_schemes
+                                else "资料准备完成，ECN进入待关闭"
+                            )
                     else:
                         execution_info["stage"] = ECN_EXECUTION_STAGE_OVERVIEW_FAILED
                         action_text = "系统内资料执行存在失败项"
@@ -884,7 +903,9 @@ def build_execution_panel(
                 if finished and all_overview_succeeded:
                     notify_execution_safely(
                         event_client,
-                        "系统内资料方案全部执行成功。",
+                        "系统内资料方案全部执行成功。"
+                        if has_claimed_overview_schemes
+                        else "资料准备已完成，执行阶段已推进。",
                         "positive",
                     )
                 elif finished:
@@ -1335,6 +1356,13 @@ def build_execution_panel(
 
                     ordinary_confirmations = execution_info.get("ordinary_confirmations", {})
                     erp_confirmation = execution_info.get("erp_confirmation", {})
+                    material_confirmations = execution_info.get("material_confirmations", {})
+                    has_material_schemes = isinstance(material_confirmations, dict) and bool(material_confirmations)
+                    assistant_rows = (
+                        list(ordinary_confirmations.items())
+                        if isinstance(ordinary_confirmations, dict)
+                        else []
+                    )
                     erp_checked = isinstance(erp_confirmation, dict) and erp_confirmation.get("confirmed") is True
                     assistant_table_grid = (
                         "grid grid-cols-[96px_72px_minmax(140px,0.5fr)_minmax(200px,1fr)_"
@@ -1344,7 +1372,16 @@ def build_execution_panel(
                         ui.label("1.1 特定事项/资料执行结果").classes(
                             "w-full px-4 py-2 text-sm font-bold text-slate-700 bg-slate-100"
                         )
-                        with ui.element("div").classes("w-full overflow-x-auto"):
+                        if not assistant_rows and not has_material_schemes:
+                            ui.label("本单没有特定事项/资料方案，也没有物料方案，无需执行ERP相关变更。").classes(
+                                "w-full px-4 py-3 text-sm text-slate-500 bg-white"
+                            )
+                        elif not assistant_rows:
+                            ui.label("本单没有特定事项/资料方案；物料方案的ERP相关变更仍需确认。").classes(
+                                "w-full px-4 py-3 text-sm text-slate-500 bg-white"
+                            )
+                        with ui.element("div").classes("w-full overflow-x-auto") as assistant_table:
+                            assistant_table.set_visibility(bool(assistant_rows) or has_material_schemes)
                             with ui.element("div").classes("min-w-[1340px] w-full"):
                                 with ui.element("div").classes(
                                     f"{assistant_table_grid} bg-slate-100 border-t border-slate-300 "
@@ -1365,11 +1402,6 @@ def build_execution_panel(
                                             + execution_column_alignment("assistant", header)
                                         )
 
-                                assistant_rows = (
-                                    list(ordinary_confirmations.items())
-                                    if isinstance(ordinary_confirmations, dict)
-                                    else []
-                                )
                                 for row_index, (item_id, confirmation) in enumerate(assistant_rows):
                                     item = item_map.get(str(item_id), {})
                                     confirmation = confirmation if isinstance(confirmation, dict) else {}
@@ -1499,7 +1531,8 @@ def build_execution_panel(
                                 with ui.element("div").classes(
                                     f"{assistant_table_grid} {erp_row_bg} border-t border-slate-200 "
                                     "items-stretch text-sm text-slate-700"
-                                ):
+                                ) as erp_row:
+                                    erp_row.set_visibility(has_material_schemes)
                                     with ui.element("div").classes(
                                         "px-3 py-2 border-r border-slate-200 flex items-center "
                                         + execution_column_alignment("assistant", "完成")
@@ -1610,6 +1643,7 @@ def build_execution_panel(
                                     )
 
                     overview_results = execution_info.get("overview_results", {})
+                    has_overview_schemes = isinstance(overview_results, dict) and bool(overview_results)
                     with ui.column().classes("w-full gap-0 border-t border-slate-300"):
                         ui.label("1.2 系统内资料方案执行结果").classes(
                             "w-full px-4 py-2 text-sm font-bold text-slate-700 bg-slate-100"
@@ -1708,11 +1742,17 @@ def build_execution_panel(
                             if stage == ECN_EXECUTION_STAGE_ASSISTANT:
                                 ready = is_ecn_assistant_execution_ready(execution_info)
                                 ui.label(
-                                    "所有未移交事项勾选后即可执行；移交事项独立跟进。"
+                                    "确认所有未移交的特定事项/资料及适用的ERP项后，即可进入下一阶段。"
                                     if not ready
-                                    else "未移交事项已确认，可执行系统内资料；移交事项独立跟进。"
+                                    else "未移交事项已确认；移交事项独立跟进。"
                                 ).classes("text-xs text-slate-500")
-                                action_label = "执行系统内资料"
+                                action_label = (
+                                    "执行系统内资料"
+                                    if has_overview_schemes
+                                    else "进入物料执行"
+                                    if has_material_schemes
+                                    else "完成资料准备，进入待关闭"
+                                )
                             elif stage == ECN_EXECUTION_STAGE_OVERVIEW_FAILED:
                                 ready = True
                                 ui.label("仅重试失败项目；已经成功的项目不会重复执行。 ").classes(
@@ -1746,7 +1786,11 @@ def build_execution_panel(
                         )
 
                     material_confirmations = execution_info.get("material_confirmations", {})
-                    if stage in [
+                    if not isinstance(material_confirmations, dict) or not material_confirmations:
+                        ui.label("本单没有物料变更方案，无需物料追溯执行确认。 ").classes(
+                            "w-full px-4 py-4 text-sm text-slate-400 bg-white"
+                        )
+                    elif stage in [
                         ECN_EXECUTION_STAGE_ASSISTANT,
                         ECN_EXECUTION_STAGE_OVERVIEW_RUNNING,
                         ECN_EXECUTION_STAGE_OVERVIEW_FAILED,
@@ -2108,7 +2152,7 @@ def build_execution_panel(
                                                 "progress": progress_label,
                                             }
                     else:
-                        ui.label("本单没有物料变更方案；系统内资料和所有特定事项完成后进入待关闭。 ").classes(
+                        ui.label("物料执行清单暂未生成，请刷新后重试。 ").classes(
                             "w-full px-4 py-4 text-sm text-slate-400 bg-white"
                         )
 

@@ -28,6 +28,7 @@ from src.ecn_management_config import (
     get_ecn_overview_project_new_data,
     get_ecn_pending_approval_roles,
     get_ecn_scheme_target_projects,
+    get_ecn_special_confirmations,
     get_ecn_material_change_display,
     get_ecn_material_change_missing_fields,
     get_ecn_level_code,
@@ -792,6 +793,46 @@ def test_execution_checklists_are_built_from_the_three_scheme_groups():
     record = _ecn_record(state=ECNState.ECN_EXECUTING)
     record["change_items"] = change_items
     record["execution_info"] = execution_info
+
+
+def test_execution_checklists_skip_absent_scheme_groups_and_erp_without_material():
+    groups = {
+        "ordinary": ECN_SCHEME_GROUP_ORDINARY_DOCUMENT,
+        "overview": ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT,
+        "material": ECN_SCHEME_GROUP_MATERIAL,
+    }
+    for present_groups in (
+        ("overview",),
+        ("ordinary",),
+        ("material",),
+        ("ordinary", "overview"),
+        ("overview", "material"),
+    ):
+        items = [
+            {"item_id": name, "scheme_category": groups[name]}
+            for name in present_groups
+        ]
+        execution = build_ecn_execution_info(items)
+        assert bool(execution["ordinary_confirmations"]) == ("ordinary" in present_groups)
+        assert bool(execution["overview_results"]) == ("overview" in present_groups)
+        assert bool(execution["material_confirmations"]) == ("material" in present_groups)
+        assert bool(execution["erp_confirmation"]) == ("material" in present_groups)
+        assert ("__erp__" in get_ecn_special_confirmations(execution)) == ("material" in present_groups)
+        assert is_ecn_assistant_execution_ready(execution) is (present_groups == ("overview",))
+
+        if "ordinary" in present_groups:
+            execution["ordinary_confirmations"]["ordinary"]["confirmed"] = True
+        if "material" in present_groups:
+            execution["erp_confirmation"]["confirmed"] = True
+        assert is_ecn_assistant_execution_ready(execution)
+
+    # 已生成但无物料方案的执行数据也不应继续要求ERP确认。
+    legacy_without_material = build_ecn_execution_info(
+        [{"item_id": "overview", "scheme_category": ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT}]
+    )
+    legacy_without_material["erp_confirmation"] = {"confirmed": False}
+    assert is_ecn_assistant_execution_ready(legacy_without_material)
+    assert "__erp__" not in get_ecn_special_confirmations(legacy_without_material)
 
 
 def test_material_specs_use_only_persisted_workflow_snapshot():

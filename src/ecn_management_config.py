@@ -1042,7 +1042,7 @@ def build_ecn_execution_info(change_items: Any) -> dict:
     return {
         "stage": ECN_EXECUTION_STAGE_ASSISTANT,
         "ordinary_confirmations": ordinary_confirmations,
-        "erp_confirmation": {"confirmed": False, "history": []},
+        "erp_confirmation": {"confirmed": False, "history": []} if material_confirmations else {},
         "overview_results": overview_results,
         "material_confirmations": material_confirmations,
     }
@@ -1053,6 +1053,7 @@ def is_ecn_assistant_execution_ready(execution_info: Any) -> bool:
     if not isinstance(execution_info, dict):
         return False
     ordinary_confirmations = execution_info.get("ordinary_confirmations", {})
+    material_confirmations = execution_info.get("material_confirmations", {})
     erp_confirmation = execution_info.get("erp_confirmation", {})
     return (
         isinstance(ordinary_confirmations, dict)
@@ -1061,8 +1062,16 @@ def is_ecn_assistant_execution_ready(execution_info: Any) -> bool:
             and (confirmation.get("confirmed") is True or bool(confirmation.get("assignee")))
             for confirmation in ordinary_confirmations.values()
         )
-        and isinstance(erp_confirmation, dict)
-        and (erp_confirmation.get("confirmed") is True or bool(erp_confirmation.get("assignee")))
+        and (
+            isinstance(material_confirmations, dict)
+            and (
+                not material_confirmations
+                or (
+                    isinstance(erp_confirmation, dict)
+                    and (erp_confirmation.get("confirmed") is True or bool(erp_confirmation.get("assignee")))
+                )
+            )
+        )
     )
 
 
@@ -1076,7 +1085,8 @@ def get_ecn_special_confirmations(execution_info: Any) -> dict[str, dict]:
         if isinstance(value, dict)
     }
     erp = execution_info.get("erp_confirmation")
-    if isinstance(erp, dict):
+    material_confirmations = execution_info.get("material_confirmations", {})
+    if isinstance(material_confirmations, dict) and material_confirmations and isinstance(erp, dict):
         result["__erp__"] = erp
     return result
 
