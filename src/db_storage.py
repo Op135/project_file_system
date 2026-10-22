@@ -76,6 +76,7 @@ _resource_lock_users: Dict[str, int] = {}
 # 等待超过阈值时记录告警；同一资源在指定间隔内最多记录一次。
 LOCK_WAIT_WARNING_SECONDS = 0.05
 LOCK_WAIT_WARNING_INTERVAL_SECONDS = 5.0
+LOCK_HOLD_WARNING_SECONDS = 1.0
 _last_lock_wait_warnings: Dict[str, float] = {}
 
 
@@ -116,12 +117,14 @@ async def _timed_lock(
         _resource_lock_users[resource_key] = _resource_lock_users.get(resource_key, 0) + 1
     # 标记本协程是否已经成功取得锁，避免等待阶段被取消后误调用 release。
     acquired = False
+    acquired_at = 0.0
     try:
         # 使用高精度计时器记录从开始等待到实际获得锁的耗时。
         started = time.perf_counter()
         await lock.acquire()
         acquired = True
-        waited = time.perf_counter() - started
+        acquired_at = time.perf_counter()
+        waited = acquired_at - started
         # 锁类型与业务资源共同组成告警去重键，避免不同锁的统计互相覆盖。
         warning_key = f"{lock_kind}:{resource_key}"
         now = time.monotonic()
@@ -143,7 +146,10 @@ async def _timed_lock(
     finally:
         # 无论业务成功、异常还是取消，只要已经持锁就必须释放。
         if acquired:
+            held = time.perf_counter() - acquired_at
             lock.release()
+            if lock_kind == "数据库事务锁" and held >= LOCK_HOLD_WARNING_SECONDS:
+                logger.warning("数据库事务锁持有 %.1f ms：%s", held * 1000, resource_key)
         if managed_resource:
             # 当前协程退出后减少活跃使用者数量；等待者此前已经计入，所以不会误删仍在使用的锁。
             remaining_users = _resource_lock_users.get(resource_key, 1) - 1
@@ -1278,12 +1284,24 @@ async def atomic_deep_update(path: List[str], update_function: Callable, *args, 
         # try 会捕获事务期间的所有异常，保证失败时能够回滚并返回 False。
         # 预先设置为空可安全处理“取得数据库锁后、连接已被关闭”的竞争情况。
         db: Optional[aiosqlite.Connection] = None
+        phase = "BEGIN IMMEDIATE"
+        phase_started = time.perf_counter()
+        phase_times: Dict[str, float] = {}
+
+        def next_phase(name: str) -> None:
+            nonlocal phase, phase_started
+            now = time.perf_counter()
+            phase_times[phase] = phase_times.get(phase, 0.0) + now - phase_started
+            phase = name
+            phase_started = now
+
         try:
             # 必须在数据库锁内重新检查连接，不能依赖进入等待队列前的 _db 状态。
             db = _require_db()
             # BEGIN IMMEDIATE 会立即申请 SQLite 写锁。
             # 它负责阻止其它服务进程在本事务结束前写入，从而提供跨进程并发保护。
             await db.execute("BEGIN IMMEDIATE")
+            next_phase("读取与解码")
 
             # 从数据库表读取 top_key 对应的最新 JSON 字符串。
             # 这里故意不读取 _data_cache，因为其它进程写入后，本进程缓存可能还是旧数据。
@@ -1293,6 +1311,7 @@ async def atomic_deep_update(path: List[str], update_function: Callable, *args, 
 
             # 数据存在时，把 JSON 字符串还原为 Python 对象；不存在时使用 None 表示“尚未创建”。
             current_top_value = json.loads(row[0]) if row else None
+            next_phase("业务回调")
 
             # deep_path 为空表示 path 只有一层，例如 ["error_management_data"]，
             # 此时 update_function 修改的是整个顶层值，而不是其中某个子字段。
@@ -1305,11 +1324,14 @@ async def atomic_deep_update(path: List[str], update_function: Callable, *args, 
                 new_data = update_function(data_to_process, *args, **kwargs)
                 if inspect.isawaitable(new_data):
                     new_data = await new_data
+                next_phase("写入准备与执行")
 
                 # ATOMIC_NO_UPDATE 是特殊哨兵值，表示业务检查已正常完成，但决定不修改数据库。
                 if new_data is ATOMIC_NO_UPDATE:
                     # 因为不需要写入，所以回滚刚才开启的事务并释放 SQLite 写锁。
+                    next_phase("回滚")
                     await db.rollback()
+                    next_phase("缓存同步")
 
                     # 根据查询行判断键是否存在；顶层键本身可以合法存储 JSON null。
                     if row is None:
@@ -1332,7 +1354,9 @@ async def atomic_deep_update(path: List[str], update_function: Callable, *args, 
                 )
 
                 # 提交事务，使刚才的写入正式生效并释放 SQLite 写锁。
+                next_phase("提交")
                 pending_cancellation = await _commit_cancellation_safely(db)
+                next_phase("缓存同步")
 
                 # 数据库提交成功后，再同步更新本进程内存缓存。
                 # 使用 json.loads 创建独立对象，避免调用方继续持有并修改缓存中的对象。
@@ -1371,11 +1395,14 @@ async def atomic_deep_update(path: List[str], update_function: Callable, *args, 
                     new_deep_value = update_function(value_to_process, *args, **kwargs)
                     if inspect.isawaitable(new_deep_value):
                         new_deep_value = await new_deep_value
+                    next_phase("写入准备与执行")
 
                     # 业务函数可以通过返回 ATOMIC_NO_UPDATE 主动取消本次写入。
                     if new_deep_value is ATOMIC_NO_UPDATE:
                         # 取消事务并释放 SQLite 写锁，数据库内容保持不变。
+                        next_phase("回滚")
                         await db.rollback()
+                        next_phase("缓存同步")
 
                         # 根据查询行判断键是否存在；不能把合法的 JSON null 当成缺失键。
                         if row is None:
@@ -1417,7 +1444,9 @@ async def atomic_deep_update(path: List[str], update_function: Callable, *args, 
             )
 
             # 提交事务，使修改正式生效，并允许其它进程开始下一次写操作。
+            next_phase("提交")
             pending_cancellation = await _commit_cancellation_safely(db)
+            next_phase("缓存同步")
 
             # 数据库提交成功后，用相同内容刷新当前进程的内存缓存。
             _data_cache[top_key] = json.loads(value_json)
@@ -1432,12 +1461,14 @@ async def atomic_deep_update(path: List[str], update_function: Callable, *args, 
         except asyncio.CancelledError:
             # 取消属于控制流而不是业务失败：回滚后必须继续抛出，不能转换成 False。
             if db is not None:
+                next_phase("回滚")
                 await _rollback_safely(db, f"深度原子更新 {path}")
             raise
 
         # 捕获路径处理、业务更新函数、JSON 转换或 SQLite 操作中发生的任何异常。
         except Exception:
             if db is not None:
+                next_phase("回滚")
                 await _rollback_safely(db, f"深度原子更新 {path}")
 
             # 记录完整异常堆栈和更新路径，方便定位是哪一次深层更新失败。
@@ -1445,6 +1476,20 @@ async def atomic_deep_update(path: List[str], update_function: Callable, *args, 
 
             # 向调用方明确表示本次更新因异常失败。
             return False
+        finally:
+            next_phase("完成")
+            total = sum(phase_times.values())
+            if total >= LOCK_HOLD_WARNING_SECONDS:
+                details = "、".join(
+                    f"{name} {elapsed * 1000:.1f} ms"
+                    for name, elapsed in phase_times.items()
+                )
+                logger.warning(
+                    "深度原子更新阶段耗时 %.1f ms：%s；%s",
+                    total * 1000,
+                    resource_key,
+                    details,
+                )
 
 
 # ---------------------------------------------------------------------------
