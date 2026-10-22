@@ -40,6 +40,7 @@ from src.tools.spectral_analyzer import (  # noqa: E402
     _run_spectral_calculation,
     _series_style,
     _spectral_subprocess_message,
+    _target_mixing_graph_details,
     _sdcm_key,
     _sdcm_orders,
     _spectrum_group_key,
@@ -68,6 +69,7 @@ class SpectralAnalyzerOptionsTests(unittest.TestCase):
         tool = SpectralAnalyzerTool()
         self.assertTrue(tool.mixing_state["target_xy_enabled"])
         self.assertFalse(tool.mixing_state["target_cri_enabled"])
+        self.assertFalse(tool.mixing_state["direct_cri_sources"])
         self.assertEqual(tool.mixing_state["target_ra"], 90.0)
         self.assertEqual(
             [tool.mixing_state[f"target_r{index}"] for index in range(1, 9)],
@@ -526,6 +528,23 @@ class SpectralAnalyzerOptionsTests(unittest.TestCase):
             25 / 75,
             places=8,
         )
+
+    def test_direct_cri_sources_ignore_existing_combination_layers(self):
+        sources = [replace(self.spectra[index % 2], name=f"光谱 {index + 1}") for index in range(4)]
+        steps = [{
+            "id": "mix:1", "name": "混合 1", "first_id": "source:0",
+            "second_id": "source:1", "ratio": 25,
+        }]
+        _, layered_ids, _ = _target_mixing_graph_details(
+            sources, steps, direct_cri_sources=False,
+        )
+        nodes, direct_ids, coefficients = _target_mixing_graph_details(
+            sources, steps, direct_cri_sources=True,
+        )
+        self.assertEqual(layered_ids, ["source:2", "source:3", "mix:1"])
+        self.assertEqual(direct_ids, [f"source:{index}" for index in range(4)])
+        self.assertNotIn("mix:1", nodes)
+        self.assertEqual(coefficients["source:1"], (0.0, 1.0, 0.0, 0.0))
 
     def test_summary_rows_expose_engineering_metrics(self):
         spectrum_row = _spectrum_summary_rows(self.spectra)[0]

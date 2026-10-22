@@ -2,6 +2,7 @@
 
 import sys
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -303,6 +304,37 @@ class SpectralCalculationTests(unittest.TestCase):
             solve_spectrum_mix_targets(sources)
         with self.assertRaisesRegex(SpectralAnalysisError, "共 16 项"):
             solve_spectrum_mix_targets(sources, cri_targets=(90.0,) * 15)
+
+    def test_cri_only_solver_accepts_more_than_three_independent_sources(self):
+        standard = analyze_standard_illuminant("D65")
+        sources = tuple(
+            SpectrumInput(f"D65-{index}", standard.wavelengths, standard.values)
+            for index in range(4)
+        )
+        solution = solve_spectrum_mix_targets(sources, cri_targets=(90.0,) * 16)
+        self.assertEqual(len(solution.peak_ratios), 4)
+        self.assertAlmostEqual(sum(solution.peak_ratios), 1.0, places=8)
+        self.assertGreaterEqual(solution.result.ra or 0, 90.0)
+        with self.assertRaisesRegex(SpectralAnalysisError, "恰好三条"):
+            solve_spectrum_mix_targets(sources, target_xy=standard.xy)
+
+    def test_cri_recovers_from_polluted_colour_scale_and_stays_stable_across_threads(self):
+        import colour
+
+        standard = analyze_standard_illuminant("D65")
+        spectrum = SpectrumInput("D65 并发回归", standard.wavelengths, standard.values)
+        baseline = analyze_spectrum(spectrum)
+        original_scale = colour.get_domain_range_scale()
+        try:
+            colour.set_domain_range_scale("1")
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                results = list(executor.map(analyze_spectrum, (spectrum,) * 4))
+            self.assertEqual(colour.get_domain_range_scale(), "reference")
+            for result in results:
+                self.assertAlmostEqual(result.ra or 0, baseline.ra or 0, places=8)
+                self.assertAlmostEqual(dict(result.ri)[9], dict(baseline.ri)[9], places=8)
+        finally:
+            colour.set_domain_range_scale(original_scale)
 
     def test_power_limited_mix_reports_absolute_power_flux_and_limiting_source(self):
         sources = tuple(

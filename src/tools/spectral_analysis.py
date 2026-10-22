@@ -8,16 +8,20 @@ import csv
 import importlib
 import math
 import re
+import threading
 from dataclasses import dataclass, replace
-from functools import lru_cache
+from functools import lru_cache, wraps
 from io import BytesIO, StringIO
 from itertools import combinations
-from typing import Any
+from typing import Any, Callable, ParamSpec, TypeVar
 
 import numpy as np
 from scipy.optimize import minimize
 
 colour: Any | None = None
+_COLOUR_LOCK = threading.RLock()
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
 
 CALCULATION_START_NM = 360
@@ -182,7 +186,24 @@ def _require_colour() -> Any:
     return colour
 
 
+def _serialized_colour_calculation(callback: Callable[_P, _R]) -> Callable[_P, _R]:
+    """串行访问 Colour 的进程级量纲状态，并修复此前并发留下的状态。"""
+
+    @wraps(callback)
+    def wrapped(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+        with _COLOUR_LOCK:
+            colour_module = _require_colour()
+            colour_module.set_domain_range_scale("reference")
+            try:
+                return callback(*args, **kwargs)
+            finally:
+                colour_module.set_domain_range_scale("reference")
+
+    return wrapped
+
+
 @lru_cache(maxsize=1)
+@_serialized_colour_calculation
 def _spectral_locus_xy_samples() -> tuple[tuple[float, float, float], ...]:
     """返回 380–780 nm CIE 1931 2° 光谱轨迹采样点。"""
 
@@ -404,6 +425,7 @@ def _validate_xy(xy: tuple[float, float]) -> None:
         raise SpectralAnalysisError(f"无效的 CIE xy 坐标：({x:.6g}, {y:.6g})")
 
 
+@_serialized_colour_calculation
 def macadam_ellipse_points(
     xy: tuple[float, float],
     sdcm: int,
@@ -459,6 +481,7 @@ def macadam_ellipse_points(
     )
 
 
+@_serialized_colour_calculation
 def _cct_duv_from_uv(uv: tuple[float, float]) -> tuple[float | None, float | None, list[str]]:
     """由 CIE 1960 uv 计算 Robertson CCT 和有符号 Duv。"""
 
@@ -577,6 +600,7 @@ def pairwise_chromaticity_distances(
     return distances
 
 
+@_serialized_colour_calculation
 def _cri_reference_sd(cct: float) -> tuple[str, Any]:
     """生成与 CRI 规则一致的同色温标准参考光源。"""
 
@@ -592,6 +616,7 @@ def _cri_reference_sd(cct: float) -> tuple[str, Any]:
     return reference_name, reference
 
 
+@_serialized_colour_calculation
 def _sd_chromaticity(sd: Any) -> tuple[tuple[float, float], tuple[float, float], tuple[float, float]]:
     """计算光谱的 xy、CIE 1960 uv 与 CIE 1976 u′v′。"""
 
@@ -621,6 +646,7 @@ def _reference_chromaticity(
     return distance, reference_name, reference_xy, reference_uv, reference_upvp
 
 
+@_serialized_colour_calculation
 def _cri_sample_results(
     cri_specification: Any,
 ) -> tuple[CRIColorSampleResult, ...]:
@@ -650,6 +676,7 @@ def _cri_sample_results(
     return tuple(results)
 
 
+@_serialized_colour_calculation
 def analyze_spectrum(spectrum: SpectrumInput) -> SpectrumResult:
     """计算单条光谱的色坐标、CCT、CRI 和 CIE Rf。"""
 
@@ -804,6 +831,7 @@ def _aligned_peak_spectra(
     return calculation_grid, tuple(aligned)
 
 
+@_serialized_colour_calculation
 def analyze_spectrum_chromaticity(spectrum: SpectrumInput) -> SpectrumChromaticityResult:
     """快速计算光谱色度，不执行 CRI 与 CIE Rf。"""
 
@@ -872,6 +900,7 @@ def mix_spectra_by_peak_ratio(
     return replace(result, normalization_factor=float(np.max(mixed_values)))
 
 
+@_serialized_colour_calculation
 def calculate_power_limited_mix(
     source_spectra: tuple[SpectrumInput, ...],
     source_peak_coefficients: tuple[float, ...],
@@ -969,6 +998,7 @@ def calculate_power_limited_mix(
     )
 
 
+@_serialized_colour_calculation
 def solve_three_spectrum_mix(
     spectra: tuple[SpectrumInput, SpectrumInput, SpectrumInput],
     target_xy: tuple[float, float],
@@ -1036,6 +1066,7 @@ def _validate_cri_targets(cri_targets: tuple[float, ...]) -> np.ndarray:
     return targets
 
 
+@_serialized_colour_calculation
 def _cri_metrics_for_mixed_values(
     calculation_grid: np.ndarray,
     mixed_values: np.ndarray,
@@ -1047,6 +1078,13 @@ def _cri_metrics_for_mixed_values(
         dict(zip(calculation_grid.tolist(), mixed_values.tolist())),
         name="CRI 目标混合光谱",
     )
+    XYZ = np.asarray(colour_module.sd_to_XYZ(sd), dtype=float)
+    if not np.all(np.isfinite(XYZ)) or XYZ[1] <= 0:
+        raise SpectralAnalysisError("混合光谱无法得到有效的三刺激值")
+    xy_values = np.asarray(colour_module.XYZ_to_xy(XYZ), dtype=float)
+    cct, _, _ = _cct_duv_from_uv(_xy_to_uv((float(xy_values[0]), float(xy_values[1]))))
+    if cct is None or not 1000 <= cct <= 25000:
+        raise SpectralAnalysisError("混合光谱 CCT 超出 1000–25000 K，无法计算有效 CRI")
     try:
         specification = colour_module.colour_rendering_index(
             sd,
@@ -1065,6 +1103,18 @@ def _cri_metrics_for_mixed_values(
     return metrics
 
 
+@_serialized_colour_calculation
+def _mixed_luminous_flux(calculation_grid: np.ndarray, mixed_values: np.ndarray, name: str) -> float:
+    """在与显色计算相同的隔离范围内求混合光通量。"""
+
+    colour_module = _require_colour()
+    mixed_sd = colour_module.SpectralDistribution(
+        dict(zip(calculation_grid.tolist(), mixed_values.tolist())),
+        name=name,
+    )
+    return float(colour_module.luminous_flux(mixed_sd))
+
+
 def solve_spectrum_mix_targets(
     spectra: tuple[SpectrumInput, ...],
     *,
@@ -1074,15 +1124,17 @@ def solve_spectrum_mix_targets(
 ) -> ThreeSpectrumMixSolution:
     """按可独立启用的 xy 与 CRI 下限目标反求峰值配比。
 
-    三光谱 xy 目标继续复用原有线性精确解；只启用 CRI 时使用有界非线性
+    三光谱 xy 目标继续复用原有线性精确解；只启用 CRI 时可对多条光谱使用有界非线性
     优化。三光谱同时启用两类目标时，xy 已唯一确定配比，因此在精确 xy 解上
     校验全部 CRI 下限，避免以牺牲色坐标的方式静默满足显色目标。
     """
 
     if target_xy is None and cri_targets is None:
         raise SpectralAnalysisError("请至少启用色坐标或 CRI 目标")
-    if len(spectra) != 3:
-        raise SpectralAnalysisError("目标求解要求恰好三条活动光谱")
+    if target_xy is not None and len(spectra) != 3:
+        raise SpectralAnalysisError("色坐标目标求解要求恰好三条活动光谱")
+    if target_xy is None and len(spectra) < 2:
+        raise SpectralAnalysisError("CRI 目标求解至少需要两条光谱")
 
     targets = _validate_cri_targets(cri_targets) if cri_targets is not None else None
     if target_xy is not None:
@@ -1184,7 +1236,7 @@ def solve_spectrum_mix_targets(
         )
         if len(unmet) > 5:
             summary += f" 等 {len(unmet)} 项"
-        raise SpectralAnalysisError(f"当前三条光谱无法满足全部 CRI 下限；最优结果：{summary}")
+        raise SpectralAnalysisError(f"当前光谱无法满足全部 CRI 下限；最优结果：{summary}")
 
     mixed_values = best_weights @ basis_matrix
     mixed_input = SpectrumInput(
@@ -1193,12 +1245,16 @@ def solve_spectrum_mix_targets(
         values=tuple(float(value) for value in mixed_values),
     )
     result = analyze_spectrum(mixed_input)
-    colour_module = _require_colour()
-    mixed_sd = colour_module.SpectralDistribution(
-        dict(zip(calculation_grid.tolist(), mixed_values.tolist())),
-        name=name,
+    actual = np.asarray(
+        [
+            result.ra if result.ra is not None else float("nan"),
+            *(dict(result.ri).get(index, float("nan")) for index in range(1, 16)),
+        ],
+        dtype=float,
     )
-    luminous_flux = float(colour_module.luminous_flux(mixed_sd))
+    if not np.all(np.isfinite(actual)) or np.any(actual + 0.05 < targets):
+        raise SpectralAnalysisError("最终混合光谱无法满足 CRI 下限，请调整光谱或目标")
+    luminous_flux = _mixed_luminous_flux(calculation_grid, mixed_values, name)
     return ThreeSpectrumMixSolution(
         result=result,
         peak_ratios=tuple(float(value) for value in best_weights),
@@ -1212,6 +1268,7 @@ def analyze_spectral_text(raw_text: str) -> list[SpectrumResult]:
     return [analyze_spectrum(spectrum) for spectrum in parse_spectral_text(raw_text)]
 
 
+@_serialized_colour_calculation
 def spectral_example_text() -> str:
     """生成 D65 与标准 A 光源的可粘贴对比示例。"""
 
@@ -1226,6 +1283,7 @@ def spectral_example_text() -> str:
 
 
 @lru_cache(maxsize=len(STANDARD_ILLUMINANTS))
+@_serialized_colour_calculation
 def analyze_standard_illuminant(illuminant_key: str) -> SpectrumResult:
     """计算一个内置 CIE 标准光源并缓存结果。"""
 
@@ -1243,6 +1301,7 @@ def analyze_standard_illuminant(illuminant_key: str) -> SpectrumResult:
 
 
 @lru_cache(maxsize=len(STANDARD_ILLUMINANTS))
+@_serialized_colour_calculation
 def analyze_standard_illuminant_chromaticity(illuminant_key: str) -> ChromaticityResult:
     """快速计算一个内置 CIE 标准光源的色坐标并缓存结果。"""
 
@@ -1274,6 +1333,7 @@ def analyze_cct_reference(cct: float) -> SpectrumResult:
 
 
 @lru_cache(maxsize=2)
+@_serialized_colour_calculation
 def chromaticity_loci(coordinate_system: str) -> tuple[
     tuple[tuple[float, float], ...], tuple[tuple[float, float], ...]
 ]:
@@ -1303,6 +1363,7 @@ def chromaticity_loci(coordinate_system: str) -> tuple[
 
 
 @lru_cache(maxsize=2)
+@_serialized_colour_calculation
 def chromaticity_isotherms(
     coordinate_system: str,
 ) -> tuple[tuple[int, tuple[float, float], tuple[float, float]], ...]:
