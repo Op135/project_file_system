@@ -13,19 +13,11 @@ from ..approval_workflow import (
     APPROVAL_WORKFLOW_EVENTS,
     APPROVER_STRATEGY_NAMES,
     get_approval_workflow_editor_nodes,
-    import_project_overview_legacy_workflows,
     resolve_approval_workflow,
 )
 from ..config import BASE_DIR, IMG_DIR, PRESET_AVATARS
 from ..identity_codes import STABLE_CODE_HINT, normalize_stable_code, validate_stable_code
 from ..notification_recipients import resolve_position_usernames
-from ..overview_permission_mapping import (
-    OVERVIEW_ITEM_PERMISSION_PREFIX,
-    build_overview_position_permission_plan,
-    collect_legacy_overview_role_usage,
-    load_overview_permission_source,
-    normalize_overview_role_position_mapping,
-)
 from ..requirement_overview_impact import (
     REQUIREMENT_OVERVIEW_IMPACT_STORAGE_KEY,
     RequirementOverviewImpactConfigError,
@@ -1644,272 +1636,99 @@ def manage_page():
                                         checkbox_by_code[permission["code"]] = checkbox
                 return checkbox_by_code
 
-            def open_overview_permission_mapping_dialog():
-                """按旧 JSON 角色与新岗位的映射批量整理概述 label 权限。"""
-                try:
-                    overview_config = load_overview_permission_source(
-                        os.path.join(BASE_DIR, "overview_config.json")
-                    )
-                except Exception as exc:
-                    ui.notify(f"无法读取概述权限来源：{exc}", type="negative", multi_line=True)
-                    return
-
-                positions = [
-                    position
-                    for position in user_svc.list_positions()
-                    if position.get("status", "active") == "active"
-                ]
-                if not positions:
-                    ui.notify("尚无可用岗位，请先维护岗位字典。", type="warning")
-                    return
-                units = user_svc.list_org_units()
-                unit_names = {
-                    str(unit["org_unit_id"]): str(unit["name"])
-                    for unit in units
-                }
-
-                def position_label(position):
-                    department_names = [
-                        unit_names[org_unit_id]
-                        for org_unit_id in map(str, position.get("org_unit_ids", []))
-                        if org_unit_id in unit_names
-                    ]
-                    department_text = " / ".join(department_names) or "未划分部门"
-                    return f"{department_text} · {position['name']}（{position['code']}）"
-
-                position_by_id = {
-                    str(position["position_id"]): position for position in positions
-                }
-                position_options = {
-                    str(position["position_id"]): position_label(position)
-                    for position in sorted(positions, key=lambda item: position_label(item).casefold())
-                }
-                role_usage = collect_legacy_overview_role_usage(overview_config)
-                valid_roles = {str(item["role"]) for item in role_usage}
-                stored_mapping = normalize_overview_role_position_mapping(
-                    user_svc.get_overview_role_position_mapping(),
-                    valid_roles=valid_roles,
-                    valid_position_ids=set(position_by_id),
+            def open_compare_position_permissions_dialog():
+                """按岗位默认权限的稳定编码展示双向差异。"""
+                positions = sorted(
+                    user_svc.list_positions(),
+                    key=lambda item: (str(item["name"]).casefold(), str(item["code"])),
                 )
-                mapping_state = copy.deepcopy(stored_mapping)
-                previous_managed_permissions = (
-                    user_svc.get_overview_role_position_managed_permissions()
-                )
-                previous_target_ids = {
-                    position_id
-                    for position_ids in stored_mapping.values()
-                    for position_id in position_ids
-                } | set(previous_managed_permissions)
+                if len(positions) < 2:
+                    ui.notify("至少需要两个岗位才能对比。", type="warning")
+                    return
+                position_by_id = {str(item["position_id"]): item for item in positions}
+                options = {
+                    str(item["position_id"]): f"{item['name']} ｜ {item['code']}"
+                    for item in positions
+                }
+                permission_by_code = {
+                    str(item["code"]): item for item in user_svc.list_permissions()
+                }
+                first_id = str(position_state["selected_position_id"] or "")
+                if first_id not in position_by_id:
+                    first_id = next(iter(options))
+                second_id = next(key for key in options if key != first_id)
 
-                with (
-                    ui.dialog().props("maximized") as mapping_dialog,
-                    ui.card().classes("w-full h-full p-5 flex flex-col no-wrap bg-gray-50"),
+                with ui.dialog() as compare_dialog, ui.card().classes(
+                    "w-[56rem] max-w-[95vw] max-h-[90vh] p-5 flex flex-col no-wrap"
                 ):
                     with ui.row().classes("w-full items-center justify-between shrink-0"):
-                        with ui.column().classes("gap-0"):
-                            ui.label("项目概述权限批量映射").classes("text-xl font-bold")
-                            ui.label(
-                                "把旧 JSON 的角色名称映射到一个或多个系统岗位，再按每个 label 的读写规则自动整理。"
-                            ).classes("text-xs text-gray-500")
-                        ui.button(icon="close", on_click=mapping_dialog.close).props("flat round dense")
-
-                    ui.label(
-                        "自动整理只调整本工具生成的 project_overview.item.* 权限；管理员手工补充的概述权限，以及工具、"
-                        "系统管理、审批和其他模块权限都不变。维护权限本身已包含查看能力。取消既有映射后再次整理，"
-                        "只会清除该映射原先自动生成的概述项权限。"
-                    ).classes("w-full text-sm text-blue-900 bg-blue-50 border border-blue-200 rounded p-3 shrink-0")
-
-                    with ui.row().classes("w-full items-end gap-3 shrink-0"):
-                        role_search = ui.input("搜索旧角色", placeholder="例如：质量").props(
-                            "clearable debounce=250"
-                        ).classes("w-72")
-                        only_mapped = ui.switch("只看已映射", value=False)
-                        mapping_summary = ui.label().classes("text-sm text-gray-600")
-
-                    mapping_container = ui.column().classes(
-                        "w-full flex-grow min-h-0 overflow-y-auto gap-2 bg-white border rounded p-3"
+                        ui.label("岗位默认权限对比").classes("text-lg font-bold")
+                        ui.button(icon="close", on_click=compare_dialog.close).props("flat round dense")
+                    with ui.row().classes("w-full gap-3 shrink-0"):
+                        first_select = ui.select(
+                            options, value=first_id, label="岗位一", with_input=True,
+                        ).props("outlined dense options-dense").classes("flex-1 min-w-0")
+                        second_select = ui.select(
+                            options, value=second_id, label="岗位二", with_input=True,
+                        ).props("outlined dense options-dense").classes("flex-1 min-w-0")
+                    result_container = ui.column().classes(
+                        "w-full flex-grow min-h-0 overflow-y-auto gap-3"
                     )
-                    preview_container = ui.column().classes("w-full shrink-0 gap-1")
 
-                    def update_mapping(role, value):
-                        """更新弹窗内尚未提交的多岗位映射。"""
-                        values = value if isinstance(value, list) else ([value] if value else [])
-                        normalized = [
-                            str(position_id)
-                            for position_id in values
-                            if str(position_id) in position_by_id
-                        ]
-                        if normalized:
-                            mapping_state[role] = list(dict.fromkeys(normalized))
-                        else:
-                            mapping_state.pop(role, None)
-                        refresh_mapping_summary()
-
-                    def refresh_mapping_summary():
-                        mapped_roles = sum(bool(mapping_state.get(role)) for role in valid_roles)
-                        target_positions = {
-                            position_id
-                            for position_ids in mapping_state.values()
-                            for position_id in position_ids
-                        }
-                        mapping_summary.set_text(
-                            f"已映射 {mapped_roles}/{len(valid_roles)} 个旧角色，涉及 {len(target_positions)} 个岗位"
-                        )
-
-                    def render_mapping_rows():
-                        query = str(role_search.value or "").strip().casefold()
-                        mapping_container.clear()
-                        with mapping_container:
-                            with ui.grid(columns=12).classes(
-                                "w-full gap-x-3 gap-y-2 items-center text-sm"
-                            ):
-                                ui.label("旧 JSON 角色").classes("col-span-3 font-semibold text-gray-600")
-                                ui.label("覆盖项数").classes("col-span-2 font-semibold text-gray-600")
-                                ui.label("映射到系统岗位（可多选）").classes(
-                                    "col-span-7 font-semibold text-gray-600"
-                                )
-                                visible_count = 0
-                                for usage in role_usage:
-                                    role = str(usage["role"])
-                                    if query and query not in role.casefold():
-                                        continue
-                                    if only_mapped.value and not mapping_state.get(role):
-                                        continue
-                                    visible_count += 1
-                                    ui.label(role).classes("col-span-3 font-medium")
-                                    ui.label(
-                                        f"查看 {usage['view_count']} / 维护 {usage['edit_count']}"
-                                    ).classes("col-span-2 text-xs text-gray-500")
-                                    selector = ui.select(
-                                        position_options,
-                                        value=mapping_state.get(role, []),
-                                        multiple=True,
-                                        label="选择岗位",
-                                    ).props("use-chips clearable with-input options-dense").classes(
-                                        "col-span-7 w-full"
-                                    )
-                                    selector.on_value_change(
-                                        lambda event, role_name=role: update_mapping(
-                                            role_name,
-                                            event.value,
-                                        )
-                                    )
-                                if not visible_count:
-                                    ui.label("没有符合条件的旧角色。待映射角色请保留在旧 JSON 的权限字段中。") \
-                                        .classes("col-span-12 text-gray-500 p-4 text-center")
-
-                    def calculate_preview():
-                        normalized_mapping = normalize_overview_role_position_mapping(
-                            mapping_state,
-                            valid_roles=valid_roles,
-                            valid_position_ids=set(position_by_id),
-                        )
-                        permission_plan = build_overview_position_permission_plan(
-                            overview_config,
-                            normalized_mapping,
-                        )
-                        current_target_ids = {
-                            position_id
-                            for position_ids in normalized_mapping.values()
-                            for position_id in position_ids
-                        }
-                        affected_ids = previous_target_ids | current_target_ids
-                        rows = []
-                        for position_id in sorted(
-                            affected_ids,
-                            key=lambda value: position_options.get(value, value).casefold(),
-                        ):
-                            current_codes = user_svc.get_position_permission_codes(position_id)
-                            current_overview = {
-                                code for code in current_codes if code.startswith(OVERVIEW_ITEM_PERMISSION_PREFIX)
-                            }
-                            desired = permission_plan.get(position_id, set())
-                            previous_managed = previous_managed_permissions.get(position_id, set())
-                            organized_result = (current_overview - previous_managed) | desired
-                            rows.append(
-                                {
-                                    "position_id": position_id,
-                                    "name": position_options.get(position_id, position_id),
-                                    "desired": len(organized_result),
-                                    "add": len(organized_result - current_overview),
-                                    "remove": len(current_overview - organized_result),
-                                }
-                            )
-                        return normalized_mapping, permission_plan, affected_ids, rows
-
-                    def render_preview():
-                        _mapping, _plan, _affected, rows = calculate_preview()
-                        preview_container.clear()
-                        with preview_container:
-                            if not rows:
-                                ui.label("当前没有映射目标，不会修改任何岗位权限。") \
-                                    .classes("text-sm text-orange-700")
+                    def render_comparison():
+                        result_container.clear()
+                        left = position_by_id.get(str(first_select.value or ""))
+                        right = position_by_id.get(str(second_select.value or ""))
+                        with result_container:
+                            if left is None or right is None:
+                                ui.label("请选择两个岗位。")
                                 return
-                            total_add = sum(row["add"] for row in rows)
-                            total_remove = sum(row["remove"] for row in rows)
+                            if left["position_id"] == right["position_id"]:
+                                ui.label("请选择两个不同的岗位。")
+                                return
+                            left_codes = set(left.get("permission_codes", []))
+                            right_codes = set(right.get("permission_codes", []))
+                            left_only = left_codes - right_codes
+                            right_only = right_codes - left_codes
                             ui.label(
-                                f"预览：涉及 {len(rows)} 个岗位，新增 {total_add} 项，移除 {total_remove} 项概述权限。"
-                            ).classes("text-sm font-semibold")
-                            with ui.row().classes("w-full gap-3 overflow-x-auto no-wrap"):
-                                for row in rows:
-                                    ui.label(
-                                        f"{row['name']}：整理后 {row['desired']}，+{row['add']} / -{row['remove']}"
-                                    ).classes("text-xs bg-white border rounded px-2 py-1 whitespace-nowrap")
-
-                    def confirm_apply_mapping():
-                        normalized_mapping, permission_plan, affected_ids, rows = calculate_preview()
-                        if not affected_ids:
-                            ui.notify("当前没有需要整理的岗位。", type="warning")
-                            return
-                        total_add = sum(row["add"] for row in rows)
-                        total_remove = sum(row["remove"] for row in rows)
-                        with ui.dialog() as confirm_dialog, ui.card().classes("w-[34rem] max-w-[95vw] p-5"):
-                            ui.label("确认自动整理概述权限？").classes("text-lg font-bold")
-                            ui.label(
-                                f"将处理 {len(affected_ids)} 个岗位：新增 {total_add} 项、移除 {total_remove} 项。"
-                            ).classes("text-sm")
-                            if total_remove:
-                                ui.label(
-                                    "移除项仅限本工具上次自动生成的概述项权限，手工附加权限会保留。"
-                                ).classes("text-sm text-orange-700 bg-orange-50 rounded p-2")
-
-                            def apply_mapping():
-                                try:
-                                    count = user_svc.apply_overview_role_position_mapping(
-                                        normalized_mapping,
-                                        permission_plan,
-                                        affected_position_ids=affected_ids,
-                                        actor_username=current_user,
+                                f"共同权限 {len(left_codes & right_codes)} 项；"
+                                f"{left['name']} 独有 {len(left_only)} 项；"
+                                f"{right['name']} 独有 {len(right_only)} 项。"
+                            ).classes("text-sm text-blue-900 bg-blue-50 rounded p-3 w-full")
+                            if not left_only and not right_only:
+                                ui.label("两个岗位的默认权限相同。") \
+                                    .classes("text-gray-500")
+                                return
+                            for position, codes in ((left, left_only), (right, right_only)):
+                                with ui.card().classes("w-full shadow-none border p-3 gap-2"):
+                                    ui.label(f"仅 {position['name']} 拥有（{len(codes)} 项）").classes(
+                                        "font-semibold"
                                     )
-                                except Exception as exc:
-                                    ui.notify(f"概述权限自动整理失败：{exc}", type="negative", multi_line=True)
-                                    return
-                                confirm_dialog.close()
-                                mapping_dialog.close()
-                                render_permission_positions()
-                                render_position_permissions()
-                                ui.notify(f"已按映射整理 {count} 个岗位的概述权限。", type="positive")
+                                    if not codes:
+                                        ui.label("无独有权限").classes("text-sm text-gray-500")
+                                    for code in sorted(
+                                        codes,
+                                        key=lambda value: (
+                                            str(permission_by_code.get(value, {}).get("module", "")),
+                                            str(permission_by_code.get(value, {}).get("name", value)),
+                                        ),
+                                    ):
+                                        permission = permission_by_code.get(code, {})
+                                        with ui.row().classes("w-full items-start gap-2 text-sm"):
+                                            ui.label(str(permission.get("module", "未知模块"))).classes(
+                                                "text-gray-500 w-36 shrink-0"
+                                            )
+                                            ui.label(str(permission.get("name", code))).classes(
+                                                "font-medium flex-grow min-w-0"
+                                            )
+                                            ui.label(code).classes(
+                                                "text-xs font-mono text-gray-500 break-all"
+                                            )
 
-                            with ui.row().classes("w-full justify-end"):
-                                ui.button("取消", on_click=confirm_dialog.close).props("flat")
-                                ui.button("确认并自动整理", icon="auto_fix_high", on_click=apply_mapping).props(
-                                    "color=primary"
-                                )
-                        confirm_dialog.open()
-
-                    role_search.on_value_change(lambda _event: render_mapping_rows())
-                    only_mapped.on_value_change(lambda _event: render_mapping_rows())
-                    with ui.row().classes("w-full justify-end shrink-0"):
-                        ui.button("刷新预览", icon="preview", on_click=render_preview).props("outline")
-                        ui.button(
-                            "自动整理概述权限",
-                            icon="auto_fix_high",
-                            on_click=confirm_apply_mapping,
-                        ).props("color=primary")
-                    refresh_mapping_summary()
-                    render_mapping_rows()
-                    render_preview()
-                mapping_dialog.open()
+                    first_select.on_value_change(lambda _event: render_comparison())
+                    second_select.on_value_change(lambda _event: render_comparison())
+                    render_comparison()
+                compare_dialog.open()
 
             with ui.tabs().classes("w-full shrink-0") as tabs:
                 position_tab = ui.tab("岗位默认权限", icon="badge")
@@ -1930,10 +1749,10 @@ def manage_page():
                                         "员工绑定主岗位后自动继承这里配置的权限。"
                                     ).classes("text-xs text-gray-500")
                                 ui.button(
-                                    "概述权限批量映射",
-                                    icon="account_tree",
-                                    on_click=open_overview_permission_mapping_dialog,
-                                ).props("outline color=primary")
+                                    "对比岗位权限",
+                                    icon="compare_arrows",
+                                    on_click=open_compare_position_permissions_dialog,
+                                ).props("outline dense color=primary")
                             position_list_container = ui.column().classes(
                                 "w-full flex-grow min-h-0 overflow-y-auto gap-1 pt-2"
                             )
@@ -2604,18 +2423,6 @@ def manage_page():
                                 add_workflow_button = ui.button("新增", icon="add").props(
                                     "outline dense"
                                 )
-                            with ui.button(
-                                "从旧配置生成草稿",
-                                icon="move_to_inbox",
-                            ).props("outline dense no-caps").classes("self-start shrink-0"):
-                                with ui.menu().props("auto-close"):
-                                    ui.menu_item(
-                                        "项目概述旧配置",
-                                        on_click=lambda: import_legacy_workflows(
-                                            import_project_overview_legacy_workflows,
-                                            "项目概述",
-                                        ),
-                                    )
                             workflow_list_container = ui.column().classes(
                                 "w-full flex-grow min-h-0 overflow-y-auto gap-2 pt-2"
                             )
@@ -2694,7 +2501,7 @@ def manage_page():
                         workflow_list_container.clear()
                         with workflow_list_container:
                             if not workflows:
-                                ui.label("尚无流程，可新增或从旧配置生成草稿。") \
+                                ui.label("尚无流程，可新增流程草稿。") \
                                     .classes("text-gray-500 p-4")
                                 return
                             for workflow in workflows:
@@ -2742,6 +2549,45 @@ def manage_page():
                                 ui.label("请选择或新增一个审批流程。") \
                                     .classes("text-gray-500 p-4")
                                 return
+
+                            def confirm_delete_workflow():
+                                with ui.dialog() as delete_dialog, ui.card().classes(
+                                    "w-[30rem] max-w-[95vw] p-5 gap-4"
+                                ):
+                                    ui.label("确认删除流程").classes("text-lg font-bold text-red-700")
+                                    ui.label(
+                                        f"将删除“{selected['name']}”及其全部草稿和已发布版本。"
+                                        "已生成的审批待办和审计记录会保留。"
+                                    ).classes("text-sm")
+
+                                    def delete_workflow():
+                                        try:
+                                            user_svc.delete_approval_workflow(
+                                                selected["workflow_id"],
+                                                actor_username=current_user,
+                                            )
+                                        except Exception as exc:
+                                            ui.notify(f"流程删除失败：{exc}", type="negative")
+                                            return
+                                        delete_dialog.close()
+                                        workflow_state["selected_workflow_id"] = None
+                                        ui.notify("流程已删除。", type="positive")
+                                        render_workflow_list()
+                                        render_workflow_editor()
+
+                                    with ui.row().classes("w-full justify-end gap-2"):
+                                        ui.button("取消", on_click=delete_dialog.close).props("flat")
+                                        ui.button("确认删除", on_click=delete_workflow).props(
+                                            "color=negative"
+                                        )
+                                delete_dialog.open()
+
+                            with ui.row().classes("w-full justify-end"):
+                                ui.button(
+                                    "删除流程",
+                                    icon="delete_outline",
+                                    on_click=confirm_delete_workflow,
+                                ).props("flat dense color=negative")
 
                             version = selected.get("draft_version") or selected.get("active_version")
                             version = version or {
@@ -3857,30 +3703,6 @@ def manage_page():
                                     "color=primary"
                                 )
                         add_dialog.open()
-
-                    def import_legacy_workflows(importer, source_name):
-                        try:
-                            created, warnings = importer(
-                                user_svc,
-                                actor_username=current_user,
-                            )
-                        except Exception as exc:
-                            ui.notify(
-                                f"{source_name}旧配置导入失败：{exc}",
-                                type="negative",
-                                multi_line=True,
-                            )
-                            return
-                        message = f"已生成 {created} 条流程草稿。"
-                        if warnings:
-                            message += "\n" + "\n".join(warnings)
-                        ui.notify(
-                            message,
-                            type="warning" if warnings else "positive",
-                            multi_line=True,
-                        )
-                        render_workflow_list()
-                        render_workflow_editor()
 
                     add_workflow_button.on_click(open_add_workflow_form)
                     render_workflow_list()

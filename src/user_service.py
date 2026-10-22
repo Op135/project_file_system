@@ -393,6 +393,9 @@ class UserService:
     def set_approval_workflow_status(self, workflow_id: str, status: str, **values) -> bool:
         return self.identity_store.set_approval_workflow_status(workflow_id, status, **values)
 
+    def delete_approval_workflow(self, workflow_id: str, **values) -> bool:
+        return self.identity_store.delete_approval_workflow(workflow_id, **values)
+
     def replace_work_assignments(self, **values) -> list[str]:
         return self.identity_store.replace_work_assignments(**values)
 

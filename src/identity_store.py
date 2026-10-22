@@ -1743,6 +1743,39 @@ class IdentityStore:
             )
         return True
 
+    def delete_approval_workflow(
+        self,
+        workflow_id: str,
+        *,
+        actor_username: str | None = None,
+    ) -> bool:
+        """删除流程及版本；已生成的待办和审计记录保留。"""
+        with self._lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            workflow = connection.execute(
+                "SELECT code, name FROM approval_workflows WHERE workflow_id=?",
+                (str(workflow_id),),
+            ).fetchone()
+            if workflow is None:
+                raise ValueError("审批流程不存在")
+            connection.execute(
+                "DELETE FROM approval_workflow_versions WHERE workflow_id=?",
+                (str(workflow_id),),
+            )
+            connection.execute(
+                "DELETE FROM approval_workflows WHERE workflow_id=?",
+                (str(workflow_id),),
+            )
+            self._audit(
+                connection,
+                actor_username=actor_username,
+                action="approval_workflow_deleted",
+                target_type="approval_workflow",
+                target_id=str(workflow_id),
+                detail={"code": workflow["code"], "name": workflow["name"]},
+            )
+        return True
+
     def replace_work_assignments(
         self,
         *,

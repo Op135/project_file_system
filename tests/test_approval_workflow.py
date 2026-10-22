@@ -1,8 +1,10 @@
 import copy
+import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from src.approval_workflow import (
     advance_approval_sequence,
@@ -133,6 +135,53 @@ class ApprovalWorkflowTests(unittest.TestCase):
         self.service.publish_approval_workflow(workflow_id, actor_username="admin")
         self.workflow_id = workflow_id
         return workflow_id
+
+    def test_delete_workflow_removes_versions_and_preserves_existing_tasks(self):
+        workflow_id = self.create_position_workflow()
+        self.service.replace_work_assignments(
+            module="sample_issue",
+            entity_id="sample-existing-task",
+            task_key="close_review",
+            assignee_usernames=["李四"],
+            source_policy_code="sample_issue.close.test@1",
+        )
+
+        self.assertTrue(self.service.delete_approval_workflow(
+            workflow_id, actor_username="admin",
+        ))
+        self.assertEqual(self.service.list_approval_workflows(), [])
+        self.assertEqual(
+            self.service.list_pending_assignment_usernames(
+                module="sample_issue",
+                entity_id="sample-existing-task",
+                task_key="close_review",
+            ),
+            ["李四"],
+        )
+        with closing(sqlite3.connect(self.service.identity_store.db_path)) as connection:
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM approval_workflow_versions WHERE workflow_id=?",
+                (workflow_id,),
+            ).fetchone()[0], 0)
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM iam_audit_logs "
+                "WHERE action='approval_workflow_deleted' AND target_id=?",
+                (workflow_id,),
+            ).fetchone()[0], 1)
+        with self.assertRaisesRegex(ValueError, "审批流程不存在"):
+            self.service.delete_approval_workflow(workflow_id, actor_username="admin")
+
+    def test_delete_workflow_rolls_back_if_audit_fails(self):
+        workflow_id = self.create_position_workflow()
+        with patch.object(
+            self.service.identity_store, "_audit", side_effect=RuntimeError("审计失败"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "审计失败"):
+                self.service.delete_approval_workflow(workflow_id, actor_username="admin")
+
+        workflow = self.service.list_approval_workflows()[0]
+        self.assertEqual(workflow["workflow_id"], workflow_id)
+        self.assertIsNotNone(workflow["active_version"])
 
     def test_stable_position_id_survives_display_name_change(self):
         self.create_position_workflow()
