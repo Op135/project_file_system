@@ -42,7 +42,6 @@ from ..config import (
     IMG_DIR,
     NONE_REGULAR,
     OVER_UPLOADS_FILE_TYPE,
-    OVERVIEW_EXEMPTION_CHECK_LIST,
     OVERVIEW_UI_RENDER_REGISTRY,
     PRESET_AVATARS,
     PROJECT_STATE_LIST,
@@ -53,6 +52,7 @@ from ..config import (
     UPLOADS_DIR,
 )
 from ..custom_ui import custom_upload
+from ..overview_trial_progress import get_exempt_labels
 from ..overview_batch_operations import (
     BATCH_OVERVIEW_ALLOWED_PROJECT_STATES,
     BATCH_OVERVIEW_STAGING_DIR,
@@ -604,6 +604,7 @@ async def requirement_page(
         over_dialog.open()
 
     def set_project_trial_dialog(project_name, state, on_cancel_action):
+        exempt_labels = get_exempt_labels()
         pending_dic = app.storage.general.get("overview_charge_pending", {})
         # 用于保存导致该项目不能切换状态到试产的相关人员与其未确定概述字典
         pending_out_dic = {}
@@ -617,7 +618,7 @@ async def requirement_page(
                     pending_out_dic[charge_user] = [
                         k
                         for k, v in pending_dic.items()
-                        if v in ["缺必填", "有待定"] and k not in OVERVIEW_EXEMPTION_CHECK_LIST
+                        if v in ["缺必填", "有待定"] and k not in exempt_labels
                     ]
             if pending_out_dic.get(charge_user) == []:
                 del pending_out_dic[charge_user]

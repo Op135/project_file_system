@@ -18,7 +18,8 @@ from nicegui import app
 
 from . import db_storage
 from . import overview_storage
-from .config import BASE_DIR, OVERVIEW_EXEMPTION_CHECK_LIST, PROJECT_STATE_LIST
+from .config import BASE_DIR, PROJECT_STATE_LIST
+from .overview_trial_progress import BLOCKING_STATES, clear_project_importance, get_exempt_labels
 from .notification_recipients import resolve_permission_wecom_recipients
 from .notification_content import build_compact_text_notification
 from .overview_conversion_review import (
@@ -90,6 +91,7 @@ def collect_trial_transition_blockers(project_name: str) -> dict[str, tuple[str,
     if not isinstance(pending_value, dict):
         return {}
     blockers: dict[str, tuple[str, ...]] = {}
+    exempt_labels = get_exempt_labels()
     for responsible, projects in pending_value.items():
         if not isinstance(projects, dict):
             continue
@@ -99,7 +101,7 @@ def collect_trial_transition_blockers(project_name: str) -> dict[str, tuple[str,
         labels = tuple(
             str(label)
             for label, state in states.items()
-            if state in {"缺必填", "有待定"} and label not in OVERVIEW_EXEMPTION_CHECK_LIST
+            if state in BLOCKING_STATES and label not in exempt_labels
         )
         if labels:
             blockers[str(responsible)] = labels
@@ -428,6 +430,13 @@ async def transition_project_state(
                 review_success = False
             if not review_success:
                 logger.error("项目已转产但职能汇总待办生成失败: project=%s", project_name)
+
+        if (check.previous_state, check.target_state) == ("转产", "试产"):
+            try:
+                if not await clear_project_importance(project_name):
+                    logger.error("项目已进入试产，但转产进度重要程度清理失败: project=%s", project_name)
+            except Exception:
+                logger.exception("项目已进入试产，但转产进度重要程度清理异常: project=%s", project_name)
 
         changed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         try:

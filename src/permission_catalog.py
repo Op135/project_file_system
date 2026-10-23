@@ -38,6 +38,7 @@ CORE_PERMISSIONS = (
 
 
 PROJECT_VIEW_PERMISSION = "project.view"
+PROJECT_TRIAL_PROGRESS_VIEW_PERMISSION = "project.trial_progress.view"
 PROJECT_ALL_STATES_VIEW_PERMISSION = "project.all_states.view"
 PROJECT_BASE_EDIT_PERMISSION = "project.base.edit"
 PROJECT_STATUS_EDIT_PERMISSION = "project.status.edit"
@@ -57,6 +58,12 @@ PROJECT_PERMISSIONS = (
         "查看 — 项目资料总表",
         "项目资料",
         "允许从主页进入并查看项目资料总表；未同时授权全部状态时只显示试产、量产项目",
+    ),
+    PermissionDefinition(
+        PROJECT_TRIAL_PROGRESS_VIEW_PERMISSION,
+        "查看 — 转产进度",
+        "项目资料",
+        "允许在主页查看全部已录需求转产项目的概述进度和职能负责人",
     ),
     PermissionDefinition(
         PROJECT_ALL_STATES_VIEW_PERMISSION,

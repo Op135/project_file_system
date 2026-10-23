@@ -20,6 +20,7 @@ from ..overview_conversion_review import (
     get_conversion_review_pending_count,
 )
 from ..overview_corrections import OVERVIEW_CORRECTION_REQUESTS_KEY, get_correction_pending_count
+from ..overview_trial_progress import can_view_trial_progress
 from ..project_overview_access import can_review_overview_correction
 from ..project_requirement_access import (
     can_edit_project_requirement,
@@ -204,6 +205,7 @@ def main_page():
         ("fact_check", "样品订单看板", "录入并跟踪样品订单交期", "/sample_order_dashboard"),
         ("science", "样品问题跟进", "查阅记录样品问题处理进度", "/sample_issue_collection"),
         ("error", "批量产品问题跟进", "查阅记录产品问题处理进度", "/error_management"),
+        ("trending_up", "转产进度", "查看转产项目的概述完成进度", "/trial_progress"),
         ("handyman", "分析工具", "专业分析计算工具", "/tool"),
         ("equalizer", "统计信息", "查阅系统统计信息", "/statistics"),
         ("menu_book", "设计知识库", "沉淀规范与设计案例", "/design_knowledge"),
@@ -222,6 +224,8 @@ def main_page():
             current_role,
             current_user,
         ):
+            continue
+        elif items[3] == "/trial_progress" and not can_view_trial_progress(current_user):
             continue
         # 两类项目待办分别使用稳定入口权限，内部内容继续按业务权限和具体责任过滤。
         elif items[3] == "/project_overview_todo" and not can_view_project_overview_todo(

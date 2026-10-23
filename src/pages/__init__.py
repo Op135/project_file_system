@@ -17,6 +17,7 @@ from . import (
     sample_issue_collection,
     statistics,
     test_summary,
+    trial_progress,
     tool,
     user_profile,
 )

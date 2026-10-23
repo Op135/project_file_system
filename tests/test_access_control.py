@@ -58,6 +58,7 @@ from src.permission_catalog import (
     PROJECT_OVERVIEW_CORRECTION_REVIEW_PERMISSION,
     PROJECT_STATUS_EDIT_PERMISSION,
     PROJECT_STATUS_TRANSFER_TO_TRIAL_PERMISSION,
+    PROJECT_TRIAL_PROGRESS_VIEW_PERMISSION,
     PROJECT_STATUS_TRIAL_TO_MASS_PERMISSION,
     PROJECT_REQUIREMENT_DRAFT_MANAGE_ALL_PERMISSION,
     PROJECT_REQUIREMENT_EDIT_PERMISSION,
@@ -103,6 +104,7 @@ from src.project_access import (
     can_edit_project_status,
     can_transition_project_status,
 )
+from src.overview_trial_progress import can_view_trial_progress
 from src.project_requirement_access import (
     can_edit_project_requirement,
     can_manage_all_project_requirement_drafts,
@@ -154,6 +156,24 @@ class AccessControlTests(unittest.TestCase):
 
     def tearDown(self):
         self.temp_dir.cleanup()
+
+    def test_trial_progress_requires_independent_view_permission(self):
+        self.assertIn(
+            PROJECT_TRIAL_PROGRESS_VIEW_PERMISSION,
+            {item["code"] for item in self.service.list_permissions()},
+        )
+        self.assertFalse(can_view_trial_progress("张三", user_service=self.service))
+        position_id = self.service.save_position(code="trial.viewer", name="转产进度查看")
+        org_unit_id = self.service.save_org_unit(code="org.trial", name="转产测试部")
+        self.service.set_primary_membership(
+            "张三", org_unit_id=org_unit_id, position_id=position_id,
+        )
+        self.service.set_position_permissions(
+            position_id, [PROJECT_TRIAL_PROGRESS_VIEW_PERMISSION], actor_username="admin",
+        )
+        self.assertTrue(can_view_trial_progress("张三", user_service=self.service))
+        self.service.set_position_permissions(position_id, [], actor_username="admin")
+        self.assertFalse(can_view_trial_progress("张三", user_service=self.service))
 
     def test_database_permissions_ignore_legacy_call_arguments(self):
         self.assertTrue(
