@@ -17,6 +17,7 @@ from html import escape
 from pathlib import Path
 from typing import TypedDict
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
 
 import httpx
 from httpx import BasicAuth
@@ -238,6 +239,60 @@ def setup_global_activity_tracking(page_key: str):
     """)
 
     # 注入心跳上报定时器
+    reminder_dialog = ui.dialog()
+    checked_snapshot = ""
+    checking_reminder = False
+    next_reminder_check_ts = 0.0
+
+    async def show_file_health_reminder() -> None:
+        nonlocal checked_snapshot, checking_reminder, next_reminder_check_ts
+        if (
+            checking_reminder or time.time() < next_reminder_check_ts
+            or username == "访客" or client is None or client_id is None
+        ):
+            return
+        if Client.instances.get(client_id) is not client or not client.has_socket_connection:
+            return
+        activity = online_users.get(client_id, {})
+        if time.time() - activity.get("last_activity_ts", 0) > 60:
+            return
+        checking_reminder = True
+        next_reminder_check_ts = time.time() + 60
+        try:
+            from .overview_file_health import (
+                OVERVIEW_FILE_HEALTH_KEY,
+                claim_file_health_reminder,
+                unhealthy_items_for_owner,
+            )
+
+            snapshot = await db_storage.get_fresh_item(OVERVIEW_FILE_HEALTH_KEY, {})
+            if not isinstance(snapshot, dict):
+                return
+            checked_at = str(snapshot.get("checked_at") or "")
+            today = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
+            if not checked_at.startswith(today) or checked_at == checked_snapshot:
+                return
+            issues = unhealthy_items_for_owner(snapshot, username)
+            checked_snapshot = checked_at
+            if not issues or not await claim_file_health_reminder(username, today):
+                return
+            if Client.instances.get(client_id) is not client or not client.has_socket_connection:
+                return
+            reminder_dialog.clear()
+            with reminder_dialog, ui.card().classes("w-full max-w-2xl max-h-[85vh]"):
+                with ui.row().classes("w-full items-center justify-between"):
+                    ui.label(f"文件性概述异常提醒（{len(issues)} 条）").classes("text-lg font-bold")
+                    ui.button(icon="close", on_click=reminder_dialog.close).props("flat round")
+                ui.label("以下是你负责的文件性概述问题，点击条目可前往项目概述查看。")
+                with ui.scroll_area().classes("w-full max-h-[65vh]"):
+                    for issue in issues:
+                        render_file_health_issue(issue)
+            reminder_dialog.open()
+        except Exception:
+            logger.exception("检查文件性概述提醒失败")
+        finally:
+            checking_reminder = False
+
     async def report_heartbeat() -> None:
         if client is None or client_id is None:
             return
@@ -249,14 +304,18 @@ def setup_global_activity_tracking(page_key: str):
         if not client.has_socket_connection:
             return
         try:
-            last_activity_ms = await client.run_javascript("return window.lastActivityTime;", timeout=2.0)
+            heartbeat = await client.run_javascript(
+                "return [window.lastActivityTime, document.visibilityState];", timeout=2.0
+            )
             if Client.instances.get(client_id) is not client or not client.has_socket_connection:
                 return
-            if last_activity_ms is not None:
+            if isinstance(heartbeat, list) and len(heartbeat) == 2 and heartbeat[0] is not None:
                 if client_id in online_users:
                     online_users[client_id]["username"] = username
                     online_users[client_id]["last_seen_ts"] = time.time()
-                    online_users[client_id]["last_activity_ts"] = last_activity_ms / 1000.0
+                    online_users[client_id]["last_activity_ts"] = heartbeat[0] / 1000.0
+                if heartbeat[1] == "visible":
+                    await show_file_health_reminder()
         except Exception as exc:
             # 用户正在切换页面或刷新时，执行JS会超时，直接忽略即可
             logger.debug("活跃心跳上报失败: %r", exc)
@@ -2772,10 +2831,12 @@ def build_overview_page_url(
     project_name: str = "",
     correction_label: str = "",
     correction_chip_id: str = "",
+    focus_label: str = "",
+    focus_chip_id: str = "",
     add_request_id: str = "",
     conversion_review_id: str = "",
 ) -> str:
-    """构造概述页地址，并可携带一次性的纠错、重提或转产确认定位参数。"""
+    """构造概述页地址，可携带查看定位、纠错、重提或转产确认参数。"""
     query = {
         "type": "temp_overview" if review else "overview",
     }
@@ -2786,6 +2847,9 @@ def build_overview_page_url(
     if correction_label and correction_chip_id:
         query["correction_label"] = correction_label
         query["correction_chip_id"] = correction_chip_id
+    if focus_label and focus_chip_id:
+        query["focus_label"] = focus_label
+        query["focus_chip_id"] = focus_chip_id
     if add_request_id:
         query["add_request_id"] = add_request_id
     if conversion_review_id:
@@ -2799,6 +2863,8 @@ async def get_overviow_page(
     *,
     correction_label: str = "",
     correction_chip_id: str = "",
+    focus_label: str = "",
+    focus_chip_id: str = "",
     add_request_id: str = "",
     conversion_review_id: str = "",
 ):
@@ -2815,6 +2881,8 @@ async def get_overviow_page(
                 overview_file_path=overview_file_path,
                 correction_label=correction_label,
                 correction_chip_id=correction_chip_id,
+                focus_label=focus_label,
+                focus_chip_id=focus_chip_id,
                 add_request_id=add_request_id,
                 conversion_review_id=conversion_review_id,
             )
@@ -2826,10 +2894,33 @@ async def get_overviow_page(
                 project_name=project_name,
                 correction_label=correction_label,
                 correction_chip_id=correction_chip_id,
+                focus_label=focus_label,
+                focus_chip_id=focus_chip_id,
                 add_request_id=add_request_id,
                 conversion_review_id=conversion_review_id,
             )
         )
+
+
+def render_file_health_issue(item: dict) -> None:
+    """统一渲染健康检测异常条目，点击后只定位概述项。"""
+    project = str(item.get("project") or "")
+    label = str(item.get("label") or "")
+    chip_id = str(item.get("chip_id") or "")
+
+    async def open_issue() -> None:
+        await get_overviow_page(project, False, focus_label=label, focus_chip_id=chip_id)
+
+    with ui.button(on_click=open_issue).props("flat no-caps align=left").classes(
+        "w-full text-left border-b border-gray-100 rounded-lg hover:bg-blue-50"
+    ):
+        with ui.column().classes("w-full gap-1 p-2 items-start"):
+            ui.label(f"{project}｜{item.get('title', '')}｜{item.get('content', '')}").classes(
+                "font-medium break-all text-gray-900"
+            )
+            ui.label(
+                f"职能：{item.get('role', '')}｜负责人：{item.get('owner', '')}｜原因：{item.get('reason', '')}"
+            ).classes("text-sm text-red-700 break-all")
 
 
 def get_project_engineer_project_list_dic():

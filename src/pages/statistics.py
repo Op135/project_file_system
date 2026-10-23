@@ -23,6 +23,7 @@ from ..utils import (
     get_cache_busted_path,
     logout,
     overview_role_update,
+    render_file_health_issue,
     setup_global_activity_tracking,
     sync_current_user_role,
     update_overview_charge_pending_dic,
@@ -969,13 +970,7 @@ def statistics_page():
                                             ui.button(icon="close", on_click=health_dialog.close).props("flat round")
                                         with ui.scroll_area().classes("w-full max-h-[65vh]"):
                                             for item in issues:
-                                                with ui.column().classes("w-full gap-1 p-3 border-b border-gray-100"):
-                                                    ui.label(
-                                                        f"{item.get('project', '')}｜{item.get('title', '')}｜{item.get('content', '')}"
-                                                    ).classes("font-medium break-all")
-                                                    ui.label(
-                                                        f"职能：{item.get('role', '')}｜负责人：{item.get('owner', '')}｜原因：{item.get('reason', '')}"
-                                                    ).classes("text-sm text-red-700 break-all")
+                                                render_file_health_issue(item)
                                     health_dialog.open()
 
                                 with ui.row().classes("w-full items-center justify-between gap-2 flex-wrap"):

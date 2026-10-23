@@ -9,6 +9,7 @@ from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import TypedDict
+from zoneinfo import ZoneInfo
 
 from nicegui import app
 
@@ -17,6 +18,7 @@ from .utils import validate_search_path, validate_svn_url
 
 logger = logging.getLogger(__name__)
 OVERVIEW_FILE_HEALTH_KEY = "overview_file_health_snapshot"
+OVERVIEW_FILE_HEALTH_REMINDER_KEY = "overview_file_health_reminders"
 FILE_TYPES = {"image", "video", "file", "search", "svn"}
 _scan_lock = asyncio.Lock()
 
@@ -124,7 +126,7 @@ async def scan_overview_file_health() -> dict[str, object]:
 
         results = await asyncio.gather(*(inspect(entry) for entry in entries))
         snapshot: dict[str, object] = {
-            "checked_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "checked_at": datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S"),
             "items": results,
         }
         if not await db_storage.set_item(OVERVIEW_FILE_HEALTH_KEY, snapshot):
@@ -143,3 +145,41 @@ def summarize_file_health(items: list[dict], field: str) -> list[HealthGroup]:
         if not item.get("healthy"):
             group["unhealthy"].append(item)
     return sorted(groups.values(), key=lambda group: (-len(group["unhealthy"]), group["name"]))
+
+
+def unhealthy_items_for_owner(snapshot: Mapping[str, object], username: str) -> list[dict]:
+    """按当前职能负责人筛选异常，避免负责人更换后提醒旧负责人。"""
+    items = snapshot.get("items", [])
+    owners = app.storage.general.get("overview_role", {})
+    if not isinstance(items, list) or not isinstance(owners, Mapping):
+        return []
+    result: list[dict] = []
+    for item in items:
+        if not isinstance(item, dict) or item.get("healthy") is not False:
+            continue
+        project_owners = owners.get(str(item.get("project") or ""), {})
+        role_data = project_owners.get(str(item.get("role") or ""), {}) if isinstance(project_owners, Mapping) else {}
+        raw_owner = role_data.get("latest_user", "") if isinstance(role_data, Mapping) else ""
+        owner = str(raw_owner or "").split("：", 1)[-1].strip()
+        if owner == username:
+            result.append(item)
+    return result
+
+
+async def claim_file_health_reminder(username: str, scan_date: str) -> bool:
+    """跨页面和服务进程原子认领负责人当天的一次提醒。"""
+    claimed = False
+
+    def update(current: object) -> dict[str, object] | object:
+        nonlocal claimed
+        data = dict(current) if isinstance(current, dict) else {}
+        day = data.get(scan_date, {})
+        shown = dict(day) if isinstance(day, dict) else {}
+        if shown.get(username):
+            return db_storage.ATOMIC_NO_UPDATE
+        shown[username] = True
+        claimed = True
+        return {scan_date: shown}
+
+    saved = await db_storage.atomic_deep_update([OVERVIEW_FILE_HEALTH_REMINDER_KEY], update)
+    return saved and claimed

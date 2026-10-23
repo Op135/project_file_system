@@ -145,6 +145,8 @@ async def requirement_page(
     project_name="",
     correction_label="",
     correction_chip_id="",
+    focus_label="",
+    focus_chip_id="",
     add_request_id="",
     conversion_review_id="",
     readonly="",
@@ -6115,8 +6117,8 @@ async def requirement_page(
                                                 str(auto_add_target.get("label") or "")
                                                 if isinstance(auto_add_target, dict) else ""
                                             )
-                                            target_in_table = bool(correction_label or auto_add_label) and any(
-                                                str(item.get("label") or "") in {str(correction_label), auto_add_label}
+                                            target_in_table = bool(correction_label or auto_add_label or focus_label) and any(
+                                                str(item.get("label") or "") in {str(correction_label), auto_add_label, str(focus_label)}
                                                 for item in chip_data_li
                                             )
 
@@ -6252,8 +6254,8 @@ async def requirement_page(
                                                             allowed_state=data["allowed_state"],
                                                             # delete_bool=False,
                                                         )
-                                        if correction_label and any(
-                                            str(item.get("label") or "") == str(correction_label)
+                                        if (correction_label or focus_label) and any(
+                                            str(item.get("label") or "") in {str(correction_label), str(focus_label)}
                                             for item in chip_data_li
                                         ):
                                             exp.set_value(True)
@@ -6431,6 +6433,31 @@ async def requirement_page(
         # 暂时开放给研发部进行提前整理概述内容
         elif project_name:
             await overview_input_frame({}, False, project_name)
+
+        if type == "overview" and focus_label and focus_chip_id:
+            focus_id_json = json.dumps(str(focus_chip_id))
+
+            async def focus_health_item() -> None:
+                await ui.run_javascript(f"""
+                    (() => {{
+                        const chipId = {focus_id_json};
+                        let attempts = 0;
+                        const timer = setInterval(() => {{
+                            const chip = document.querySelector(`[data-chip-id="${{CSS.escape(chipId)}}"]`);
+                            if (chip) {{
+                                clearInterval(timer);
+                                chip.scrollIntoView({{behavior: 'smooth', block: 'center'}});
+                                chip.style.outline = '3px solid #f59e0b';
+                                chip.style.outlineOffset = '4px';
+                                setTimeout(() => {{ chip.style.outline = ''; chip.style.outlineOffset = ''; }}, 8000);
+                            }} else if (++attempts >= 40) {{
+                                clearInterval(timer);
+                            }}
+                        }}, 250);
+                    }})();
+                """)
+
+            ui.timer(0.8, focus_health_item, once=True)
 
         # loads_overviews()
     else:
