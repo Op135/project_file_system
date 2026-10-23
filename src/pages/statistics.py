@@ -65,6 +65,19 @@ def statistics_project_state(state: str, has_requirement: bool) -> str:
     return state
 
 
+def statistics_project_states(
+    project_summary: Mapping[str, object], recorded_projects: Mapping[str, object]
+) -> dict[str, str]:
+    """生成统计页专用状态，不修改项目资料中的原始状态。"""
+    return {
+        project_name: statistics_project_state(
+            str(project_data.get("state") or "未知状态") if isinstance(project_data, Mapping) else "未知状态",
+            project_name in recorded_projects,
+        )
+        for project_name, project_data in project_summary.items()
+    }
+
+
 def recorded_pending_snapshot(pending_snapshot, recorded_projects):
     """仅保留已录需求项目的概述待办，且不改变原始历史快照。"""
     return {
@@ -262,12 +275,13 @@ def status_badge(text, color_name="gray"):
         "作废": ("gray-200", "gray-700"),
         "待定": ("amber-100", "amber-800"),
         "研发": ("blue-100", "blue-800"),
-        "转产": ("red-100", "red-800"),
+        CONVERSION_RECORDED_STATE: ("red-100", "red-800"),
+        CONVERSION_UNRECORDED_STATE: ("orange-100", "orange-800"),
         "试产": ("cyan-100", "cyan-800"),
         "量产": ("green-100", "green-800"),
     }
     bg, fg = colors.get(text, (f"{color_name}-100", f"{color_name}-800"))
-    ui.label(text).classes(f"text-xs px-2 py-0.5 rounded bg-{bg} text-{fg} font-medium")
+    ui.label(text).classes(f"shrink-0 whitespace-nowrap text-xs px-2 py-0.5 rounded bg-{bg} text-{fg} font-medium")
 
 
 @ui.page("/statistics")
@@ -480,6 +494,8 @@ def statistics_page():
                 project_summary = app.storage.general.get("project_summary", {})
                 # 数据结构：{项目名：版本号}，用于后续统计分析
                 req_ver_data = app.storage.general.get("project_req_max_ver", {})
+                # 仅用于统计页展示，不修改项目实际状态。
+                displayed_project_states = statistics_project_states(project_summary, req_ver_data)
                 # 数据结构：{人名：{项目名：{概述项label:状态}}}，用于待办统计分析,状态主要有：缺需填、缺必填、有待定
                 pending_data = copy.deepcopy(app.storage.general.get("overview_charge_pending", {}))
                 # 存在概述未确定负责人的项目
@@ -535,7 +551,7 @@ def statistics_page():
                         return project_types.get(project_name, unknown_type)
 
                     dialog.clear()
-                    with dialog, ui.card().classes("w-full max-w-4xl bg-white"):
+                    with dialog, ui.card().classes("w-[96vw] max-w-6xl bg-white"):
                         with ui.row().classes("w-full justify-between items-center mb-4 border-b pb-2"):
                             ui.label(f"{title}（共 {len(project_list)} 项）").classes("text-xl font-bold text-gray-800")
                             ui.button(icon="close", on_click=dialog.close).props("flat round dense text-color=gray")
@@ -578,35 +594,42 @@ def statistics_page():
                                 "text-xs text-gray-500 whitespace-nowrap"
                             )
 
-                        with ui.scroll_area().classes("w-full max-h-[60vh] p-2"):
+                        with ui.element("div").classes("w-full max-h-[60vh] overflow-y-auto p-2"):
                             if not project_list:
                                 ui.label("当前分类暂无项目").classes("text-gray-500 text-center w-full mt-4")
                             else:
                                 project_row_visibility: list[tuple[str, str, Callable[[bool], None]]] = []
-                                with ui.element("div").classes(
-                                    "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3"
+                                card_width = 250 if show_state else 160
+                                card_style = (
+                                    "box-sizing: border-box; width: 100%; min-width: 0; "
+                                    "display: flex; align-items: center; justify-content: space-between; gap: 8px;"
+                                )
+                                with ui.element("div").style(
+                                    f"display: grid; grid-template-columns: repeat(auto-fill, min(100%, {card_width}px)); "
+                                    "justify-content: center; gap: 12px; width: 100%;"
                                 ):
                                     for project_name in project_list:
                                         project_type = get_project_type(project_name)
-                                        with ui.row().classes(
-                                            "w-full min-w-0 flex-nowrap items-center justify-between gap-2 "
-                                            "bg-gray-50 px-3 py-2 rounded border border-gray-200 text-sm "
-                                            "text-gray-700 hover:bg-blue-50 hover:text-blue-600 "
-                                            "transition-colors cursor-default"
-                                        ) as project_row:
+                                        with (
+                                            ui.element("div")
+                                            .classes(
+                                                "bg-gray-50 px-3 py-2 rounded border border-gray-200 text-sm "
+                                                "text-gray-700 hover:bg-blue-50 hover:text-blue-600 "
+                                                "transition-colors cursor-default"
+                                            )
+                                            .style(card_style) as project_row
+                                        ):
                                             project_row_visibility.append(
                                                 (str(project_name), project_type, project_row.set_visibility)
                                             )
-                                            project_label = ui.label(project_name).classes("min-w-0 flex-1 truncate")
+                                            project_label = ui.label(project_name).classes("min-w-0 flex-1 break-all")
                                             if project_text_colors is not None:
                                                 text_color = project_text_colors.get(
                                                     project_name, UNRECORDED_REQUIREMENT_TEXT_COLOR
                                                 )
                                                 project_label.style(f"color: {text_color}; font-weight: 600")
                                             if show_state:
-                                                project_state = project_summary.get(project_name, {}).get(
-                                                    "state", "未知"
-                                                )
+                                                project_state = displayed_project_states.get(project_name, "未知")
                                                 status_badge(project_state)
 
                                 def apply_project_filters():
@@ -685,7 +708,7 @@ def statistics_page():
                                     f"项目明细：{category_name}",
                                     overview_categories.get(category_name, []),
                                     project_types={
-                                        project_name: project_summary.get(project_name, {}).get("state", "未知状态")
+                                        project_name: displayed_project_states.get(project_name, "未知状态")
                                         for project_name in overview_categories.get(category_name, [])
                                     },
                                     type_order=list(status_color_map),
@@ -697,18 +720,18 @@ def statistics_page():
                             # 2.1 统计公司总项目及状态分布 (由计数改为收集项目列表)
                             total_projects = len(project_summary)
                             status_counts_dict = {}  # 结构变为：{"研发": ["项目A", "项目B"]}
-                            for p_name, p_info in project_summary.items():
-                                p_status = p_info.get("state", "未知状态")
+                            for p_name, p_status in displayed_project_states.items():
                                 if p_status not in status_counts_dict:
                                     status_counts_dict[p_status] = []
                                 status_counts_dict[p_status].append(p_name)
 
-                            # 为不同状态预设颜色映射
+                            # 为不同状态预设颜色映射；
                             status_color_map = {
                                 "作废": "#555555",
                                 "待定": "#f59e0b",
                                 "研发": "#3b82f6",
-                                "转产": "#ef4444",
+                                CONVERSION_UNRECORDED_STATE: "#f97316",
+                                CONVERSION_RECORDED_STATE: "#ef4444",
                                 "试产": "#06b6d4",
                                 "量产": "#10b981",
                             }
@@ -848,7 +871,11 @@ def statistics_page():
                                     "xAxis": {
                                         "type": "category",
                                         "data": status_x_axis_data,
-                                        "axisLabel": {"interval": 0, "rotate": 0},
+                                        "axisLabel": {
+                                            "interval": 0,
+                                            "rotate": 0,
+                                            ":formatter": "function(value) { return value.replace('转产(', '转产\\n('); }",
+                                        },
                                     },
                                     "yAxis": {"type": "value", "minInterval": 1},
                                     "series": [
@@ -963,7 +990,8 @@ def statistics_page():
                             if not snapshot:
                                 ui.label(
                                     "暂无检测结果，可点击“立即检测”生成首次快照。"
-                                    if can_run_health_check else "暂无检测结果，等待每日自动检测。"
+                                    if can_run_health_check
+                                    else "暂无检测结果，等待每日自动检测。"
                                 )
                             else:
                                 healthy_count = sum(bool(item.get("healthy")) for item in health_items)
@@ -1468,10 +1496,7 @@ def statistics_page():
                                     filtered_projects = {}
                                     for project_name, p_state_dic in pending_project_dic.items():
                                         # 获取当前项目状态，如果查不到默认为"未知"
-                                        state = statistics_project_state(
-                                            project_summary.get(project_name, {}).get("state", "未知"),
-                                            project_name in req_ver_data,
-                                        )
+                                        state = displayed_project_states.get(project_name, "未知")
                                         if state in target_states:
                                             filtered_projects[project_name] = p_state_dic
                                     if filtered_projects:
@@ -1701,8 +1726,8 @@ def statistics_page():
                                                                             ui.label(p).classes(
                                                                                 "font-bold text-gray-700 text-sm"
                                                                             )
-                                                                            proj_state = project_summary.get(p, {}).get(
-                                                                                "state", "未知状态"
+                                                                            proj_state = displayed_project_states.get(
+                                                                                p, "未知状态"
                                                                             )
                                                                             ui.label(f"阶段: {proj_state}").classes(
                                                                                 "text-xs text-gray-500"

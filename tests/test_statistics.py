@@ -16,6 +16,23 @@ class OverviewCompletionClassificationTests(unittest.TestCase):
         self.assertEqual(statistics.statistics_project_state("转产", False), "转产(未录需求)")
         self.assertEqual(statistics.statistics_project_state("研发", False), "研发")
 
+    def test_display_states_split_conversion_without_changing_project_state(self):
+        projects = {
+            "P1": {"state": "转产"},
+            "P2": {"state": "转产"},
+            "P3": {"state": "试产"},
+        }
+        self.assertEqual(
+            statistics.statistics_project_states(projects, {"P1": "1.0"}),
+            {
+                "P1": "转产(已录需求)",
+                "P2": "转产(未录需求)",
+                "P3": "试产",
+            },
+        )
+        self.assertEqual(projects["P1"]["state"], "转产")
+        self.assertEqual(projects["P2"]["state"], "转产")
+
     def test_weekly_snapshot_excludes_projects_without_requirements(self):
         snapshot = {
             "张三": {"P1": {"A": "缺必填"}, "P2": {"B": "有待定"}},
