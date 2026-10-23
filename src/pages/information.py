@@ -62,6 +62,7 @@ from ..overview_corrections import (
     configured_test_display_values,
     configured_test_field_definitions,
     execute_correction_request,
+    get_correction_row_context_for_detail,
     get_correction_pending_count,
     update_correction_request,
     validate_staged_path,
@@ -1413,6 +1414,7 @@ def _render_information_page(section: str) -> None:
         after = payload.get("after_snapshot") or None
         config = payload.get("config") or {}
         changes = build_correction_changes(before, after, config, str(request.get("action") or "correct"))
+        row_context = get_correction_row_context_for_detail(request)
 
         correction_request_dialog.clear()
         with correction_request_dialog, ui.card().classes("w-[900px] max-w-[96vw] h-[88vh] max-h-[92vh] p-4"):
@@ -1426,6 +1428,25 @@ def _render_information_page(section: str) -> None:
                         ui.label(f"概述项：{request.get('title', request.get('label', ''))}")
                         ui.label(f"申请人：{request.get('submitter', '')}（{request.get('submitter_role', '')}）")
                         ui.label(f"申请时间：{request.get('created_at', '')}")
+                    if row_context is not None:
+                        source = row_context.get("source")
+                        items = row_context.get("items")
+                        with ui.card().classes("w-full p-3 shadow-none border border-blue-200 bg-blue-50/40"):
+                            ui.label(
+                                "所属表格行 · 提交时的首列概述"
+                                if source == "submitted" else "所属表格行 · 当前首列概述（历史申请）"
+                            ).classes("font-bold text-blue-900")
+                            if isinstance(items, list) and items:
+                                for item in items:
+                                    if isinstance(item, dict):
+                                        ui.label(str(item.get("content") or "未填写")).classes(
+                                            "w-full text-sm text-gray-800 whitespace-pre-wrap break-all"
+                                        )
+                            else:
+                                ui.label(
+                                    "提交时未找到同行首列内容" if source == "submitted"
+                                    else "当前未找到同行首列内容，可能已变化或删除"
+                                ).classes("text-sm text-amber-800")
                     ui.label(f"纠错理由：{request.get('reason', '')}").classes(
                         "w-full p-2 rounded bg-blue-50 text-blue-900 font-medium"
                     )

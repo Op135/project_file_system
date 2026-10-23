@@ -13,20 +13,71 @@ from src.overview_corrections import (
     build_correction_changes,
     build_media_file_audit,
     build_test_field_changes,
-    configured_test_display_values,
-    configured_test_field_definitions,
     can_review_correction_request,
+    capture_correction_row_context,
     chip_correction_guard_fingerprint,
     chip_snapshot_fingerprint,
+    configured_test_display_values,
+    configured_test_field_definitions,
     execute_correction_request,
     get_correction_pending_count,
     get_correction_reviewer_roles,
+    get_correction_row_context_for_detail,
     validate_test_correction,
 )
 from src.utils import build_overview_page_url
 
 
 class OverviewCorrectionTests(unittest.TestCase):
+    def test_table_row_context_captures_all_visible_first_column_chips(self):
+        chips = {
+            "a": {"row_id": "row-1", "content": "首列内容甲", "enabled": True},
+            "b": {"row_id": "row-1", "content": "首列内容乙", "enabled": None},
+            "hidden": {"row_id": "row-1", "content": "失活内容", "enabled": False},
+            "other": {"row_id": "row-2", "content": "其他行", "enabled": True},
+        }
+        with patch.object(db_storage, "get_deep_item", return_value=chips) as read:
+            context = capture_correction_row_context("P1", "first", "row-1")
+        read.assert_called_once_with(["P1_over_data", "first"], {})
+        self.assertEqual(context["items"], [
+            {"chip_id": "a", "content": "首列内容甲"},
+            {"chip_id": "b", "content": "首列内容乙"},
+        ])
+
+    def test_table_detail_prefers_submitted_context_and_legacy_uses_current(self):
+        payload = {
+            "config": {"is_table_group": True, "first_col_label": "first"},
+            "before_snapshot": {"row_id": "row-1"},
+            "row_context_snapshot": {
+                "first_col_label": "first", "row_id": "row-1",
+                "items": [{"chip_id": "a", "content": "提交时内容"}],
+            },
+        }
+        request = {"project": "P1", "payload": payload}
+        with patch.object(db_storage, "get_deep_item", side_effect=AssertionError("不应读取当前首列")):
+            submitted = get_correction_row_context_for_detail(request)
+        self.assertIsNotNone(submitted)
+        assert submitted is not None
+        self.assertEqual(submitted["source"], "submitted")
+        self.assertEqual(submitted["items"][0]["content"], "提交时内容")
+
+        del payload["row_context_snapshot"]
+        current_chips = {"a": {"row_id": "row-1", "content": "当前内容", "enabled": True}}
+        with patch.object(db_storage, "get_deep_item", return_value=current_chips):
+            current = get_correction_row_context_for_detail(request)
+        self.assertIsNotNone(current)
+        assert current is not None
+        self.assertEqual(current["source"], "current")
+        self.assertEqual(current["items"][0]["content"], "当前内容")
+
+        with patch.object(db_storage, "get_deep_item", return_value={}):
+            missing = get_correction_row_context_for_detail(request)
+        self.assertIsNotNone(missing)
+        assert missing is not None
+        self.assertEqual(missing["items"], [])
+        payload["config"]["is_table_group"] = False
+        self.assertIsNone(get_correction_row_context_for_detail(request))
+
     def test_test_display_values_are_read_from_nested_test_select_data(self):
         config = {
             "test_nature_options": ["抽检"],

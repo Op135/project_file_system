@@ -61,6 +61,7 @@ from .overview_corrections import (
     OVERVIEW_CORRECTION_STAGING_DIR,
     build_correction_changes,
     build_media_file_audit,
+    capture_correction_row_context,
     chip_snapshot_fingerprint,
     cleanup_correction_staged_files,
     create_correction_request,
@@ -9291,6 +9292,9 @@ class OverviewTableGroup:
                     else str(self.last_temp_upload_type or stored_uploaded_type),
                     "target_url_path": after_snapshot.get("url_path", ""),
                     "delete_targets": collect_delete_targets(),
+                    "row_context_snapshot": capture_correction_row_context(
+                        self.project, first_col_label, str(before_snapshot.get("row_id") or "")
+                    ),
                     **media_audit,
                 }
                 if (

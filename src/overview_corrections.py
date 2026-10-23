@@ -62,6 +62,43 @@ def configured_test_display_values(
         values.append((title, value))
     return tuple(values)
 
+
+def capture_correction_row_context(project: str, first_col_label: str, row_id: str) -> dict:
+    """记录表格纠错提交时的同行首列内容，供审批人稳定定位。"""
+    items: list[dict[str, str]] = []
+    if project and first_col_label and row_id:
+        chips = db_storage.get_deep_item([f"{project}_over_data", first_col_label], {})
+        if isinstance(chips, dict):
+            for chip_id, chip in chips.items():
+                if (
+                    isinstance(chip, dict)
+                    and str(chip.get("row_id") or "") == row_id
+                    and chip.get("enabled") is not False
+                ):
+                    items.append({"chip_id": str(chip_id), "content": str(chip.get("content") or "未填写")})
+    return {"first_col_label": first_col_label, "row_id": row_id, "items": items}
+
+
+def get_correction_row_context_for_detail(request: dict) -> dict | None:
+    """新申请展示提交快照；旧申请用当前数据定位并注明来源。"""
+    payload = request.get("payload")
+    if not isinstance(payload, dict):
+        return None
+    config = payload.get("config")
+    if not isinstance(config, dict) or config.get("is_table_group") is not True:
+        return None
+    snapshot = payload.get("row_context_snapshot")
+    if isinstance(snapshot, dict):
+        return {**snapshot, "source": "submitted"}
+    before = payload.get("before_snapshot")
+    row_id = str(before.get("row_id") or "") if isinstance(before, dict) else ""
+    context = capture_correction_row_context(
+        str(request.get("project") or ""),
+        str(config.get("first_col_label") or ""),
+        row_id,
+    )
+    return {**context, "source": "current"}
+
 # 激活状态及其显示、操作历史会被需求审批或工程师操作独立更新，不属于原记录纠错的业务对象。
 # 纠错审批的并发保护只忽略这些字段；正文、测试参数、文件信息等其它变化仍会触发冲突。
 CORRECTION_CONCURRENCY_IGNORED_FIELDS = {
