@@ -18,7 +18,6 @@ from ..approval_workflow import (
 from ..config import BASE_DIR, IMG_DIR, PRESET_AVATARS
 from ..identity_codes import STABLE_CODE_HINT, normalize_stable_code, validate_stable_code
 from ..notification_recipients import resolve_position_usernames
-from ..overview_trial_progress import get_exempt_labels, save_exempt_labels
 from ..requirement_overview_impact import (
     REQUIREMENT_OVERVIEW_IMPACT_STORAGE_KEY,
     RequirementOverviewImpactConfigError,
@@ -4952,44 +4951,6 @@ def manage_page():
 
         center_dialog.open()
 
-    def open_trial_exemption_editor() -> None:
-        flat = app.storage.general.get("over_config_data_flat", {})
-        current = get_exempt_labels()
-        options = {
-            str(label): f"{config.get('title') or label}（{label}）"
-            for label, config in flat.items()
-            if isinstance(config, dict)
-        } if isinstance(flat, dict) else {}
-        for label in current:
-            options.setdefault(label, label)
-
-        with ui.dialog() as dialog, ui.card().classes("w-full max-w-2xl p-5"):
-            ui.label("转产进入试产：概述豁免项").classes("text-lg font-bold")
-            ui.label("所选概述即使缺必填或有待定，也不会阻止状态切换；进度统计同步排除。")
-            selected = ui.select(
-                options,
-                value=sorted(current),
-                multiple=True,
-                label="豁免概述项",
-            ).props("outlined use-chips clearable options-dense").classes("w-full")
-
-            def save() -> None:
-                if not has_system_control_permission():
-                    ui.notify("当前账号已无系统管理权限", type="negative")
-                    return
-                labels = set(selected.value or [])
-                if not labels.issubset(options):
-                    ui.notify("存在无效概述项，请重新打开设置", type="negative")
-                    return
-                save_exempt_labels(labels)
-                dialog.close()
-                ui.notify("试产概述豁免项已保存", type="positive")
-
-            with ui.row().classes("w-full justify-end"):
-                ui.button("取消", on_click=dialog.close).props("flat")
-                ui.button("保存", on_click=save)
-        dialog.open()
-
     with ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
         ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
         ui.label("系统管理员界面").classes("text-white text-lg absolute left-1/2 transform -translate-x-1/2")
@@ -5073,9 +5034,6 @@ def manage_page():
                 ui.button("更新概述配置(JSON->General)", on_click=lambda: updata_overview_config()).props("").classes(
                     ""
                 )
-                ui.button("试产概述豁免项", on_click=open_trial_exemption_editor).props(
-                    "icon=rule"
-                ).classes("bg-indigo-700 text-white")
                 ui.button("更新项目列表(JSON->General)", on_click=lambda: project_summary_update()).props("").classes(
                     ""
                 )

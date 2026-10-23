@@ -1675,7 +1675,7 @@
             {
                 "label": "product_weight",
                 "add_approval_required": false,
-                "nature": "必填",
+                "nature": "需填",
                 "title": "产品实秤重量",
                 "processing_type": "text",
                 "content_regular": [
@@ -1859,7 +1859,7 @@
             {
                 "label": "packaging_materials",
                 "add_approval_required": false,
-                "nature": "必填",
+                "nature": "需填",
                 "title": "产品包材",
                 "processing_type": "text",
                 "content_regular": [
@@ -1974,7 +1974,7 @@
             {
                 "label": "cooling_type",
                 "add_approval_required": false,
-                "nature": "必填",
+                "nature": "需填",
                 "title": "散热器类型",
                 "processing_type": "text",
                 "content_regular": [],
@@ -2237,7 +2237,7 @@
             {
                 "label": "product_bom",
                 "add_approval_required": false,
-                "nature": "需填",
+                "nature": "必填",
                 "title": "研发阶段产品总BOM（xlsx）",
                 "processing_type": "file",
                 "content_regular": [],
@@ -4715,11 +4715,12 @@
             {
                 "label": "craft_key_requirements",
                 "add_approval_required": false,
-                "nature": "需填",
+                "nature": "必填",
                 "title": "工艺重点要求",
                 "processing_type": "text",
                 "content_regular": [
                     "^无$",
+                    "^暂无$",
                     "\\S*."
                 ],
                 "dialog_placeholder": "序号.要求",

@@ -204,19 +204,23 @@ class TrialImportanceTests(unittest.IsolatedAsyncioTestCase):
 
 
 class TrialProgressTests(unittest.TestCase):
-    def test_exemption_setting_controls_transition_blockers(self):
+    def test_only_required_overviews_block_trial_transition(self):
         storage = SimpleNamespace(general={
             "overview_charge_pending": {
-                "张三": {"P1": {"required": "缺必填", "specifications": "有待定"}}
-            }
+                "张三": {"P1": {"required": "缺必填", "specifications": "有待定", "optional": "有待定"}}
+            },
+            "overview_trial_exempt_labels": ["required", "specifications"],
+            "over_config_data_flat": {
+                "required": {"nature": "必填"},
+                "specifications": {"nature": "必填"},
+                "optional": {"nature": "需填"},
+            },
         })
         fake_app = SimpleNamespace(storage=storage)
-        with patch.object(progress, "app", fake_app), patch.object(transition, "app", fake_app):
-            self.assertEqual(transition.collect_trial_transition_blockers("P1"), {"张三": ("required",)})
-            progress.save_exempt_labels({"required"})
-            self.assertEqual(transition.collect_trial_transition_blockers("P1"), {"张三": ("specifications",)})
+        with patch.object(transition, "app", fake_app):
+            self.assertEqual(transition.collect_trial_transition_blockers("P1"), {"张三": ("required", "specifications")})
 
-    def test_progress_excludes_exempt_and_skipped_roles_and_shows_unassigned(self):
+    def test_progress_counts_only_required_and_skipped_roles_and_shows_unassigned(self):
         rows = progress.build_trial_progress(
             {"P1": {"state": "转产"}, "P2": {"state": "试产"}},
             {"P1": "1", "P2": "1"},
@@ -234,11 +238,12 @@ class TrialProgressTests(unittest.TestCase):
                 "工艺": {"常规": [{"label": "b", "title": "B", "nature": "必填"}]},
                 "采购": {"常规": [{"label": "c", "title": "C", "nature": "必填"}]},
             },
-            {"张三": {"P1": {"optional": "有待定"}}, "待定负责人": {"P1": {"b": "缺必填"}}},
-            {"specifications"},
+            {"张三": {"P1": {"specifications": "有待定", "optional": "有待定"}},
+             "待定负责人": {"P1": {"b": "缺必填"}}},
         )
         self.assertEqual(len(rows), 1)
         self.assertEqual((rows[0].completed, rows[0].total, rows[0].percentage), (1, 3, 33))
+        self.assertEqual(rows[0].roles[0].missing, (("规格", "有待定"),))
         self.assertEqual(rows[0].roles[1].assignee, "待定")
         self.assertEqual(rows[0].roles[1].missing, (("B", "缺必填"),))
         self.assertTrue(rows[0].roles[2].skipped)

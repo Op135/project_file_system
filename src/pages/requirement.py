@@ -52,7 +52,6 @@ from ..config import (
     UPLOADS_DIR,
 )
 from ..custom_ui import custom_upload
-from ..overview_trial_progress import get_exempt_labels
 from ..overview_batch_operations import (
     BATCH_OVERVIEW_ALLOWED_PROJECT_STATES,
     BATCH_OVERVIEW_STAGING_DIR,
@@ -90,7 +89,7 @@ from ..project_access import (
     can_edit_any_project_status,
     can_transition_project_status,
 )
-from ..project_state_transition import transition_project_state
+from ..project_state_transition import collect_trial_transition_blockers, transition_project_state
 from ..project_overview_access import (
     can_edit_overview_item,
     can_manage_all_overview_content,
@@ -604,30 +603,13 @@ async def requirement_page(
         over_dialog.open()
 
     def set_project_trial_dialog(project_name, state, on_cancel_action):
-        exempt_labels = get_exempt_labels()
-        pending_dic = app.storage.general.get("overview_charge_pending", {})
-        # 用于保存导致该项目不能切换状态到试产的相关人员与其未确定概述字典
-        pending_out_dic = {}
-        for charge_user, user_dic in pending_dic.items():
-            for pn, pending_dic in user_dic.items():
-                if (
-                    pn == project_name
-                    and pending_dic
-                    and any([v in ["缺必填", "有待定"] for v in pending_dic.values()])
-                ):
-                    pending_out_dic[charge_user] = [
-                        k
-                        for k, v in pending_dic.items()
-                        if v in ["缺必填", "有待定"] and k not in exempt_labels
-                    ]
-            if pending_out_dic.get(charge_user) == []:
-                del pending_out_dic[charge_user]
+        pending_out_dic = collect_trial_transition_blockers(project_name)
         over_flat = app.storage.general.get("over_config_data_flat", {})
         over_card.clear()
         with over_card:
             if pending_out_dic:
                 html_str = ""
-                ui.label("下列人员负责的概述未填或状态待定，无法将项目切换为试产状态！").classes("text-base text-red")
+                ui.label("下列人员负责的必填概述未填或状态待定，无法将项目切换为试产状态！").classes("text-base text-red")
                 for user, user_dic in pending_out_dic.items():
                     html_str += (
                         f"<b>{user}：</b><br>"

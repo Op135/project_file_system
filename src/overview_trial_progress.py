@@ -1,4 +1,4 @@
-"""转产进入试产的概述豁免设置与进度统计。"""
+"""转产项目的必填概述进度统计。"""
 
 import logging
 from dataclasses import dataclass
@@ -11,8 +11,6 @@ from . import db_storage
 from .permission_catalog import PROJECT_TRIAL_PROGRESS_VIEW_PERMISSION
 
 
-EXEMPTION_STORAGE_KEY = "overview_trial_exempt_labels"
-DEFAULT_EXEMPT_LABELS = ("specifications",)
 BLOCKING_STATES = {"缺必填", "有待定"}
 IMPORTANCE_STORAGE_KEY = "trial_progress_importance"
 logger = logging.getLogger(__name__)
@@ -22,20 +20,6 @@ def can_view_trial_progress(username: str, *, user_service=None) -> bool:
     """只有被授权的用户才能查看跨项目转产进度。"""
     service = user_service or getattr(app.state, "user_service", None)
     return can(service, username, PROJECT_TRIAL_PROGRESS_VIEW_PERMISSION)
-
-
-def get_exempt_labels() -> set[str]:
-    """旧部署首次使用时沿用原来的规格豁免。"""
-    saved = app.storage.general.get(EXEMPTION_STORAGE_KEY)
-    if saved is None:
-        return set(DEFAULT_EXEMPT_LABELS)
-    if not isinstance(saved, list):
-        return set(DEFAULT_EXEMPT_LABELS)
-    return {label for label in saved if isinstance(label, str)}
-
-
-def save_exempt_labels(labels: set[str]) -> None:
-    app.storage.general[EXEMPTION_STORAGE_KEY] = sorted(labels)
 
 
 def normalize_importance(raw: object) -> dict[str, int]:
@@ -143,9 +127,8 @@ def build_trial_progress(
     overview_roles: Mapping[str, object],
     overview_config: Mapping[str, object],
     pending_by_user: Mapping[str, object],
-    exempt_labels: set[str],
 ) -> list[ProjectProgress]:
-    """按现有待办状态计算准入进度；待定内容也属于切换阻项。"""
+    """仅按必填概述的待办状态计算准入进度。"""
     results: list[ProjectProgress] = []
     for project, summary in sorted(project_summary.items()):
         if not isinstance(summary, dict) or summary.get("state") != "转产":
@@ -176,7 +159,7 @@ def build_trial_progress(
                         if not isinstance(entry, dict):
                             continue
                         label = entry.get("label")
-                        if isinstance(label, str) and label not in exempt_labels and entry.get("nature") == "必填":
+                        if isinstance(label, str) and entry.get("nature") == "必填":
                             required[label] = str(entry.get("title") or label)
             user_pending = pending_by_user.get(raw_assignee or "待定负责人", {})
             project_pending = user_pending.get(project, {}) if isinstance(user_pending, dict) else {}
@@ -187,21 +170,7 @@ def build_trial_progress(
                 state = project_pending.get(label)
                 if assignee == "待定" or state in BLOCKING_STATES:
                     missing.append((title, str(state or "缺必填")))
-            # 非必填项若有待定，同样会阻止状态切换。
-            extra_count = 0
-            for label, state in project_pending.items():
-                if label in required or label in exempt_labels or state not in BLOCKING_STATES:
-                    continue
-                title = str(label)
-                if isinstance(role_config, dict):
-                    for entries in role_config.values():
-                        if isinstance(entries, list):
-                            for entry in entries:
-                                if isinstance(entry, dict) and entry.get("label") == label:
-                                    title = str(entry.get("title") or label)
-                missing.append((title, str(state)))
-                extra_count += 1
-            total += len(required) + extra_count
+            total += len(required)
             missing_count += len(missing)
             role_rows.append(RoleProgress(str(role), assignee, tuple(missing)))
         results.append(ProjectProgress(str(project), total - missing_count, total, tuple(role_rows)))

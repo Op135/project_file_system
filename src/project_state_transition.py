@@ -19,7 +19,7 @@ from nicegui import app
 from . import db_storage
 from . import overview_storage
 from .config import BASE_DIR, PROJECT_STATE_LIST
-from .overview_trial_progress import BLOCKING_STATES, clear_project_importance, get_exempt_labels
+from .overview_trial_progress import BLOCKING_STATES, clear_project_importance
 from .notification_recipients import resolve_permission_wecom_recipients
 from .notification_content import build_compact_text_notification
 from .overview_conversion_review import (
@@ -86,12 +86,13 @@ def is_valid_project_state_path(previous_state: object, target_state: object) ->
 
 
 def collect_trial_transition_blockers(project_name: str) -> dict[str, tuple[str, ...]]:
-    """返回阻止转产进入试产的负责人及概述 label。"""
+    """返回阻止转产进入试产的负责人及必填概述 label。"""
     pending_value = app.storage.general.get("overview_charge_pending", {})
     if not isinstance(pending_value, dict):
         return {}
+    config_value = app.storage.general.get("over_config_data_flat", {})
+    overview_config = config_value if isinstance(config_value, dict) else {}
     blockers: dict[str, tuple[str, ...]] = {}
-    exempt_labels = get_exempt_labels()
     for responsible, projects in pending_value.items():
         if not isinstance(projects, dict):
             continue
@@ -101,7 +102,9 @@ def collect_trial_transition_blockers(project_name: str) -> dict[str, tuple[str,
         labels = tuple(
             str(label)
             for label, state in states.items()
-            if state in BLOCKING_STATES and label not in exempt_labels
+            if state in BLOCKING_STATES
+            and isinstance(overview_config.get(label), dict)
+            and overview_config[label].get("nature") == "必填"
         )
         if labels:
             blockers[str(responsible)] = labels
@@ -186,7 +189,7 @@ def check_project_state_transition(
         if blockers:
             return ProjectStateTransitionCheck(
                 False,
-                "项目仍有缺少必填或尚未确认的概述，不能进入试产",
+                "项目仍有未填写或尚未确认的必填概述，不能进入试产",
                 previous_state,
                 target,
                 trial_blockers=blockers,

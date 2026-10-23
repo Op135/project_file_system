@@ -15,7 +15,6 @@ from ..overview_trial_progress import (
     build_trial_progress,
     can_view_trial_progress,
     get_latest_importance,
-    get_exempt_labels,
     normalize_importance,
     prune_inactive_importance,
     set_project_importance,
@@ -26,7 +25,6 @@ from ..utils import (
     setup_global_activity_tracking,
     sync_current_user_role,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +46,7 @@ def trial_progress_page() -> None:
     user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})
     avatar = get_cache_busted_path(user_prefs.get("avatar", PRESET_AVATARS[0]))
     importance = normalize_importance(db_storage.get_item(IMPORTANCE_STORAGE_KEY, {}))
+    shown_rows: tuple[ProjectProgress, ...] = ()
 
     with ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4 z-50"):
         ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
@@ -61,6 +60,9 @@ def trial_progress_page() -> None:
                 ui.separator().props("size=1px")
                 ui.menu_item("注销登录", on_click=logout)
 
+    with ui.dialog() as details_dialog, ui.card().classes("w-full max-w-2xl max-h-[85vh] overflow-y-auto p-5"):
+        details_content = ui.column().classes("w-full")
+
     def open_project_overview(project: str) -> None:
         if not can_view_trial_progress(current_user):
             ui.notify("当前账号没有查看转产进度的权限", type="negative")
@@ -72,7 +74,8 @@ def trial_progress_page() -> None:
         if not can_view_trial_progress(current_user):
             ui.notify("当前账号没有查看转产进度的权限", type="negative")
             return
-        with ui.dialog() as dialog, ui.card().classes("w-full max-w-2xl max-h-[85vh] overflow-y-auto p-5"):
+        details_content.clear()
+        with details_content:
             ui.label(f"{progress.project} · 转产概述进度 {progress.percentage}%").classes("text-lg font-bold")
             for role in progress.roles:
                 with ui.column().classes("w-full gap-1 border-b border-slate-100 py-2"):
@@ -85,56 +88,92 @@ def trial_progress_page() -> None:
                     else:
                         ui.label("必填概述已完成").classes("text-sm text-green-700")
             if progress.percentage == 100:
-                ui.label("概述进度已完成，请前往项目需求概述页面将状态修改为试产。").classes(
-                    "text-sm text-green-800"
-                )
+                ui.label("概述进度已完成，请前往项目需求概述页面将状态修改为试产。").classes("text-sm text-green-800")
                 ui.button(
                     "前往项目需求概述",
                     on_click=partial(open_project_overview, progress.project),
                     icon="open_in_new",
                 )
-            ui.button("关闭", on_click=dialog.close).props("flat")
-        dialog.open()
+            ui.button("关闭", on_click=details_dialog.close).props("flat")
+        details_dialog.open()
 
     async def change_importance(project: str, event: ValueChangeEventArguments) -> None:
         value = event.value
         if not isinstance(value, (int, float)) or isinstance(value, bool) or int(value) != value:
             ui.notify("重要程度无效，请刷新后重试", type="negative")
-            await refresh_progress()
+            await refresh_progress(force=True)
             return
         level = int(value)
         if not await set_project_importance(project, level, actor=current_user):
             ui.notify("重要程度保存失败，请刷新后重试", type="negative")
-        await refresh_progress()
+        await refresh_progress(force=True)
 
-    async def refresh_progress() -> None:
-        summary = app.storage.general.get("project_summary", {})
-        if isinstance(summary, dict) and summary:
-            await prune_inactive_importance(summary)
-        latest = await get_latest_importance()
-        importance.clear()
-        importance.update(latest)
-        render_progress.refresh()
-
-    @ui.refreshable
-    def render_progress() -> None:
-        if not can_view_trial_progress(current_user):
-            ui.navigate.to("/main")
-            return
-        progress_rows = build_trial_progress(
+    def current_progress_rows() -> list[ProjectProgress]:
+        rows = build_trial_progress(
             app.storage.general.get("project_summary", {}),
             app.storage.general.get("project_req_max_ver", {}),
             app.storage.general.get("overview_role", {}),
             app.storage.general.get("over_config_data", {}),
             app.storage.general.get("overview_charge_pending", {}),
-            get_exempt_labels(),
         )
-        progress_rows.sort(key=lambda row: (-importance.get(row.project, 0), row.project))
+        rows.sort(key=lambda row: (-importance.get(row.project, 0), row.project))
+        return rows
+
+    async def refresh_progress(*, force: bool = False) -> None:
+        if not can_view_trial_progress(current_user):
+            ui.navigate.to("/main")
+            return
+        summary = app.storage.general.get("project_summary", {})
+        if isinstance(summary, dict) and summary:
+            await prune_inactive_importance(summary)
+        latest = await get_latest_importance()
+        previous_importance = importance.copy()
+        importance.clear()
+        importance.update(latest)
+        if not force and previous_importance == latest and tuple(current_progress_rows()) == shown_rows:
+            return
+        try:
+            raw_scroll_top = await ui.run_javascript(
+                "const card = document.getElementById('trial-progress-card-scroll'); "
+                "return card ? card.scrollTop : 0;"
+            )
+            scroll_top = float(raw_scroll_top or 0)
+        except Exception:
+            scroll_top = 0.0
+        render_progress.refresh()
+        if scroll_top:
+            try:
+                await ui.run_javascript(
+                    f"""
+                    const restoreTrialProgressScroll = () => {{
+                        const card = document.getElementById('trial-progress-card-scroll');
+                        if (card) card.scrollTop = {scroll_top};
+                    }};
+                    requestAnimationFrame(() => requestAnimationFrame(restoreTrialProgressScroll));
+                    setTimeout(restoreTrialProgressScroll, 80);
+                    """
+                )
+            except Exception:
+                logger.debug("恢复转产进度滚动位置失败", exc_info=True)
+
+    @ui.refreshable
+    def render_progress() -> None:
+        nonlocal shown_rows
+        if not can_view_trial_progress(current_user):
+            ui.navigate.to("/main")
+            return
+        progress_rows = current_progress_rows()
+        shown_rows = tuple(progress_rows)
         with ui.element("div").classes("grid w-full grid-cols-1 lg:grid-cols-2 gap-4"):
-            with ui.card().classes(
-                "w-full min-w-0 !p-0 !gap-0 overflow-x-hidden overflow-y-auto overscroll-contain "
-                "rounded-xl border border-slate-200 shadow-sm"
-            ).style("max-height: min(720px, calc(100vh - 6rem));"):
+            with (
+                ui.card()
+                .classes(
+                    "w-full min-w-0 !p-0 !gap-0 overflow-x-hidden overflow-y-auto overscroll-contain "
+                    "rounded-xl border border-slate-200 shadow-sm"
+                )
+                .style("max-height: min(720px, calc(100vh - 6rem));")
+                .props("id=trial-progress-card-scroll")
+            ):
                 with ui.row().classes(
                     "sticky top-0 z-10 w-full shrink-0 items-center justify-between gap-2 "
                     "px-4 py-3 bg-white border-b border-slate-200"
@@ -145,18 +184,23 @@ def trial_progress_page() -> None:
                     ui.label("暂无已录需求的转产项目").classes("p-5 text-sm text-slate-500")
                 for progress in progress_rows:
                     level = importance.get(progress.project, 0)
-                    with ui.column().classes("w-full min-w-0 shrink-0 gap-2 px-4 py-3 border-b border-slate-100 last:border-b-0"):
+                    with ui.column().classes(
+                        "w-full min-w-0 shrink-0 gap-2 px-4 py-3 border-b border-slate-100 last:border-b-0"
+                    ):
                         with ui.row().classes("w-full min-w-0 items-center justify-between gap-2"):
                             ui.label(progress.project).classes("font-semibold text-slate-800 break-all")
                             ui.label(f"{progress.percentage}% · {progress.completed}/{progress.total}").classes(
                                 "shrink-0 text-sm font-medium text-slate-600"
                             )
-                        with ui.element("div").classes("w-full py-1 cursor-pointer").on(
-                            "click", lambda _, row=progress: open_details(row)
-                        ).tooltip("点击查看职能负责人及未完成概述"):
+                        with (
+                            ui.element("div")
+                            .classes("w-full py-1 cursor-pointer")
+                            .on("click", lambda _, row=progress: open_details(row))
+                            .tooltip("点击查看职能负责人及未完成概述")
+                        ):
                             ui.linear_progress(
                                 value=progress.percentage / 100,
-                                size="6px",
+                                size="10px",
                                 show_value=False,
                                 color="positive" if progress.percentage == 100 else "primary",
                             ).classes("w-full rounded-full")
@@ -169,9 +213,9 @@ def trial_progress_page() -> None:
                                 on_change=partial(change_importance, progress.project),
                             ).props("color-selected=amber-6")
                             if progress.percentage == 100:
-                                ui.button("前往切换试产", on_click=partial(open_project_overview, progress.project)).props(
-                                    "flat dense no-caps color=positive size=sm"
-                                )
+                                ui.button(
+                                    "前往切换试产", on_click=partial(open_project_overview, progress.project)
+                                ).props("flat dense no-caps color=positive size=sm")
                             else:
                                 ui.button("查看明细", on_click=partial(open_details, progress)).props(
                                     "flat dense no-caps size=sm"
