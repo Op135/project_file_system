@@ -83,6 +83,7 @@ from src.permission_catalog import (
     SAMPLE_ORDER_BASE_EDIT_PERMISSION,
     SAMPLE_ORDER_VIEW_PERMISSION,
     STATISTICS_OVERVIEW_OWNER_MANAGE_PERMISSION,
+    STATISTICS_OVERVIEW_FILE_HEALTH_SCAN_PERMISSION,
     STATISTICS_OVERVIEW_VIEW_PERMISSION,
     STATISTICS_VIEW_PERMISSION,
     tool_permission_code,
@@ -132,6 +133,7 @@ from src.project_overview_access import (
 from src.user_service import UserService
 from src.statistics_access import (
     can_manage_overview_owners,
+    can_scan_overview_file_health,
     can_view_overview_statistics,
     can_view_statistics,
 )
@@ -418,8 +420,8 @@ class AccessControlTests(unittest.TestCase):
             )
         )
 
-    def test_statistics_database_mode_uses_three_independent_permissions(self):
-        """数据库模式下统计入口、全员概述统计和负责人配置互不隐含。"""
+    def test_statistics_database_mode_uses_independent_permissions(self):
+        """统计入口、概述统计、负责人配置和手动检测互不隐含。"""
         org_unit_id = self.service.save_org_unit(code="org.statistics", name="统计测试部")
         position_id = self.service.save_position(code="statistics.viewer", name="统计查看岗位")
         self.service.set_primary_membership(
@@ -441,6 +443,9 @@ class AccessControlTests(unittest.TestCase):
         self.assertFalse(
             can_manage_overview_owners("研发电子主管", "张三", user_service=self.service)
         )
+        self.assertFalse(
+            can_scan_overview_file_health("普通岗位", "张三", user_service=self.service)
+        )
 
         self.service.set_position_permissions(
             position_id,
@@ -456,6 +461,21 @@ class AccessControlTests(unittest.TestCase):
         )
         self.assertTrue(
             can_manage_overview_owners("普通岗位", "张三", user_service=self.service)
+        )
+        self.assertFalse(
+            can_scan_overview_file_health("普通岗位", "张三", user_service=self.service)
+        )
+
+        self.service.set_position_permissions(
+            position_id,
+            [
+                STATISTICS_VIEW_PERMISSION,
+                STATISTICS_OVERVIEW_FILE_HEALTH_SCAN_PERMISSION,
+            ],
+            actor_username="admin",
+        )
+        self.assertTrue(
+            can_scan_overview_file_health("普通岗位", "张三", user_service=self.service)
         )
 
     def test_project_todo_database_mode_uses_independent_entry_permissions(self):

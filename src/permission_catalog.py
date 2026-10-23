@@ -562,6 +562,7 @@ DESIGN_KNOWLEDGE_PERMISSIONS = (
 STATISTICS_VIEW_PERMISSION = "statistics.view"
 STATISTICS_OVERVIEW_VIEW_PERMISSION = "statistics.overview.view"
 STATISTICS_OVERVIEW_OWNER_MANAGE_PERMISSION = "statistics.overview_owner.manage"
+STATISTICS_OVERVIEW_FILE_HEALTH_SCAN_PERMISSION = "statistics.overview_file_health.scan"
 
 
 STATISTICS_PERMISSIONS = (
@@ -582,6 +583,12 @@ STATISTICS_PERMISSIONS = (
         "维护 — 项目概述负责人",
         "统计信息",
         "允许跨项目配置光学、结构、硬件、软件、UI 和工艺等概述负责人",
+    ),
+    PermissionDefinition(
+        STATISTICS_OVERVIEW_FILE_HEALTH_SCAN_PERMISSION,
+        "执行 — 文件性概述立即检测",
+        "统计信息",
+        "允许在文件性概述健康检测卡片中手动发起检测",
     ),
 )
 

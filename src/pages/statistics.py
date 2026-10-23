@@ -16,6 +16,7 @@ from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, PROJECT_STATE_
 from ..overview_file_health import OVERVIEW_FILE_HEALTH_KEY, scan_overview_file_health, summarize_file_health
 from ..statistics_access import (
     can_manage_overview_owners,
+    can_scan_overview_file_health,
     can_view_overview_statistics,
     can_view_statistics,
 )
@@ -308,6 +309,7 @@ def statistics_page():
         current_role,
         current_user,
     )
+    can_run_health_check = can_scan_overview_file_health(current_role, current_user)
 
     # 头像处理
     user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})
@@ -913,7 +915,7 @@ def statistics_page():
 
                                 bind_project_detail_click(status_chart, show_status_project_details)
                                 bind_project_detail_click(overview_chart, show_overview_project_details)
-                    if can_view_overview_stats:
+                    if can_view_statistics(current_role, current_user):
                         # 概述健康检测
                         with ui.card().classes(
                             "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white"
@@ -932,6 +934,13 @@ def statistics_page():
                             ui_card_header("文件性概述健康检测", "health_and_safety", "teal-700")
 
                             async def run_health_check() -> None:
+                                latest_role = sync_current_user_role()
+                                if not (
+                                    can_view_statistics(latest_role, current_user)
+                                    and can_scan_overview_file_health(latest_role, current_user)
+                                ):
+                                    ui.notify("当前账号没有立即检测文件性概述的权限", type="negative")
+                                    return
                                 check_button.disable()
                                 try:
                                     await scan_overview_file_health()
@@ -947,11 +956,15 @@ def statistics_page():
                                 ui.label(
                                     f"上次检测：{checked_at}（每天 02:30 自动更新；仅检查当前需求版本已激活的图片、视频、文档、服务器检索文件和 SVN）"
                                 ).classes("text-sm text-gray-500")
-                                check_button = ui.button("立即检测", icon="refresh", on_click=run_health_check).props(
-                                    "outline dense color=primary"
-                                )
+                                if can_run_health_check:
+                                    check_button = ui.button(
+                                        "立即检测", icon="refresh", on_click=run_health_check
+                                    ).props("outline dense color=primary")
                             if not snapshot:
-                                ui.label("暂无检测结果，可点击“立即检测”生成首次快照。")
+                                ui.label(
+                                    "暂无检测结果，可点击“立即检测”生成首次快照。"
+                                    if can_run_health_check else "暂无检测结果，等待每日自动检测。"
+                                )
                             else:
                                 healthy_count = sum(bool(item.get("healthy")) for item in health_items)
                                 ui.label(
@@ -1081,6 +1094,7 @@ def statistics_page():
 
                                 health_group_select.on_value_change(update_health_chart)
 
+                    if can_view_overview_stats:
                         # 近7日待办项趋势
                         with ui.card().classes(
                             "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white relative"

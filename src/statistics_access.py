@@ -6,6 +6,7 @@ from nicegui import app
 
 from .access_control import can
 from .permission_catalog import (
+    STATISTICS_OVERVIEW_FILE_HEALTH_SCAN_PERMISSION,
     STATISTICS_OVERVIEW_OWNER_MANAGE_PERMISSION,
     STATISTICS_OVERVIEW_VIEW_PERMISSION,
     STATISTICS_VIEW_PERMISSION,
@@ -64,4 +65,14 @@ def can_manage_overview_owners(
         STATISTICS_OVERVIEW_OWNER_MANAGE_PERMISSION,
         legacy_role=str(current_role or ""),
         legacy_allowed_roles=tuple(legacy_allowed_roles),
+    )
+
+
+def can_scan_overview_file_health(current_role: object, current_user: str, *, user_service=None) -> bool:
+    """判断是否可以手动发起文件性概述健康检测。"""
+    return can(
+        _service(user_service),
+        current_user,
+        STATISTICS_OVERVIEW_FILE_HEALTH_SCAN_PERMISSION,
+        legacy_role=str(current_role or ""),
     )
