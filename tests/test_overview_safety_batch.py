@@ -68,6 +68,44 @@ class OverviewSafetyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.db.get_fresh_item("P1_over_data"), before)
         self.assertFalse(await self.db.get_fresh_item("P1_over_related_record", {}))
 
+    async def test_related_impacts_recover_null_record_placeholders(self):
+        chip = {"id": "c", "creator": "owner", "select_activ_dic": {"1.0": True}}
+        previous = {"2026-10-01 09:00:00": {"record": {"旧影响": {"operate_chip_content": "历史内容"}}}}
+        for old_records, has_history in (
+            (None, False),
+            ({"docs": None}, False),
+            ({"docs": {"c": None}}, False),
+            ({"docs": {"c": {**previous, "open": None}}}, True),
+        ):
+            with self.subTest(old_records=old_records):
+                await self.db.set_item("P1_over_data", {"docs": {"c": chip}})
+                await self.db.set_item("P1_over_related_record", old_records)
+                changed = await batch.apply_related_overview_impacts(
+                    project="P1", related_labels=["docs"], source_content="关键概述",
+                    source_state=True, operation_type="add_chip", creator="owner",
+                    config_flat={}, overview_role={},
+                )
+                self.assertEqual(changed, {"docs"})
+                saved_chip = (await self.db.get_fresh_item("P1_over_data"))["docs"]["c"]
+                self.assertIsNone(saved_chip["select_activ_dic"]["1.0"])
+                saved_records = (await self.db.get_fresh_item("P1_over_related_record"))["docs"]["c"]
+                opened = saved_records["open"]
+                self.assertEqual(
+                    next(iter(opened["record"].values()))["operate_chip_content"], "关键概述"
+                )
+                if has_history:
+                    self.assertEqual(saved_records["2026-10-01 09:00:00"], previous["2026-10-01 09:00:00"])
+
+    async def test_missing_related_overview_has_no_impact(self):
+        await self.db.set_item("P1_over_data", {"docs": {}})
+        changed = await batch.apply_related_overview_impacts(
+            project="P1", related_labels=["not-existing"], source_content="关键概述",
+            source_state=True, operation_type="add_chip", creator="owner",
+            config_flat={}, overview_role={},
+        )
+        self.assertFalse(changed)
+        self.assertFalse(await self.db.get_fresh_item("P1_over_related_record", {}))
+
     async def test_state_and_reason_archive_commit_or_roll_back_together(self):
         chip = {"id": "c", "type": "text", "content": "value", "enabled": None,
                 "select_activ_dic": {"1.0": None}, "timestamp": {}}
@@ -189,6 +227,63 @@ class OverviewSafetyTests(unittest.IsolatedAsyncioTestCase):
         with closing(sqlite3.connect(self.root / "test.db")) as connection, connection:
             self.assertEqual(connection.execute("SELECT entity_id FROM work_assignments WHERE status='pending'").fetchall(),
                              [("r",)])
+
+    async def test_pending_add_edit_restarts_review_atomically_and_rejects_old_snapshot(self):
+        with closing(sqlite3.connect(self.root / "test.db")) as connection, connection:
+            connection.execute("CREATE TABLE iam_users(user_id TEXT PRIMARY KEY, username TEXT, status TEXT)")
+            connection.execute("INSERT INTO iam_users VALUES ('u1', 'reviewer', 'active')")
+            connection.execute("CREATE TABLE work_assignments(assignment_id TEXT PRIMARY KEY, module TEXT, entity_id TEXT, "
+                "task_key TEXT, assignment_type TEXT, assignee_user_id TEXT, status TEXT, source_policy_code TEXT, "
+                "created_at TEXT, updated_at TEXT, completed_at TEXT, "
+                "UNIQUE(module, entity_id, task_key, assignee_user_id))")
+            connection.execute("INSERT INTO work_assignments VALUES "
+                "('old', 'project_overview', 'r', 'old-review', 'approval', 'u1', 'pending', 'policy', '', '', NULL)")
+        old = {"id": "r", "project": "P1", "label": "critical", "submitter": "owner",
+               "submitter_role": "editor", "status": "pending", "review_log": [],
+               "workflow_assignment": {"current_task_key": "old-review", "status": "pending"},
+               "payload": {"chip": {"id": "chip-original", "type": "text", "content": "旧内容"},
+                           "staged_file_path": ""}}
+        await self.db.set_item(add.OVERVIEW_ADD_REQUESTS_KEY, {"r": old})
+
+        def workflow(proxy, **_kwargs):
+            proxy.replace_work_assignments(module="project_overview", entity_id="r", task_key="new-review",
+                assignee_usernames=["reviewer"], source_policy_code="policy")
+            return {"status": "matched", "assignment": {"current_task_key": "new-review", "status": "pending"}}
+
+        fake_app = SimpleNamespace(storage=SimpleNamespace(general={
+            "over_config_data_flat": {"critical": {"label": "critical"}},
+            "project_summary": {"P1": {"state": "研发"}},
+        }))
+        args = {"request_id": "r", "submitter": "owner",
+                "chip": {"id": "new-id", "type": "text", "content": "新内容"},
+                "config": {"label": "critical", "add_approval_required": True},
+                "expected": copy.deepcopy(old), "user_service": SimpleNamespace()}
+        with patch.object(add, "app", fake_app), \
+             patch.object(add, "create_approval_sequence_assignments", side_effect=workflow), \
+             patch.object(add, "can_edit_overview_item", return_value=True):
+            with patch.object(ApprovalTransaction, "flush", new=AsyncMock(side_effect=OSError("todo failed"))):
+                failed = await add.resubmit_overview_add_request(**args)
+            self.assertEqual(failed.status, "error")
+            self.assertEqual(await self.db.get_fresh_item(add.OVERVIEW_ADD_REQUESTS_KEY), {"r": old})
+            with closing(sqlite3.connect(self.root / "test.db")) as connection:
+                self.assertEqual(connection.execute("SELECT task_key, status FROM work_assignments").fetchall(),
+                                 [("old-review", "pending")])
+
+            saved = await add.resubmit_overview_add_request(**args)
+            self.assertEqual(saved.status, "pending")
+            latest = (await self.db.get_fresh_item(add.OVERVIEW_ADD_REQUESTS_KEY))["r"]
+            self.assertEqual(latest["payload"]["chip"]["content"], "新内容")
+            self.assertEqual(latest["payload"]["chip"]["id"], "chip-original")
+            with closing(sqlite3.connect(self.root / "test.db")) as connection:
+                self.assertEqual(connection.execute(
+                    "SELECT task_key, status FROM work_assignments ORDER BY task_key").fetchall(),
+                    [("new-review", "pending"), ("old-review", "superseded")])
+            stale_edit = await add.resubmit_overview_add_request(**args)
+            self.assertEqual(stale_edit.status, "error")
+            with patch.object(add, "can_review_overview_add_request", return_value=True):
+                stale_review, _ = await add._advance_add_review(
+                    "r", "reviewer", SimpleNamespace(), expected=old)
+            self.assertIsNone(stale_review)
 
     async def test_withdraw_does_not_remove_claimed_request(self):
         original = {"status": "pending", "submitter": "owner"}

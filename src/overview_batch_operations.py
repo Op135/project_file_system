@@ -804,11 +804,31 @@ async def apply_related_overview_impacts(
     record_key = f"{project}_over_related_record"
     async def save_reasons(_before, _after, connection):
         records = await read_json(connection, db_storage, record_key)
+        if records is None:
+            records = {}
+        if not isinstance(records, dict):
+            raise ValueError(f"关联影响记录结构无效：{project}")
         for label, chip_id, related_user in affected:
-            opened = records.setdefault(label, {}).setdefault(chip_id, {}).setdefault("open", {
-                "open_time": now_str, "open_related_user": related_user, "close_time": "", "close_related_user": "", "record": {},
-            })
+            label_records = records.get(label)
+            if label_records is None:
+                label_records = records[label] = {}
+            if not isinstance(label_records, dict):
+                raise ValueError(f"关联影响记录结构无效：{project} / {label}")
+            chip_records = label_records.get(chip_id)
+            if chip_records is None:
+                chip_records = label_records[chip_id] = {}
+            if not isinstance(chip_records, dict):
+                raise ValueError(f"关联影响记录结构无效：{project} / {label} / {chip_id}")
+            opened = chip_records.get("open")
+            if opened is None:
+                opened = chip_records["open"] = {
+                    "open_time": now_str, "open_related_user": related_user, "close_time": "", "close_related_user": "", "record": {},
+                }
+            if not isinstance(opened, dict):
+                raise ValueError(f"关联影响记录结构无效：{project} / {label} / {chip_id} / open")
             history = opened.setdefault("record", {})
+            if not isinstance(history, dict):
+                raise ValueError(f"关联影响记录结构无效：{project} / {label} / {chip_id} / record")
             history_key = now_str
             suffix = 1
             while history_key in history:

@@ -340,7 +340,7 @@ async def requirement_page(
         if (
             isinstance(add_request, dict)
             and add_request.get("submitter") == current_user
-            and add_request.get("status") == "rejected"
+            and add_request.get("status") in {"pending", "rejected"}
             and isinstance(payload, dict)
             and isinstance(chip, dict)
         ):
@@ -351,6 +351,7 @@ async def requirement_page(
                 "chip": copy.deepcopy(chip),
                 "impact_mode": str(payload.get("impact_mode") or "none"),
                 "related_labels": copy.deepcopy(payload.get("related_labels") or []),
+                "expected": copy.deepcopy(add_request),
             }
         else:
             app.storage.client.pop("overview_add_resubmit_auto_open", None)
@@ -5901,6 +5902,7 @@ async def requirement_page(
                                             )
 
                     render_conversion_review_banner()
+
                     with ui.column().classes("w-full overflow-y-auto p-1 gap-2 rounded"):
                         overview_role_update(project_name, "initialize")
                         # 显示概述模块内容
@@ -6108,8 +6110,13 @@ async def requirement_page(
                                     if render_type == "OverviewTableGroup":
                                         if has_permission:
                                             exp.set_visibility(True)
-                                            target_in_table = bool(correction_label) and any(
-                                                str(item.get("label") or "") == str(correction_label)
+                                            auto_add_target = app.storage.client.get("overview_add_resubmit_auto_open", {})
+                                            auto_add_label = (
+                                                str(auto_add_target.get("label") or "")
+                                                if isinstance(auto_add_target, dict) else ""
+                                            )
+                                            target_in_table = bool(correction_label or auto_add_label) and any(
+                                                str(item.get("label") or "") in {str(correction_label), auto_add_label}
                                                 for item in chip_data_li
                                             )
 

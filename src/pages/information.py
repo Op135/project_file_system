@@ -1750,6 +1750,7 @@ def _render_information_page(section: str) -> None:
                                 "approve": "通过",
                                 "reject": "驳回",
                                 "resubmit": "修改后重新提交",
+                                "reset": "候选内容更新，审批重新开始",
                             }.get(str(record.get("action") or ""), "处理")
                             note = str(record.get("note") or "").strip()
                             ui.label(
@@ -1780,9 +1781,9 @@ def _render_information_page(section: str) -> None:
                         "撤回并删除",
                         on_click=lambda: withdraw_overview_add(request_id),
                     ).props("outline color=orange")
-                if is_mine and request.get("status") == "rejected":
+                if is_mine and request.get("status") in {"pending", "rejected"}:
                     ui.button(
-                        "返回项目修改",
+                        "修改待审内容" if request.get("status") == "pending" else "返回项目修改",
                         on_click=lambda: get_overviow_page(
                             str(request.get("project") or ""),
                             False,

@@ -71,6 +71,7 @@ from .overview_corrections import (
     validate_test_correction,
 )
 from .overview_add_approval import (
+    OVERVIEW_ADD_REQUESTS_KEY,
     OverviewAddSaveResult,
     requires_overview_add_approval,
     resubmit_overview_add_request,
@@ -191,6 +192,74 @@ def _overview_chip_latest_reason(chip: object) -> str:
     return str(latest_record.get("reason") or "") if isinstance(latest_record, dict) else ""
 
 
+def _pending_overview_additions(project: str, labels: set[str]) -> dict[str, dict]:
+    """仅为概述组件读取待审候选；它们不进入正式概述数据。"""
+    requests = db_storage.get_item(OVERVIEW_ADD_REQUESTS_KEY, {}) or {}
+    if not isinstance(requests, dict):
+        return {}
+    return {
+        str(request_id): request
+        for request_id, request in requests.items()
+        if isinstance(request, dict)
+        and request.get("project") == project
+        and request.get("status") == "pending"
+        and str(request.get("label") or "") in labels
+    }
+
+
+def _start_pending_overview_edit(request_id: str, project: str, label: str, role: str) -> dict | None:
+    """点击待审标签时读取最新申请，固定本次弹窗的编辑基线。"""
+    request = db_storage.get_deep_item([OVERVIEW_ADD_REQUESTS_KEY, request_id], {})
+    config = app.storage.general.get("over_config_data_flat", {}).get(label)
+    current_user = str(app.storage.user.get("current_user") or "")
+    if (
+        not isinstance(request, dict)
+        or request.get("project") != project
+        or request.get("label") != label
+        or request.get("status") != "pending"
+        or request.get("submitter") != current_user
+        or not isinstance(config, dict)
+        or not can_edit_overview_item(config, role, current_user)
+    ):
+        ui.notify("申请已变化或当前账号无权修改，请刷新后重试。", type="warning")
+        return None
+    allowed_states = config.get("allowed_state")
+    project_state = app.storage.general.get("project_summary", {}).get(project, {}).get("state")
+    if isinstance(allowed_states, list) and allowed_states and project_state not in allowed_states:
+        ui.notify("项目当前状态不允许修改该概述。", type="warning")
+        return None
+    payload = request.get("payload")
+    chip = payload.get("chip") if isinstance(payload, dict) else None
+    if not isinstance(payload, dict) or not isinstance(chip, dict):
+        ui.notify("待审概述内容不完整，请刷新后重试。", type="warning")
+        return None
+    app.storage.client["overview_add_resubmit_auto_open"] = {
+        "request_id": request_id,
+        "project": project,
+        "label": label,
+        "chip": copy.deepcopy(chip),
+        "impact_mode": str(payload.get("impact_mode") or "none"),
+        "related_labels": copy.deepcopy(payload.get("related_labels") or []),
+        "expected": copy.deepcopy(request),
+    }
+    return copy.deepcopy(chip)
+
+
+def _render_pending_overview_chip(request_id: str, request: dict, on_edit, *, full_width: bool = False) -> None:
+    """在原概述项位置展示待审候选，不借用正式 chip 的状态与操作。"""
+    payload = request.get("payload")
+    chip = payload.get("chip") if isinstance(payload, dict) else None
+    if not isinstance(chip, dict):
+        return
+    content = str(chip.get("content") or "未填写")
+    tag = ui.chip(f"{content} · 待审", icon="pending_actions", color="purple-2").props("dense square")
+    tag.classes("m-0 max-w-full whitespace-normal break-all" + (" w-full" if full_width else ""))
+    tag.tooltip(f"审批通过后生效｜申请人：{request.get('submitter', '')}")
+    if request.get("submitter") == app.storage.user.get("current_user"):
+        tag.classes("cursor-pointer")
+        tag.on_click(lambda _=None, rid=request_id: on_edit(rid))
+
+
 _TEST_FIELD_PREFIXES = ("test_nature", "state", "node", "instrument")
 
 
@@ -252,6 +321,7 @@ async def _save_or_queue_overview_addition(
             uploaded_file_path=uploaded_file_path,
             impact_mode=impact_mode,
             related_labels=related_labels,
+            expected=resubmit_target.get("expected") if isinstance(resubmit_target.get("expected"), dict) else None,
         )
         if result.pending:
             app.storage.client.pop("overview_add_resubmit_auto_open", None)
@@ -272,6 +342,26 @@ async def _save_or_queue_overview_addition(
     elif result.status == "error":
         ui.notify(result.message, type="negative", position="center", timeout=0, close_button="✖")
     return result
+
+
+async def _submit_pending_file_notes(project: str, label: str, chip: dict, config: dict, reason: str) -> bool:
+    """文件未更换时保留原待审附件，只提交候选说明与关联影响。"""
+    if not reason.strip():
+        ui.notify("请选择操作原因；选择“其他”时需填写具体原因。", type="warning")
+        return False
+    candidate = copy.deepcopy(chip)
+    creator = str(app.storage.user.get("current_user") or "")
+    candidate["timestamp"] = {
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+            "creator": creator,
+            "reason": reason.strip(),
+            "select_activ_dic": copy.deepcopy(candidate.get("select_activ_dic") or {}),
+        }
+    }
+    result = await _save_or_queue_overview_addition(
+        project=project, label=label, chip=candidate, config=config,
+    )
+    return result.pending
 
 
 async def _fetch_svn_file_http_async(
@@ -1903,6 +1993,7 @@ class InteractiveButton:
 
         # 通用复用弹窗
         self.chip_dialog = ui.dialog().classes("")
+        self.chip_dialog.on("close", self._clear_pending_add_edit)
         self.img_dialog = ui.dialog().props("maximized").classes("p-0")
         self.overview_video_dialog = ui.dialog().classes("p-0 bg-transparent shadow-none")
         self.check_down_dialog = ui.dialog().classes("")
@@ -1913,6 +2004,7 @@ class InteractiveButton:
         # self.last_state_hash = None
         # 替换 self.last_state_hash = None
         self.local_version = -1
+        self.local_pending_signature: tuple = ()
         self._is_refreshing = False  # 在开始重绘概述前检查为Ture则放弃本次重绘（因为前面已经在重绘中还没结束），重绘过程中设置为True，重绘后设置为False，
 
         if self.processing_type == "file":
@@ -2014,6 +2106,31 @@ class InteractiveButton:
             self._setup_file_notes_dialog()
         _clear_overview_add_resubmit_navigation_query()
 
+    def _clear_pending_add_edit(self) -> None:
+        target = app.storage.client.get("overview_add_resubmit_auto_open")
+        if isinstance(target, dict) and target.get("project") == self.project and target.get("label") == self.label:
+            app.storage.client.pop("overview_add_resubmit_auto_open", None)
+        self.pending_add_resubmit_chip = {}
+
+    def _open_pending_add_request(self, request_id: str) -> None:
+        if self.temp_bool:
+            ui.notify("当前页面不能修改概述。", type="warning")
+            return
+        chip = _start_pending_overview_edit(request_id, self.project, self.label, self.role)
+        if chip is None:
+            return
+        self.pending_add_resubmit_chip = chip
+        if self.processing_type == "text":
+            self._setup_text_chip_dialog()
+        elif self.processing_type == "test":
+            self._setup_test_chip_dialog()
+        elif self.processing_type == "search":
+            self._setup_search_chip_dialog()
+        elif self.processing_type == "svn":
+            self._setup_svn_chip_dialog()
+        else:
+            self._setup_file_notes_dialog()
+
     def _generate_signature(self, filtered_dict: dict) -> int:
         """生成数据源状态的轻量级签名，避免高频深度遍历比对"""
         signature = []
@@ -2057,9 +2174,12 @@ class InteractiveButton:
             return
         # O(1) 复杂度的获取
         current_version = OverviewVersionManager.get_version(self.project, self.label)
-        if self.local_version != current_version:
+        pending = _pending_overview_additions(self.project, {self.label})
+        pending_signature = tuple((request_id, repr(request)) for request_id, request in pending.items())
+        if self.local_version != current_version or self.local_pending_signature != pending_signature:
             try:
                 self.local_version = current_version
+                self.local_pending_signature = pending_signature
                 self._is_refreshing = True
                 await self._refresh_chip_container()
                 overview_role_update(self.project, self.role)
@@ -2104,6 +2224,9 @@ class InteractiveButton:
                 #     await self._create_chip_from_data(CHIP_INFO, target_path_list, req_max_ver)
                 # else:
                 await self._create_chip_from_data(CHIP_INFO, req_max_ver)
+
+            for request_id, request in _pending_overview_additions(self.project, {self.label}).items():
+                _render_pending_overview_chip(request_id, request, self._open_pending_add_request)
 
     def _render_test_fields_for_change(self, test_data):
         """专门为变更申请弹窗复用的测试项渲染逻辑"""
@@ -2939,9 +3062,9 @@ class InteractiveButton:
 
     def _setup_text_chip_dialog(self):
         self.chip_dialog.clear()
-        prefill = self.pending_add_resubmit_chip
+        prefill = self.pending_add_resubmit_chip if app.storage.client.get("overview_add_resubmit_auto_open") else {}
         with self.chip_dialog, ui.card().classes("w-1/2"):
-            ui.label("添加新的概述内容").classes("text-lg font-bold")
+            ui.label("修改待审概述内容" if prefill else "添加新的概述内容").classes("text-lg font-bold")
             ui.label("注意：一次只添加一个内容/部件，不要填多个。").classes("text-base font-bold text-red")
             INDEX_LIST = db_storage.get_deep_item(["overview_auto_complete_index", self.label], [])
             self.chip_label = (
@@ -2960,14 +3083,17 @@ class InteractiveButton:
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
-                ui.button("添加", on_click=lambda e: self._add_text_chip_data(ui_spinner, btn=e.sender))
+                ui.button(
+                    "提交修改" if prefill else "添加",
+                    on_click=lambda e: self._add_text_chip_data(ui_spinner, btn=e.sender),
+                )
         self.chip_dialog.open()
 
     def _setup_search_chip_dialog(self):
         self.chip_dialog.clear()
-        prefill = self.pending_add_resubmit_chip
+        prefill = self.pending_add_resubmit_chip if app.storage.client.get("overview_add_resubmit_auto_open") else {}
         with self.chip_dialog, ui.card().classes("w-1/2"):
-            ui.label("添加新的文件引用概述内容").classes("text-lg font-bold")
+            ui.label("修改待审文件引用" if prefill else "添加新的文件引用概述内容").classes("text-lg font-bold")
             ui.label(f"搜寻根目录：{self.upload_path}").classes("text-xs text-brown-7")
             self.chip_label = (
                 ui.input(
@@ -2984,14 +3110,17 @@ class InteractiveButton:
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
-                ui.button("添加", on_click=lambda e: self._add_search_chip_data(ui_spinner, btn=e.sender))
+                ui.button(
+                    "提交修改" if prefill else "添加",
+                    on_click=lambda e: self._add_search_chip_data(ui_spinner, btn=e.sender),
+                )
         self.chip_dialog.open()
 
     def _setup_svn_chip_dialog(self):
         self.chip_dialog.clear()
-        prefill = self.pending_add_resubmit_chip
+        prefill = self.pending_add_resubmit_chip if app.storage.client.get("overview_add_resubmit_auto_open") else {}
         with self.chip_dialog, ui.card().classes("w-1/2"):
-            ui.label("添加SVN文件引用概述内容").classes("text-lg font-bold")
+            ui.label("修改待审SVN文件引用" if prefill else "添加SVN文件引用概述内容").classes("text-lg font-bold")
             self.chip_label = (
                 ui.input(
                     label=self.dialog_label,
@@ -3007,18 +3136,24 @@ class InteractiveButton:
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
-                ui.button("添加", on_click=lambda e: self._add_svn_chip_data(ui_spinner, btn=e.sender))
+                ui.button(
+                    "提交修改" if prefill else "添加",
+                    on_click=lambda e: self._add_svn_chip_data(ui_spinner, btn=e.sender),
+                )
         self.chip_dialog.open()
 
     def _setup_file_notes_dialog(self):
         self.chip_dialog.clear()
-        prefill = self.pending_add_resubmit_chip
+        prefill = self.pending_add_resubmit_chip if app.storage.client.get("overview_add_resubmit_auto_open") else {}
         with self.chip_dialog, ui.card().classes("w-1/2"):
-            ui.label("添加上传文件的注释").classes("text-lg font-bold")
+            ui.label("修改待审文件" if prefill else "添加上传文件的注释").classes("text-lg font-bold")
             ui.label(f"保存根目录：{self.upload_path}").classes("text-xs text-brown-7")
+            if prefill and prefill.get("type") in {"file", "image", "video"}:
+                ui.label(f"当前待审文件：{prefill.get('content', '')}").classes("text-sm text-purple-800")
             self.chip_label = (
                 ui.input(
                     label="不需要提交文件时填写（选填）",
+                    value=str(prefill.get("content") or "") if prefill.get("type") == "text" else "",
                     placeholder="无",
                 )
                 .props("outlined")
@@ -3030,14 +3165,25 @@ class InteractiveButton:
             with ui.row().classes("w-full justify-end items-center"):
                 self.spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 self.spinner.set_visibility(False)
-                ui.button("添加", on_click=lambda e: self._get_file_upload(btn=e.sender))
+                if prefill and prefill.get("type") in {"file", "image", "video"}:
+                    ui.button("更换文件", on_click=lambda e: self._get_file_upload(btn=e.sender)).props("outline")
+                    ui.button("提交修改", on_click=self._save_pending_file_notes)
+                else:
+                    ui.button("提交修改" if prefill else "添加", on_click=lambda e: self._get_file_upload(btn=e.sender))
         self.chip_dialog.open()
+
+    async def _save_pending_file_notes(self) -> None:
+        config = app.storage.general.get("over_config_data_flat", {}).get(self.label, {})
+        if await _submit_pending_file_notes(
+            self.project, self.label, self.pending_add_resubmit_chip, config, str(self.chip_notes.value or "")
+        ):
+            self.chip_dialog.close()
 
     def _setup_test_chip_dialog(self):
         self.chip_dialog.clear()
-        prefill = self.pending_add_resubmit_chip
+        prefill = self.pending_add_resubmit_chip if app.storage.client.get("overview_add_resubmit_auto_open") else {}
         with self.chip_dialog, ui.card().classes("w-full"):
-            ui.label(f"添加产品的{self.title}").classes("text-lg font-bold")
+            ui.label(f"{'修改待审' if prefill else '添加产品的'}{self.title}").classes("text-lg font-bold")
             ui.label("注意：一次只添加一个测试项，不要填多个。").classes("text-base font-bold text-red")
             test_select_data = {
                 "test_nature_select": "",
@@ -3097,7 +3243,8 @@ class InteractiveButton:
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
                 ui.button(
-                    "添加", on_click=lambda e: self._add_test_chip_data(ui_spinner, test_select_data, btn=e.sender)
+                    "提交修改" if prefill else "添加",
+                    on_click=lambda e: self._add_test_chip_data(ui_spinner, test_select_data, btn=e.sender),
                 )
         self.chip_dialog.open()
 
@@ -5236,6 +5383,7 @@ class OverviewTableGroup:
 
         # 全局复用的对话框（以节省DOM节点）
         self.chip_dialog = ui.dialog().classes("")
+        self.chip_dialog.on("close", self._clear_pending_add_edit)
         self.img_dialog = ui.dialog().props("maximized").classes("p-0")
         self.overview_video_dialog = ui.dialog().classes("p-0 bg-transparent shadow-none")
         self.check_down_dialog = ui.dialog().classes("")
@@ -5256,6 +5404,8 @@ class OverviewTableGroup:
         # --- 状态追踪细化到列 (字典结构) ---
         # self.last_state_hashes = {}
         self.local_versions = {}
+        self.local_pending_signature: tuple = ()
+        self.pending_by_row: dict[str, dict[str, dict[str, dict]]] = {}
         # 表格的主容器
         self.container = ui.column().classes(
             "w-full gap-0 border border-blue-200 rounded-sm overflow-hidden mt-2 bg-white"
@@ -5312,6 +5462,43 @@ class OverviewTableGroup:
         self._handle_add_click(config, str(chip.get("row_id") or ""))
         _clear_overview_add_resubmit_navigation_query()
 
+    def _clear_pending_add_edit(self) -> None:
+        target = app.storage.client.get("overview_add_resubmit_auto_open")
+        labels = {str(config.get("label") or "") for config in self.configs}
+        if isinstance(target, dict) and target.get("project") == self.project and target.get("label") in labels:
+            app.storage.client.pop("overview_add_resubmit_auto_open", None)
+        self.pending_add_resubmit_chip = {}
+
+    def _open_pending_add_request(self, request_id: str) -> None:
+        request = db_storage.get_deep_item([OVERVIEW_ADD_REQUESTS_KEY, request_id], {})
+        label = str(request.get("label") or "") if isinstance(request, dict) else ""
+        config = next((item for item in self.configs if str(item.get("label") or "") == label), None)
+        if not isinstance(config, dict) or not self._edit_permission_judge(config):
+            return
+        chip = _start_pending_overview_edit(request_id, self.project, label, self.role)
+        if chip is None:
+            return
+        row_id = str(chip.get("row_id") or "")
+        req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(self.project, "0.0")
+        if not self._get_first_col_any_activ_bool(row_id, label, None, req_max_ver):
+            app.storage.client.pop("overview_add_resubmit_auto_open", None)
+            ui.notify("该行的首列概述已失活，不能修改待审内容。", type="warning")
+            return
+        self.pending_add_resubmit_chip = chip
+        self.current_config = config
+        self.current_target_row_id = row_id
+        ptype = config.get("processing_type")
+        if ptype == "text":
+            self._setup_text_chip_dialog()
+        elif ptype == "test":
+            self._setup_test_chip_dialog()
+        elif ptype == "search":
+            self._setup_search_chip_dialog()
+        elif ptype == "svn":
+            self._setup_svn_chip_dialog()
+        else:
+            self._setup_file_notes_dialog()
+
     def _compute_row_hash(self, row_data: dict) -> int:
         """为单行数据生成轻量级指纹，用于判断该行是否需要重绘"""
         signature = []
@@ -5322,6 +5509,8 @@ class OverviewTableGroup:
                 latest_time = max(timestamps.keys()) if timestamps else ""
                 # 提取影响 UI 显示的核心元素：ID、启用状态、修改时间、行ID
                 signature.append((chip.get("id"), chip.get("enabled"), latest_time, chip.get("row_id")))
+        for label, requests in self.pending_by_row.get(str(row_data.get("row_id") or ""), {}).items():
+            signature.extend(("pending", label, request_id, repr(request)) for request_id, request in requests.items())
         return hash(tuple(signature))
 
     async def _group_and_migrate_data(self, col_configs, show_all):
@@ -5717,7 +5906,7 @@ class OverviewTableGroup:
             new_hash = self._compute_row_hash(row_data)
 
             # 判断这行是否需要完全隐藏
-            is_row_totally_deactivated = True
+            is_row_totally_deactivated = not bool(self.pending_by_row.get(str(row_id)))
             for chips_in_col in row_data["chips"].values():
                 for chip in chips_in_col:
                     if not _is_deactivated_chip(chip, req_max_ver):
@@ -5798,17 +5987,22 @@ class OverviewTableGroup:
                 ):
                     is_first_col = label == first_col_label
                     has_chip = bool(label in row_chips and row_chips[label])
+                    pending_requests = self.pending_by_row.get(str(row_id), {}).get(label, {})
 
                     # 1. 渲染该单元格内的所有 chip
                     if has_chip:
                         for chip_data in row_chips[label]:
                             # 直接复用你现有的单个芯片渲染函数
                             await self._render_single_chip(chip_data, config, req_max_ver, client_storage)
+                    for request_id, request in pending_requests.items():
+                        _render_pending_overview_chip(
+                            request_id, request, self._open_pending_add_request, full_width=True
+                        )
 
                     # 2. 渲染添加按钮：
                     if self._edit_permission_judge(config, notify=False):
                         # 确保第一列只能有一个chip
-                        if not (is_first_col and has_chip):
+                        if not (is_first_col and (has_chip or pending_requests)):
                             icon_name = self._get_icon_for_type(config["processing_type"])
                             btn = ui.button(
                                 icon=icon_name,
@@ -6177,12 +6371,27 @@ class OverviewTableGroup:
                 self.local_versions[label] = current_version
                 changed_labels.append(label)
 
+        pending_requests = _pending_overview_additions(
+            self.project, {str(config["label"]) for config in self.permitted_configs.values()}
+        )
+        pending_signature = tuple((request_id, repr(request)) for request_id, request in pending_requests.items())
+
         # if changed_labels or not self.row_containers:  # 首次加载遇到当前表格本来就没有任何数据，就会无限触发，平繁更新app.storage.general
         # 修复：使用专门的 _is_first_load 标记，避免空数据表格陷入死循环
-        if changed_labels or getattr(self, "_is_first_load", True):
+        if changed_labels or self.local_pending_signature != pending_signature or getattr(self, "_is_first_load", True):
             self._is_first_load = False  # 进门后立刻把首次标记改为 False
             try:
                 self._is_refreshing = True
+                self.local_pending_signature = pending_signature
+                self.pending_by_row = {}
+                for request_id, request in pending_requests.items():
+                    payload = request.get("payload")
+                    chip = payload.get("chip") if isinstance(payload, dict) else None
+                    if not isinstance(chip, dict):
+                        continue
+                    row_id = str(chip.get("row_id") or f"pending:{request_id}")
+                    label = str(request.get("label") or "")
+                    self.pending_by_row.setdefault(row_id, {}).setdefault(label, {})[request_id] = request
                 overview_role_update(self.project, self.role)
                 for changed_label in changed_labels:
                     self._update_local_pending(changed_label)
@@ -6197,6 +6406,10 @@ class OverviewTableGroup:
                     "1.0",
                 )
                 rows_list = await self._group_and_migrate_data(col_configs, show_all)
+                existing_rows = {str(row["row_id"]) for row in rows_list}
+                for row_id in self.pending_by_row:
+                    if row_id not in existing_rows:
+                        rows_list.append({"row_id": row_id, "chips": {}})
 
                 # 2. 执行局部渲染
                 await self._render_header(col_configs)
@@ -6309,9 +6522,11 @@ class OverviewTableGroup:
     def _setup_text_chip_dialog(self):
         self.chip_dialog.clear()
         config = self.current_config
-        prefill = self.pending_add_resubmit_chip
+        prefill = self.pending_add_resubmit_chip if app.storage.client.get("overview_add_resubmit_auto_open") else {}
         with self.chip_dialog, ui.card().classes("w-1/2"):
-            ui.label(f"添加: {config['title']}").classes("text-lg font-bold text-blue-900")
+            ui.label(f"{'修改待审' if prefill else '添加'}: {config['title']}").classes(
+                "text-lg font-bold text-blue-900"
+            )
             ui.label("注意：一次只添加一个内容/部件，不要填多个。").classes("text-base font-bold text-red")
             self.chip_label = (
                 ui.textarea(
@@ -6328,7 +6543,10 @@ class OverviewTableGroup:
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
-                ui.button("添加", on_click=lambda e: self._add_text_chip_data(ui_spinner, btn=e.sender))
+                ui.button(
+                    "提交修改" if prefill else "添加",
+                    on_click=lambda e: self._add_text_chip_data(ui_spinner, btn=e.sender),
+                )
         self.chip_dialog.open()
 
     async def _add_text_chip_data(self, ui_spinner, btn=None):
@@ -6449,9 +6667,11 @@ class OverviewTableGroup:
     def _setup_test_chip_dialog(self):
         self.chip_dialog.clear()
         config = self.current_config
-        prefill = self.pending_add_resubmit_chip
+        prefill = self.pending_add_resubmit_chip if app.storage.client.get("overview_add_resubmit_auto_open") else {}
         with self.chip_dialog, ui.card().classes("w-full"):
-            ui.label(f"添加产品的{config['title']}").classes("text-lg font-bold text-blue-900")
+            ui.label(f"{'修改待审' if prefill else '添加产品的'}{config['title']}").classes(
+                "text-lg font-bold text-blue-900"
+            )
             ui.label("注意：一次只添加一个测试项，不要填多个。").classes("text-base font-bold text-red")
             test_select_data = {
                 "test_nature_select": "",
@@ -6511,7 +6731,8 @@ class OverviewTableGroup:
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
                 ui.button(
-                    "添加", on_click=lambda e: self._add_test_chip_data(ui_spinner, test_select_data, btn=e.sender)
+                    "提交修改" if prefill else "添加",
+                    on_click=lambda e: self._add_test_chip_data(ui_spinner, test_select_data, btn=e.sender),
                 )
         self.chip_dialog.open()
 
@@ -6672,13 +6893,18 @@ class OverviewTableGroup:
     def _setup_file_notes_dialog(self):
         self.chip_dialog.clear()
         config = self.current_config
-        prefill = self.pending_add_resubmit_chip
+        prefill = self.pending_add_resubmit_chip if app.storage.client.get("overview_add_resubmit_auto_open") else {}
         with self.chip_dialog, ui.card().classes("w-1/2"):
-            ui.label(f"添加上传文件的注释: {config['title']}").classes("text-lg font-bold text-blue-900")
+            ui.label(f"{'修改待审文件' if prefill else '添加上传文件的注释'}: {config['title']}").classes(
+                "text-lg font-bold text-blue-900"
+            )
             ui.label(f"保存根目录：{config.get('upload_path', '')}").classes("text-xs text-brown-7")
+            if prefill and prefill.get("type") in {"file", "image", "video"}:
+                ui.label(f"当前待审文件：{prefill.get('content', '')}").classes("text-sm text-purple-800")
             self.chip_label = (
                 ui.input(
                     label="不需要提交文件时填写（选填）",
+                    value=str(prefill.get("content") or "") if prefill.get("type") == "text" else "",
                     placeholder="无",
                 )
                 .props("outlined")
@@ -6690,8 +6916,20 @@ class OverviewTableGroup:
             with ui.row().classes("w-full justify-end items-center"):
                 self.spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 self.spinner.set_visibility(False)
-                ui.button("添加", on_click=lambda e: self._get_file_upload(btn=e.sender))
+                if prefill and prefill.get("type") in {"file", "image", "video"}:
+                    ui.button("更换文件", on_click=lambda e: self._get_file_upload(btn=e.sender)).props("outline")
+                    ui.button("提交修改", on_click=self._save_pending_file_notes)
+                else:
+                    ui.button("提交修改" if prefill else "添加", on_click=lambda e: self._get_file_upload(btn=e.sender))
         self.chip_dialog.open()
+
+    async def _save_pending_file_notes(self) -> None:
+        config = self.current_config
+        if await _submit_pending_file_notes(
+            self.project, str(config.get("label") or ""), self.pending_add_resubmit_chip,
+            config, str(self.chip_notes.value or ""),
+        ):
+            self.chip_dialog.close()
 
     async def _get_file_upload(self, btn=None):
         text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
@@ -6950,9 +7188,11 @@ class OverviewTableGroup:
     def _setup_search_chip_dialog(self):
         self.chip_dialog.clear()
         config = self.current_config
-        prefill = self.pending_add_resubmit_chip
+        prefill = self.pending_add_resubmit_chip if app.storage.client.get("overview_add_resubmit_auto_open") else {}
         with self.chip_dialog, ui.card().classes("w-1/2"):
-            ui.label(f"添加引用: {config['title']}").classes("text-lg font-bold text-blue-900")
+            ui.label(f"{'修改待审引用' if prefill else '添加引用'}: {config['title']}").classes(
+                "text-lg font-bold text-blue-900"
+            )
             self.chip_label = (
                 ui.input(
                     label=config.get("dialog_label", "填入包括后缀的完整文件名"),
@@ -6968,7 +7208,7 @@ class OverviewTableGroup:
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
-                ui.button("添加", on_click=lambda e: self._add_search_chip_data(ui_spinner, btn=e.sender))
+                ui.button("提交修改" if prefill else "添加", on_click=lambda e: self._add_search_chip_data(ui_spinner, btn=e.sender))
         self.chip_dialog.open()
 
     async def _add_search_chip_data(self, ui_spinner, btn=None):
@@ -7965,10 +8205,13 @@ class OverviewTableGroup:
 
                         def process_close_record(chip_record_dic):
                             if not chip_record_dic or "open" not in chip_record_dic:
-                                return chip_record_dic
+                                return db_storage.ATOMIC_NO_UPDATE
 
                             # 提取并修改 open 记录
-                            open_dic = chip_record_dic.pop("open")  # 从字典中弹出（删除 "open" 键）
+                            open_dic = chip_record_dic.get("open")
+                            if not isinstance(open_dic, dict):
+                                return db_storage.ATOMIC_NO_UPDATE
+                            chip_record_dic.pop("open")  # 从字典中弹出（删除 "open" 键）
                             open_dic["close_time"] = time_str
                             open_dic["close_related_user"] = creator
 
@@ -8452,9 +8695,11 @@ class OverviewTableGroup:
     def _setup_svn_chip_dialog(self):
         self.chip_dialog.clear()
         config = self.current_config
-        prefill = self.pending_add_resubmit_chip
+        prefill = self.pending_add_resubmit_chip if app.storage.client.get("overview_add_resubmit_auto_open") else {}
         with self.chip_dialog, ui.card().classes("w-1/2"):
-            ui.label(f"添加SVN文件引用: {config['title']}").classes("text-lg font-bold text-blue-900")
+            ui.label(f"{'修改待审SVN文件引用' if prefill else '添加SVN文件引用'}: {config['title']}").classes(
+                "text-lg font-bold text-blue-900"
+            )
             self.chip_label = (
                 ui.input(
                     label=config.get("dialog_label", "填入包括后缀的完整文件名"),
@@ -8470,7 +8715,7 @@ class OverviewTableGroup:
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
-                ui.button("添加", on_click=lambda e: self._add_svn_chip_data(ui_spinner, btn=e.sender))
+                ui.button("提交修改" if prefill else "添加", on_click=lambda e: self._add_svn_chip_data(ui_spinner, btn=e.sender))
         self.chip_dialog.open()
 
     async def _add_svn_chip_data(self, ui_spinner, btn=None):

@@ -340,7 +340,7 @@ def get_overview_add_pending_count(
 
 
 async def _update_request(request_id: str, changes: dict[str, Any], *, expected: dict | None = None,
-                          assignment_transaction=None) -> bool:
+                          assignment_transaction=None, reset_pending_tasks: bool = False) -> bool:
     updated = False
     async def update(request, connection):
         nonlocal updated
@@ -348,10 +348,19 @@ async def _update_request(request_id: str, changes: dict[str, Any], *, expected:
             return db_storage.ATOMIC_NO_UPDATE
         if expected is not None and request != expected:
             return db_storage.ATOMIC_NO_UPDATE
-        if changes.get("status") == "pending" and (expected is None or request.get("status") != "rejected"):
+        if changes.get("status") == "pending" and (
+            expected is None or request.get("status") not in {"rejected", "pending"}
+            or (request.get("status") == "pending" and not reset_pending_tasks)
+        ):
             return db_storage.ATOMIC_NO_UPDATE
         request.update(copy.deepcopy(changes))
         request["updated_at"] = _now_text()
+        if reset_pending_tasks:
+            await connection.execute(
+                "UPDATE work_assignments SET status='superseded', updated_at=? "
+                "WHERE module='project_overview' AND entity_id=? AND status='pending'",
+                (_now_text(), request_id),
+            )
         if assignment_transaction is not None:
             await assignment_transaction.flush(connection)
         updated = True
@@ -565,6 +574,7 @@ async def resubmit_overview_add_request(
     uploaded_file_path: Path | None = None,
     impact_mode: str = "none",
     related_labels: list[str] | None = None,
+    expected: dict[str, Any] | None = None,
     user_service=None,
 ) -> OverviewAddSaveResult:
     """使用项目概述页重新录入的候选内容，沿用原申请记录再次送审。"""
@@ -578,17 +588,33 @@ async def resubmit_overview_add_request(
         if (
             not isinstance(request, dict)
             or request.get("submitter") != submitter
-            or request.get("status") != "rejected"
+            or request.get("status") not in {"pending", "rejected"}
+            or (request.get("status") == "pending" and expected is None)
+            or (expected is not None and request != expected)
         ):
-            return OverviewAddSaveResult("error", "申请状态已变化，当前无法重新提交", request_id)
+            return OverviewAddSaveResult("error", "申请已被修改或审批，请刷新后重试", request_id)
         payload = request.get("payload")
         if not isinstance(payload, dict):
             return OverviewAddSaveResult("error", "申请候选内容不完整", request_id)
+        previous_chip = payload.get("chip")
+        if not isinstance(previous_chip, dict) or (
+            previous_chip.get("type") and chip.get("type") != previous_chip.get("type")
+        ):
+            return OverviewAddSaveResult("error", "申请候选类型已变化，请刷新后重试", request_id)
         label = str(request.get("label") or "")
         if not requires_overview_add_approval(config):
             return OverviewAddSaveResult("error", "该概述项当前已不需要新增审批，请撤回后重新添加", request_id)
         if not can_edit_overview_item(config, str(request.get("submitter_role") or ""), submitter):
             return OverviewAddSaveResult("error", "当前账号已无权编辑该概述项", request_id)
+        live_config = app.storage.general.get("over_config_data_flat", {}).get(label)
+        if isinstance(live_config, dict) and not can_edit_overview_item(
+            live_config, str(request.get("submitter_role") or ""), submitter
+        ):
+            return OverviewAddSaveResult("error", "当前账号已无权编辑该概述项", request_id)
+        allowed_states = config.get("allowed_state")
+        project_state = app.storage.general.get("project_summary", {}).get(request.get("project"), {}).get("state")
+        if isinstance(allowed_states, list) and allowed_states and project_state not in allowed_states:
+            return OverviewAddSaveResult("error", "项目当前状态不允许修改该概述", request_id)
         if label != str(config.get("label") or label):
             return OverviewAddSaveResult("error", "重新提交的概述项与原申请不一致", request_id)
 
@@ -628,15 +654,20 @@ async def resubmit_overview_add_request(
             final_file_path = str(source_path)
 
         review_log = list(request.get("review_log") or [])
-        review_log.append(
-            {
-                "action": "resubmit",
-                "user": submitter,
-                "time": _now_text(),
-                "note": "修改后重新提交",
-            }
-        )
+        if request.get("status") == "rejected":
+            review_log.append({"action": "resubmit", "user": submitter, "time": _now_text(), "note": "修改后重新提交"})
+        elif review_log:
+            review_log.append({"action": "reset", "user": submitter, "time": _now_text(), "note": "候选内容已更新，审批从首节点重新开始"})
         updated_payload = copy.deepcopy(payload)
+        candidate_chip = copy.deepcopy(chip)
+        candidate_chip["id"] = previous_chip.get("id")
+        if "row_id" in previous_chip:
+            candidate_chip["row_id"] = previous_chip["row_id"]
+        candidate_chip["creator"] = previous_chip.get("creator", submitter)
+        if old_staged_path is not None and new_staged_path is None and (
+            candidate_chip.get("content") != previous_chip.get("content")
+        ):
+            return OverviewAddSaveResult("error", "修改文件名时请重新选择并上传文件", request_id)
         normalized_impact_mode, normalized_related_labels = normalize_overview_add_impacts(
             config,
             impact_mode,
@@ -644,10 +675,10 @@ async def resubmit_overview_add_request(
         )
         updated_payload.update(
             {
-                "chip": copy.deepcopy(chip),
+                "chip": candidate_chip,
                 "config": copy.deepcopy(config),
-                "staged_file_path": str(new_staged_path or ""),
-                "final_file_path": final_file_path,
+                "staged_file_path": str(new_staged_path or old_staged_path or ""),
+                "final_file_path": final_file_path or str(payload.get("final_file_path") or ""),
                 "impact_mode": normalized_impact_mode,
                 "related_labels": normalized_related_labels,
             }
@@ -666,6 +697,7 @@ async def resubmit_overview_add_request(
             },
             expected=request,
             assignment_transaction=assignment_transaction,
+            reset_pending_tasks=request.get("status") == "pending",
         )
         if not saved:
             if new_staged_path is not None:

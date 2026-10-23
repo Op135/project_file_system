@@ -197,7 +197,7 @@ class OverviewAddApprovalLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(changes["status"], "pending")
         self.assertEqual(changes["payload"]["chip"]["content"], "修改后的内容")
         self.assertEqual(changes["payload"]["chip"]["test_select_data"], {"state_select": "常温"})
-        self.assertEqual(changes["payload"]["chip"]["id"], "chip-new")
+        self.assertEqual(changes["payload"]["chip"]["id"], "chip-2")
         self.assertEqual(changes["payload"]["impact_mode"], "selected")
         self.assertEqual(changes["payload"]["related_labels"], ["related-b"])
         self.assertEqual(changes["review_log"][-1]["action"], "resubmit")

@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import sys
+import time
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -25,6 +26,7 @@ logger = logging.getLogger(__name__)
 GENERAL_STORAGE_RELATIVE_PATH: Final = Path(".nicegui") / "storage-general.json"
 BACKUP_DIRECTORY_NAME: Final = "backups"
 BACKUP_GLOB: Final = "storage-general_*.json"
+_WINDOWS_REPLACE_RETRY_DELAYS: Final = (0.05, 0.1, 0.2, 0.4, 0.8, 1.6)
 
 # 这些键仍由 app.storage.general 持久化，SQLite 备份不能替代它们。
 PROTECTED_GENERAL_KEYS: Final[tuple[str, ...]] = (
@@ -224,7 +226,19 @@ def atomic_write_bytes(path: Path, content: bytes, *, content_already_validated:
         # 常规调用在替换前再次解析；运行时存储已经在持锁区验证，可避免重复解析大文件。
         if not content_already_validated:
             read_general_storage_snapshot(temporary)
-        os.replace(temporary, path)
+        for attempt in range(len(_WINDOWS_REPLACE_RETRY_DELAYS) + 1):
+            try:
+                os.replace(temporary, path)
+                break
+            except PermissionError as exc:
+                # Windows 上短暂打开目标文件的读取者可能阻止替换；锁仍由调用方持有。
+                if (
+                    sys.platform != "win32"
+                    or exc.winerror not in {5, 32}
+                    or attempt == len(_WINDOWS_REPLACE_RETRY_DELAYS)
+                ):
+                    raise
+                time.sleep(_WINDOWS_REPLACE_RETRY_DELAYS[attempt])
     finally:
         temporary.unlink(missing_ok=True)
 
@@ -245,6 +259,7 @@ def install_safe_nicegui_general_storage(general_storage: object) -> bool:
     storage_path = general_storage.filepath
     initial = read_general_storage_snapshot(storage_path) if storage_path.exists() else None
     expected_sha256: list[str | None] = [initial.sha256 if initial is not None else None]
+    expected_data: list[dict[str, object] | None] = [initial.data if initial is not None else None]
     reference_cache: list[tuple[Path, int, int, GeneralStorageSnapshot] | None] = [None]
 
     def get_reference_snapshot() -> GeneralStorageSnapshot | None:
@@ -275,11 +290,19 @@ def install_safe_nicegui_general_storage(general_storage: object) -> bool:
                 candidate_sha256 = hashlib.sha256(content).hexdigest()
                 if disk_sha256 == candidate_sha256:
                     expected_sha256[0] = disk_sha256
+                    expected_data[0] = _decode_general_storage_snapshot(storage_path, content).data
                     return
-                raise GeneralStorageSafetyError(
-                    "检测到另一个进程已更新 NiceGUI 通用存储，已拒绝用本进程的陈旧快照覆盖："
-                    f"{storage_path}"
+                disk_snapshot = (
+                    _decode_general_storage_snapshot(storage_path, disk_raw)
+                    if disk_raw is not None else None
                 )
+                if disk_snapshot is None or disk_snapshot.data != expected_data[0]:
+                    raise GeneralStorageSafetyError(
+                        "检测到另一个进程已更新 NiceGUI 通用存储，已拒绝用本进程的陈旧快照覆盖："
+                        f"{storage_path}"
+                    )
+                # 外部进程仅重新序列化了相同数据，当前内存快照仍可安全写入。
+                expected_sha256[0] = disk_sha256
             candidate = _decode_general_storage_snapshot(storage_path, content)
             reference = get_reference_snapshot()
             if reference is None and disk_raw is not None:
@@ -287,6 +310,7 @@ def install_safe_nicegui_general_storage(general_storage: object) -> bool:
             assert_no_suspicious_storage_shrink(candidate, reference)
             atomic_write_bytes(storage_path, content, content_already_validated=True)
             expected_sha256[0] = hashlib.sha256(content).hexdigest()
+            expected_data[0] = candidate.data
 
     def safe_backup() -> None:
         async def async_backup() -> None:

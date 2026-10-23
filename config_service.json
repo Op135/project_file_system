@@ -3413,7 +3413,7 @@
             "input_name_accor": "",
             "input_tolerance": "",
             "ref_config": "False",
-            "option_hint": "按YY1081-2011标准要求，光通量、相对色温、显色指数、红绿辐通量比、蓝绿辐通量比\n需要在100%与50%亮度情况下均满足声称的规格标准要求",
+            "option_hint": "按YY1081-2011标准要求，相对色温、显色指数、红绿辐通量比、蓝绿辐通量比、红外截止性能\n需要在100%与50%亮度情况下均满足声称的规格标准要求",
             "placeholder": "",
             "tolerance_placeholder": "",
             "option_group_id": "6",
@@ -3423,10 +3423,10 @@
             "ref_out": [],
             "options": [
                 {
-                    "option_id": "opt_1",
-                    "option_content": "光通量",
-                    "option_out": "50%光通量",
-                    "option_bold": "光通量",
+                    "option_id": "opt_7",
+                    "option_content": "红外截止性能",
+                    "option_out": "50%红外截止性能",
+                    "option_bold": "红外截止性能",
                     "option_show": "{V}加测50%亮度档（标准默认同100%亮度档）",
                     "option_label": ""
                 },
@@ -7705,7 +7705,7 @@
             ]
         }
     },
-    "config_timestamp": "2026-10-22T21:42:59.901037",
-    "excel_version_hash": "39007fea",
+    "config_timestamp": "2026-10-23T11:23:10.785212",
+    "excel_version_hash": "334058da",
     "entry_status": false
 }

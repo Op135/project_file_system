@@ -1,15 +1,21 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from collections.abc import Mapping
 from pathlib import Path
 from unittest.mock import patch
 
+# NiceGUI 导入时会重写默认通用存储；测试进程必须使用独立目录。
+if "NICEGUI_STORAGE_PATH" not in os.environ:
+    _nicegui_test_storage = tempfile.TemporaryDirectory(prefix="nicegui-storage-test-")
+    os.environ["NICEGUI_STORAGE_PATH"] = _nicegui_test_storage.name
+
 from nicegui.persistence.file_persistent_dict import FilePersistentDict
 
-from src import config_service
+from src import config_service, storage_safety
 from src.components import StorageBackupManager
 from src.config_service import ConfigService
 from src.storage_safety import (
@@ -95,6 +101,42 @@ class AtomicGeneralStorageTests(unittest.TestCase):
             self.assertEqual(snapshot.raw, content)
             self.assertEqual(list(path.parent.glob(f".{path.name}.*.tmp")), [])
 
+    def test_windows_temporary_replace_denial_is_retried_without_losing_target(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "storage-general.json"
+            _write_json(path, {"project_summary": {"P-001": "旧值"}})
+            replacement = json.dumps({"project_summary": {"P-001": "新值"}}).encode("utf-8")
+            original_replace = storage_safety.os.replace
+            attempts = 0
+
+            def briefly_locked(source: Path, target: Path) -> None:
+                nonlocal attempts
+                attempts += 1
+                if attempts < 3:
+                    error = PermissionError(5, "文件暂时被占用")
+                    error.winerror = 5
+                    raise error
+                original_replace(source, target)
+
+            with patch.object(storage_safety.sys, "platform", "win32"), \
+                 patch.object(storage_safety.os, "replace", side_effect=briefly_locked), \
+                 patch.object(storage_safety.time, "sleep") as sleep:
+                atomic_write_bytes(path, replacement)
+            self.assertEqual(attempts, 3)
+            self.assertEqual(sleep.call_count, 2)
+            self.assertEqual(path.read_bytes(), replacement)
+            self.assertEqual(list(path.parent.glob(f".{path.name}.*.tmp")), [])
+
+            denial = PermissionError(5, "文件持续被占用")
+            denial.winerror = 5
+            with patch.object(storage_safety.sys, "platform", "win32"), \
+                 patch.object(storage_safety.os, "replace", side_effect=denial), \
+                 patch.object(storage_safety.time, "sleep"):
+                with self.assertRaises(PermissionError):
+                    atomic_write_bytes(path, b'{"project_summary": {"P-001": "not_saved"}}')
+            self.assertEqual(path.read_bytes(), replacement)
+            self.assertEqual(list(path.parent.glob(f".{path.name}.*.tmp")), [])
+
     def test_safe_backend_rejects_stale_process_overwrite(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "storage-general.json"
@@ -111,6 +153,24 @@ class AtomicGeneralStorageTests(unittest.TestCase):
             with self.assertRaisesRegex(GeneralStorageSafetyError, "陈旧快照"):
                 handler()
             self.assertEqual(read_general_storage_snapshot(path).data, external)
+
+    def test_safe_backend_accepts_same_data_with_different_json_format(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "storage-general.json"
+            original = {"project_summary": {"P-001": {"state": "研发"}}}
+            _write_json(path, original)
+            storage = FilePersistentDict(path, encoding="utf-8")
+            storage.initialize_sync()
+            self.assertTrue(install_safe_nicegui_general_storage(storage))
+
+            reformatted = json.dumps(original, ensure_ascii=True, indent=2).encode("utf-8")
+            atomic_write_bytes(path, reformatted)
+            storage["project_summary"] = {"P-001": {"state": "转产"}}
+
+            self.assertEqual(
+                read_general_storage_snapshot(path).data,
+                {"project_summary": {"P-001": {"state": "转产"}}},
+            )
 
     def test_safe_backend_rejects_direct_clear(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
