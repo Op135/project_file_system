@@ -1,5 +1,7 @@
+import asyncio
 import unittest
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from nicegui import ui
 
@@ -133,6 +135,52 @@ class RelatedImpactSelectionTests(unittest.TestCase):
         self.assertTrue(_can_skip_related_impact("add_chip"))
         self.assertTrue(_can_skip_related_impact("activ_change"))
         self.assertFalse(_can_skip_related_impact("unknown"))
+
+
+class OverviewAutofillSubmissionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_repeated_clicks_create_only_one_set_of_chips(self):
+        table = OverviewTableGroup.__new__(OverviewTableGroup)
+        table.project = "P1"
+        table.role = "研发"
+        table._autofill_submitted_rows = set()
+        app = SimpleNamespace(storage=SimpleNamespace(
+            general={"project_req_max_ver": {"P1": "1.0"}},
+            user={"current_user": "owner"},
+        ))
+        entered = asyncio.Event()
+        release = asyncio.Event()
+        writes = []
+
+        async def save_once(**kwargs):
+            writes.append(kwargs)
+            entered.set()
+            await release.wait()
+            return SimpleNamespace(effective=True)
+
+        combo = {
+            "字段A": [{"type": "text", "content": "历史内容A"}],
+            "字段B": [{"type": "text", "content": "历史内容B"}],
+        }
+        configs = [{"label": "field-a", "title": "字段A"}, {"label": "field-b", "title": "字段B"}]
+        button = Mock()
+        with patch("src.components.app", app), \
+             patch.object(table, "_get_select_activ_dic", return_value={"1.0": True}), \
+             patch.object(table, "autofill_dialog", create=True) as autofill_dialog, \
+             patch("src.components._save_or_queue_overview_addition", side_effect=save_once), \
+             patch("src.components.OverviewVersionManager.bump"), \
+             patch("src.components.ui.notify"):
+            first = asyncio.create_task(table._execute_autofill("row-1", combo, configs, "录入原因", btn=button))
+            await entered.wait()
+            await table._execute_autofill("row-1", combo, configs, "录入原因", btn=button)
+            release.set()
+            await first
+            await table._execute_autofill("row-1", combo, configs, "录入原因", btn=button)
+
+        self.assertEqual(len(writes), 2)
+        self.assertEqual({entry["label"] for entry in writes}, {"field-a", "field-b"})
+        self.assertTrue(all(entry["chip"]["row_id"] == "row-1" for entry in writes))
+        button.disable.assert_called_once()
+        autofill_dialog.close.assert_called_once()
 
 
 if __name__ == "__main__":

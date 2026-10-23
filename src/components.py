@@ -5347,6 +5347,7 @@ class OverviewTableGroup:
         self.current_target_row_id = None  # 当前正在操作的单元格所在行id
         self.permitted_configs = {}
         self.ordered_row_ids = []
+        self._autofill_submitted_rows: set[str] = set()
         self._is_refreshing = False  # 在开始重绘表格前检查为Ture则放弃本次重绘（因为前面已经在重绘中还没结束），重绘过程中设置为True，重绘后设置为False，
         self._is_first_load = True  # 新增：专门用于精准判断首次加载
 
@@ -7901,20 +7902,27 @@ class OverviewTableGroup:
                 ui.button(
                     "确认填充",
                     color="green",
-                    on_click=lambda: self._execute_autofill(
-                        row_id, combinations[selected_idx["val"]], col_configs, unified_reason.value
+                    on_click=lambda e: self._execute_autofill(
+                        row_id, combinations[selected_idx["val"]], col_configs, unified_reason.value,
+                        btn=e.sender,
                     ),
                 )
 
         self.autofill_dialog.open()
 
-    async def _execute_autofill(self, row_id: str, combo: dict, col_configs: list, reason: str):
+    async def _execute_autofill(self, row_id: str, combo: dict, col_configs: list, reason: str, btn=None):
         """
         将选中的联动组合执行落盘
         """
         if not reason.strip():
             ui.notify("请选择录入原因；选择“其他”时需填写具体原因。", type="warning", position="bottom")
             return
+        if row_id in self._autofill_submitted_rows:
+            return
+        # 在首次 await 前占用该行，挡住已排队的连续点击事件。
+        self._autofill_submitted_rows.add(row_id)
+        if btn is not None:
+            btn.disable()
 
         req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "0.0")
         creator = app.storage.user.get("current_user", "匿名用户")
