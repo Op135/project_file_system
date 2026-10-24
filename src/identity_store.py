@@ -1153,6 +1153,85 @@ class IdentityStore:
             ).fetchone()
         return dict(row) if row else {}
 
+    def get_overview_owner_position_policy(self) -> dict[str, dict[str, Any]]:
+        """读取各职能允许自动接管负责人的主岗位及规则生效时间。"""
+        with self._lock, self._connect() as connection:
+            row = connection.execute(
+                "SELECT value FROM iam_meta WHERE key='overview_owner_position_policy'"
+            ).fetchone()
+        if not row:
+            return {}
+        try:
+            value = json.loads(row["value"])
+        except (TypeError, ValueError):
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    def set_overview_owner_position_policy(
+        self,
+        dimension: str,
+        position_ids: list[str],
+        *,
+        actor_username: str | None = None,
+    ) -> None:
+        """保存单个职能的接管岗位，旧操作以本次保存为分界保持原负责人。"""
+        from .permission_catalog import PROJECT_OVERVIEW_DIMENSIONS
+
+        valid_dimensions = {name for _code, name in PROJECT_OVERVIEW_DIMENSIONS}
+        if dimension not in valid_dimensions:
+            raise ValueError("无效的概述职能")
+        normalized_ids = list(dict.fromkeys(str(value).strip() for value in position_ids if str(value).strip()))
+        now = _now_text()
+        effective_from = datetime.now().isoformat(sep=" ", timespec="microseconds")
+        with self._lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if normalized_ids:
+                placeholders = ",".join("?" for _ in normalized_ids)
+                rows = connection.execute(
+                    f"SELECT position_id FROM iam_positions WHERE status='active' AND position_id IN ({placeholders})",
+                    normalized_ids,
+                ).fetchall()
+                if len(rows) != len(normalized_ids):
+                    raise ValueError("包含不存在或已停用的岗位")
+            existing = connection.execute(
+                "SELECT value FROM iam_meta WHERE key='overview_owner_position_policy'"
+            ).fetchone()
+            try:
+                policy = json.loads(existing["value"]) if existing else {}
+            except (TypeError, ValueError):
+                policy = {}
+            if not isinstance(policy, dict):
+                policy = {}
+            policy[dimension] = {"position_ids": normalized_ids, "effective_from": effective_from}
+            connection.execute(
+                "INSERT INTO iam_meta(key, value, updated_at) VALUES(?, ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+                ("overview_owner_position_policy", json.dumps(policy, ensure_ascii=False), now),
+            )
+            self._audit(
+                connection,
+                actor_username=actor_username,
+                action="overview_owner_position_policy_updated",
+                target_type="overview_dimension",
+                target_id=dimension,
+                detail={"position_ids": normalized_ids},
+            )
+
+    def is_overview_owner_eligible(self, username: str, position_ids: set[str]) -> bool:
+        """只按在职用户当前有效主岗位判断；admin 自动权限不参与。"""
+        if not username or not position_ids or username.strip().casefold() == "admin":
+            return False
+        placeholders = ",".join("?" for _ in position_ids)
+        with self._lock, self._connect() as connection:
+            row = connection.execute(
+                "SELECT 1 FROM iam_users u JOIN org_memberships m ON m.user_id=u.user_id "
+                "AND m.status='active' AND m.is_primary=1 "
+                "JOIN iam_positions p ON p.position_id=m.position_id AND p.status='active' "
+                f"WHERE u.username=? COLLATE NOCASE AND u.status='active' AND p.position_id IN ({placeholders}) LIMIT 1",
+                (username.strip(), *position_ids),
+            ).fetchone()
+        return row is not None
+
     def list_primary_memberships(self) -> dict[str, dict[str, Any]]:
         """一次返回全部用户的主任职及直属上级，供责任链批量解析。"""
         with self._lock, self._connect() as connection:

@@ -30,9 +30,10 @@ from httpx import BasicAuth
 from nicegui import app, events, ui
 from nicegui.events import GenericEventArguments, MouseEventArguments, ValueChangeEventArguments
 
-from . import db_storage  # 导入我们创建的模块
-from . import overview_storage
-from .storage_safety import atomic_write_bytes, read_general_storage_snapshot, validated_storage_bytes
+from . import (
+    db_storage,  # 导入我们创建的模块
+    overview_storage,
+)
 from .config import (
     FILES_URL_DIR,
     IMG_DIR,
@@ -47,8 +48,13 @@ from .config import (
 )
 from .custom_ui import custom_upload
 from .image_preview import build_contained_image_preview
-from .overview_file_choice import choose_overview_file
-from .overview_file_storage import validate_file_selection
+from .overview_add_approval import (
+    OVERVIEW_ADD_REQUESTS_KEY,
+    OverviewAddSaveResult,
+    requires_overview_add_approval,
+    resubmit_overview_add_request,
+    save_or_submit_overview_addition,
+)
 from .overview_batch_operations import (
     atomic_update_overview_with_row,
     get_table_child_state_violations,
@@ -71,12 +77,19 @@ from .overview_corrections import (
     update_correction_request,
     validate_test_correction,
 )
-from .overview_add_approval import (
-    OVERVIEW_ADD_REQUESTS_KEY,
-    OverviewAddSaveResult,
-    requires_overview_add_approval,
-    resubmit_overview_add_request,
-    save_or_submit_overview_addition,
+from .overview_file_choice import choose_overview_file
+from .overview_file_storage import validate_file_selection
+from .overview_operation import (
+    append_overview_timestamp,
+    get_automatic_overview_reason,
+    get_first_overview_record,
+    get_latest_overview_operator,
+    get_latest_overview_reason,
+    get_latest_overview_record,
+    get_latest_overview_tooltip_reason,
+    get_overview_reason_labels,
+    get_overview_timestamp_items,
+    resolve_overview_reason,
 )
 from .project_overview_access import (
     can_edit_overview_item,
@@ -84,18 +97,7 @@ from .project_overview_access import (
     overview_workflow_error_message,
     resolve_project_overview_workflow,
 )
-from .overview_operation import (
-    append_overview_timestamp,
-    get_automatic_overview_reason,
-    get_first_overview_record,
-    get_latest_overview_operator,
-    get_latest_overview_reason,
-    get_latest_overview_tooltip_reason,
-    get_latest_overview_record,
-    get_overview_reason_labels,
-    get_overview_timestamp_items,
-    resolve_overview_reason,
-)
+from .storage_safety import atomic_write_bytes, read_general_storage_snapshot, validated_storage_bytes
 from .utils import (
     async_path_exists,
     format_overview_timestamp,
@@ -169,11 +171,7 @@ def _overview_add_config(config: dict, chip: dict) -> dict:
     normalized = copy.deepcopy(config)
     role = str(normalized.get("role") or "")
     group_name = str(normalized.get("group_name") or "")
-    group_items = (
-        app.storage.general.get("over_config_data", {})
-        .get(role, {})
-        .get(group_name, [])
-    )
+    group_items = app.storage.general.get("over_config_data", {}).get(role, {}).get(group_name, [])
     if "row_id" in chip and isinstance(group_items, list) and group_items:
         first_item = group_items[0]
         normalized["is_table_group"] = True
@@ -353,14 +351,17 @@ async def _submit_pending_file_notes(project: str, label: str, chip: dict, confi
     candidate = copy.deepcopy(chip)
     creator = str(app.storage.user.get("current_user") or "")
     candidate["timestamp"] = {
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+        datetime.now().isoformat(sep=" ", timespec="microseconds"): {
             "creator": creator,
             "reason": reason.strip(),
             "select_activ_dic": copy.deepcopy(candidate.get("select_activ_dic") or {}),
         }
     }
     result = await _save_or_queue_overview_addition(
-        project=project, label=label, chip=candidate, config=config,
+        project=project,
+        label=label,
+        chip=candidate,
+        config=config,
     )
     return result.pending
 
@@ -816,13 +817,24 @@ async def _save_overview_activation_atomically(
         chip["timestamp"][history_key]["select_activ_dic"] = copy.deepcopy(new_states)
         return chip
 
-    deactivating = any(state is False and expected_states.get(version) is not False
-                       for version, state in new_states.items())
+    deactivating = any(
+        state is False and expected_states.get(version) is not False for version, state in new_states.items()
+    )
     archive_effect, archived = make_related_record_archive_effect(
-        project, label, chip_id, creator, include_changed_row=deactivating,
+        project,
+        label,
+        chip_id,
+        creator,
+        include_changed_row=deactivating,
     )
     success = await atomic_update_overview_with_row(
-        project, label, chip_id, update, group_configs, creator, changed_targets,
+        project,
+        label,
+        chip_id,
+        update,
+        group_configs,
+        creator,
+        changed_targets,
         transaction_effect=archive_effect,
     )
     if conflict["message"]:
@@ -1115,24 +1127,20 @@ async def _select_pending_add_related_impacts(
 
     with dialog, ui.card().classes("w-full max-w-[800px]"):
         ui.label("选择本次新增可能影响的其它概述项：").classes("text-lg font-bold")
-        ui.label(
-            "本次只记录影响范围；审批全部通过后，选中概述项中的激活内容才会转为待确认。"
-        ).classes("text-base text-brown font-bold -mt-4")
+        ui.label("本次只记录影响范围；审批全部通过后，选中概述项中的激活内容才会转为待确认。").classes(
+            "text-base text-brown font-bold -mt-4"
+        )
         with ui.grid(columns=3).classes("w-full gap-0"):
             for related_label in configured:
                 title = (
-                    app.storage.general.get("over_config_data_flat", {})
-                    .get(related_label, {})
-                    .get("title", "未知项")
+                    app.storage.general.get("over_config_data_flat", {}).get(related_label, {}).get("title", "未知项")
                 )
                 ui.checkbox(text=title).bind_value(selected, related_label)
         with ui.row().classes("w-full justify-end items-center"):
             ui.button(
                 "本次不影响其它项",
                 color="grey",
-                on_click=lambda _=None: _show_no_related_impact_confirmation(
-                    lambda: finish("none", [])
-                ),
+                on_click=lambda _=None: _show_no_related_impact_confirmation(lambda: finish("none", [])),
             ).props("flat")
             ui.button("勾选的受影响", color="green", on_click=submit_selected)
             ui.button("全部受影响", color="blue", on_click=lambda: finish("all", configured))
@@ -2310,8 +2318,10 @@ class InteractiveButton:
             if selection["mode"] == "existing" and self.change_upload_control is not None:
                 self.change_upload_control.reset()
             ui.notify(
-                f"已选择服务器文件：{selection['name']}" if selection["mode"] == "existing"
-                else f"纠错文件已暂存：{selection['name']}", type="info"
+                f"已选择服务器文件：{selection['name']}"
+                if selection["mode"] == "existing"
+                else f"纠错文件已暂存：{selection['name']}",
+                type="info",
             )
 
     def handle_change_upload_removed(self, _event=None) -> None:
@@ -2411,7 +2421,7 @@ class InteractiveButton:
             ui.label(f"{'修改并重提' if existing_req else '申请纠正原记录'} - {self.title}").classes(
                 "text-lg font-bold text-blue-900"
             )
-            ui.label("仅用于纠正原始录入错误；技术事实发生变化时请使用批量概述业务变更。").classes(
+            ui.label("仅用于纠正原始录入错误；技术事实发生变化时请使用常规操作进行变更。").classes(
                 "text-xs text-orange-700"
             )
             if existing_req:
@@ -2465,9 +2475,7 @@ class InteractiveButton:
                             on_removed=self.handle_change_upload_removed,
                             label="选择纠错文件",
                         )
-                        self.change_upload_status_label = ui.label("未选择纠错文件").classes(
-                            "text-xs text-gray-500"
-                        )
+                        self.change_upload_status_label = ui.label("未选择纠错文件").classes("text-xs text-gray-500")
                         self.new_filename_input = (
                             ui.input(
                                 "纠正后的文件名",
@@ -2581,10 +2589,13 @@ class InteractiveButton:
                         ui.notify(str(ex), type="warning")
                         return
                 request_staged_path = (
-                    "" if action_mode["val"] == "delete" or (
+                    ""
+                    if action_mode["val"] == "delete"
+                    or (
                         self.last_temp_upload_selection is not None
                         and self.last_temp_upload_selection["mode"] == "existing"
-                    ) else str(self.last_temp_upload_path or stored_staged_path)
+                    )
+                    else str(self.last_temp_upload_path or stored_staged_path)
                 )
                 media_audit = {}
                 if action_mode["val"] == "correct" and chip_type in {"file", "image", "video"}:
@@ -2650,7 +2661,9 @@ class InteractiveButton:
                     "payload": request_payload,
                 }
                 if existing_rid:
-                    saved = await update_correction_request(existing_rid, record, expected=existing_req, actor=current_user)
+                    saved = await update_correction_request(
+                        existing_rid, record, expected=existing_req, actor=current_user
+                    )
                 else:
                     saved, _ = await create_correction_request(record)
                 if not saved:
@@ -2784,9 +2797,7 @@ class InteractiveButton:
                     "state_path": self.state_path,
                 }
                 # SVN 校验
-                is_valid, resolved_url, file_type, msg = await validate_svn_url(
-                    chip_text, config_mock, [self.project]
-                )
+                is_valid, resolved_url, file_type, msg = await validate_svn_url(chip_text, config_mock, [self.project])
                 file_info = (is_valid, file_type)
                 if is_valid:
                     resolved_svn_url = resolved_url
@@ -2823,13 +2834,9 @@ class InteractiveButton:
                     )
             elif chip_info.get("type") == "svn":
                 if chip_info.get("file_type") == "application/pdf" and file_info[0]:
-                    chip.on_click(
-                        lambda url=resolved_svn_url, fn=chip_text: self.open_svn_pdf_in_browser(url, fn)
-                    )
+                    chip.on_click(lambda url=resolved_svn_url, fn=chip_text: self.open_svn_pdf_in_browser(url, fn))
                 elif file_info[0]:
-                    chip.on_click(
-                        lambda url=resolved_svn_url, fn=chip_text: self.check_and_download_svn(url, fn)
-                    )
+                    chip.on_click(lambda url=resolved_svn_url, fn=chip_text: self.check_and_download_svn(url, fn))
                 else:
                     if chip.icon != "question_mark":
                         chip.set_icon("search_off")
@@ -3322,7 +3329,7 @@ class InteractiveButton:
                 "req_ver": req_max_ver,
                 "select_activ_dic": select_activ_dic,
                 "timestamp": {
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                    datetime.now().isoformat(sep=" ", timespec="microseconds"): {
                         "creator": creator,
                         "reason": notes,
                         "select_activ_dic": select_activ_dic,
@@ -3499,7 +3506,7 @@ class InteractiveButton:
                     "req_ver": req_max_ver,
                     "select_activ_dic": select_activ_dic,
                     "timestamp": {
-                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                        datetime.now().isoformat(sep=" ", timespec="microseconds"): {
                             "creator": creator,
                             "reason": notes,
                             "select_activ_dic": select_activ_dic,
@@ -3667,7 +3674,7 @@ class InteractiveButton:
                     "req_ver": req_max_ver,
                     "select_activ_dic": select_activ_dic,
                     "timestamp": {
-                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                        datetime.now().isoformat(sep=" ", timespec="microseconds"): {
                             "creator": creator,
                             "reason": notes,
                             "select_activ_dic": select_activ_dic,
@@ -3817,7 +3824,7 @@ class InteractiveButton:
                     "req_ver": req_max_ver,
                     "select_activ_dic": select_activ_dic,
                     "timestamp": {
-                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                        datetime.now().isoformat(sep=" ", timespec="microseconds"): {
                             "creator": creator,
                             "reason": notes,
                             "select_activ_dic": select_activ_dic,
@@ -3956,6 +3963,7 @@ class InteractiveButton:
             try:
                 file_content = await e.file.read()
                 from .overview_file_storage import save_named_bytes
+
                 save_named_bytes(file_content, Path(filepath))
             except Exception as ex:
                 logger.error("上传处理失败", exc_info=True)
@@ -3995,7 +4003,7 @@ class InteractiveButton:
                 "req_ver": req_max_ver,
                 "select_activ_dic": select_activ_dic,
                 "timestamp": {
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                    datetime.now().isoformat(sep=" ", timespec="microseconds"): {
                         "creator": creator,
                         "reason": self.chip_notes.value.strip(),
                         "select_activ_dic": select_activ_dic,
@@ -4067,7 +4075,7 @@ class InteractiveButton:
             "req_ver": req_max_ver,
             "select_activ_dic": select_activ_dic,
             "timestamp": {
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                datetime.now().isoformat(sep=" ", timespec="microseconds"): {
                     "creator": creator,
                     "reason": self.chip_notes.value.strip(),
                     "select_activ_dic": select_activ_dic,
@@ -4142,7 +4150,7 @@ class InteractiveButton:
         self, chip_text, chip_state, all_related_bool, related_select_dic, type, record_time=""
     ):
         # 1. 提前获取不需要在锁内计算的静态环境上下文，保证闭包函数（纯函数）的高效执行
-        time_str = record_time or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        time_str = record_time or datetime.now().isoformat(sep=" ", timespec="microseconds")
         current_user = app.storage.user.get("current_user", "匿名用户")
         record_entry = {
             "operate_user": current_user,
@@ -4372,9 +4380,7 @@ class InteractiveButton:
                     )
                 )
                 creator = app.storage.user.get("current_user", "匿名用户")
-                config = copy.deepcopy(
-                    app.storage.general.get("over_config_data_flat", {}).get(self.label, {})
-                )
+                config = copy.deepcopy(app.storage.general.get("over_config_data_flat", {}).get(self.label, {}))
                 active_icon = (
                     await _resolve_active_overview_icon(
                         self.project,
@@ -4545,9 +4551,7 @@ class InteractiveButton:
 
     async def delete_chip_info(self, chip_info):
         if self._edit_permission_judge():
-            if not await _allow_overview_editor_open(
-                self.project, self.label, str(chip_info.get("id") or "")
-            ):
+            if not await _allow_overview_editor_open(self.project, self.label, str(chip_info.get("id") or "")):
                 return
             if app.storage.user["current_user"] == "admin":
                 # 直接使用 chip_info 获取 ID，杜绝 UI props 报错
@@ -4559,9 +4563,7 @@ class InteractiveButton:
 
     async def clear_thumbnail(self, chip_info):
         if self._edit_permission_judge():
-            if not await _allow_overview_editor_open(
-                self.project, self.label, str(chip_info.get("id") or "")
-            ):
+            if not await _allow_overview_editor_open(self.project, self.label, str(chip_info.get("id") or "")):
                 return
             if app.storage.user["current_user"] == "admin":
                 # 删除了 thumbnail.delete()，统一由 _refresh_chip_container 去刷新销毁
@@ -4614,7 +4616,9 @@ class InteractiveButton:
     async def _update_chip_block_parameter(self, chip_id):
         await overview_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], "block")
         await overview_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "enabled"], False)
-        await overview_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "bg_color"], "bg-grey-5")
+        await overview_storage.set_deep_item(
+            [f"{self.project}_over_data", self.label, chip_id, "bg_color"], "bg-grey-5"
+        )
 
     async def _update_chip_active_parameter(self, chip_id, chip_text):
         c_type = db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "type"])
@@ -5255,9 +5259,7 @@ class InteractiveButton:
             latest_version = max(select_activ_dic, key=_version_sort_key)
             latest_state = select_activ_dic.get(latest_version)
             chip_type = str(chip_data.get("type") or "text")
-            config = copy.deepcopy(
-                app.storage.general.get("over_config_data_flat", {}).get(self.label, {})
-            )
+            config = copy.deepcopy(app.storage.general.get("over_config_data_flat", {}).get(self.label, {}))
             active_icon = (
                 await _resolve_active_overview_icon(
                     self.project,
@@ -5799,10 +5801,16 @@ class OverviewTableGroup:
             row_changes: set[tuple[str, str]] = set()
             try:
                 await _save_overview_activation_atomically(
-                    self.project, label, chip_id,
+                    self.project,
+                    label,
+                    chip_id,
                     copy.deepcopy(chip_data.get("select_activ_dic", {})),
-                    select_activ_dic, str(creator), reason, active_icon,
-                    group_configs=self.configs, changed_targets=row_changes,
+                    select_activ_dic,
+                    str(creator),
+                    reason,
+                    active_icon,
+                    group_configs=self.configs,
+                    changed_targets=row_changes,
                 )
             except overview_storage.OverviewWriteError as exc:
                 failed_rows.append(f"{chip_texts[chip_id]}：{exc}")
@@ -5825,7 +5833,12 @@ class OverviewTableGroup:
             message += f"{blocked_states} 项的目标状态等级高于同行首列状态，已阻止修改；这些项继续保持待定。"
         if failed_rows:
             message += "以下行未修改：" + "；".join(failed_rows)
-        ui.notify(message, type="positive" if applied_chips and not failed_rows else "warning", position="bottom", timeout=4000)
+        ui.notify(
+            message,
+            type="positive" if applied_chips and not failed_rows else "warning",
+            position="bottom",
+            timeout=4000,
+        )
 
         if impact_operations and config.get("impact_list", []):
             self._show_column_bulk_related_chip_select_dialog(impact_operations, config)
@@ -6100,13 +6113,9 @@ class OverviewTableGroup:
 
                 elif chip_info.get("type") == "svn":
                     if chip_info.get("file_type") == "application/pdf" and file_info[0]:
-                        chip.on_click(
-                            lambda url=resolved_svn_url, fn=chip_text: self.open_svn_pdf_in_browser(url, fn)
-                        )
+                        chip.on_click(lambda url=resolved_svn_url, fn=chip_text: self.open_svn_pdf_in_browser(url, fn))
                     elif file_info[0]:
-                        chip.on_click(
-                            lambda url=resolved_svn_url, fn=chip_text: self.check_and_download_svn(url, fn)
-                        )
+                        chip.on_click(lambda url=resolved_svn_url, fn=chip_text: self.check_and_download_svn(url, fn))
                     else:
                         if chip._props.get("icon") != "question_mark":
                             chip.set_icon("search_off")
@@ -6619,7 +6628,7 @@ class OverviewTableGroup:
                 "req_ver": req_max_ver,
                 "select_activ_dic": select_activ_dic,
                 "timestamp": {
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                    datetime.now().isoformat(sep=" ", timespec="microseconds"): {
                         "creator": creator,
                         "reason": notes,
                         "select_activ_dic": select_activ_dic,
@@ -6750,9 +6759,7 @@ class OverviewTableGroup:
                 btn.disable()  # 1. 进门立刻禁用按钮，防止连点
             try:
                 config = self.current_config
-                option_lists = {
-                    prefix: config.get(f"{prefix}_options", []) for prefix in _TEST_FIELD_PREFIXES
-                }
+                option_lists = {prefix: config.get(f"{prefix}_options", []) for prefix in _TEST_FIELD_PREFIXES}
                 other_bool = _missing_test_other_text(test_select_data, option_lists)
                 if not notes:
                     ui.notify(
@@ -6843,7 +6850,7 @@ class OverviewTableGroup:
                     "req_ver": req_max_ver,
                     "select_activ_dic": select_activ_dic,
                     "timestamp": {
-                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                        datetime.now().isoformat(sep=" ", timespec="microseconds"): {
                             "creator": creator,
                             "reason": notes,
                             "select_activ_dic": select_activ_dic,
@@ -6925,8 +6932,11 @@ class OverviewTableGroup:
     async def _save_pending_file_notes(self) -> None:
         config = self.current_config
         if await _submit_pending_file_notes(
-            self.project, str(config.get("label") or ""), self.pending_add_resubmit_chip,
-            config, str(self.chip_notes.value or ""),
+            self.project,
+            str(config.get("label") or ""),
+            self.pending_add_resubmit_chip,
+            config,
+            str(self.chip_notes.value or ""),
         ):
             self.chip_dialog.close()
 
@@ -7046,6 +7056,7 @@ class OverviewTableGroup:
         try:
             file_content = await e.file.read()
             from .overview_file_storage import save_named_bytes
+
             save_named_bytes(file_content, Path(filepath))
         except Exception as ex:
             logger.error("上传处理失败", exc_info=True)
@@ -7141,7 +7152,7 @@ class OverviewTableGroup:
             "req_ver": req_max_ver,
             "select_activ_dic": select_activ_dic,
             "timestamp": {
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                datetime.now().isoformat(sep=" ", timespec="microseconds"): {
                     "creator": creator,
                     "reason": self.chip_notes.value.strip(),
                     "select_activ_dic": select_activ_dic,
@@ -7207,7 +7218,10 @@ class OverviewTableGroup:
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
-                ui.button("提交修改" if prefill else "添加", on_click=lambda e: self._add_search_chip_data(ui_spinner, btn=e.sender))
+                ui.button(
+                    "提交修改" if prefill else "添加",
+                    on_click=lambda e: self._add_search_chip_data(ui_spinner, btn=e.sender),
+                )
         self.chip_dialog.open()
 
     async def _add_search_chip_data(self, ui_spinner, btn=None):
@@ -7348,7 +7362,7 @@ class OverviewTableGroup:
                     "req_ver": req_max_ver,
                     "select_activ_dic": self._get_select_activ_dic(req_max_ver),
                     "timestamp": {
-                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                        datetime.now().isoformat(sep=" ", timespec="microseconds"): {
                             "creator": creator,
                             "reason": notes,
                             "select_activ_dic": self._get_select_activ_dic(req_max_ver),
@@ -7703,7 +7717,7 @@ class OverviewTableGroup:
 
         req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "0.0")
         creator = app.storage.user.get("current_user", "匿名用户")
-        time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        time_str = datetime.now().isoformat(sep=" ", timespec="microseconds")
 
         # 1. 优雅降级处理：首列为“无”时，强制将同行其他列以 "text" 类型填充为“无”
         ignore_bool = False
@@ -7810,8 +7824,9 @@ class OverviewTableGroup:
         project_names = list(combinations.keys())
         selected_idx = {"val": project_names[0]}
 
-        with self.autofill_dialog, ui.card().classes(
-            "w-[94vw] max-w-[1500px] h-[88vh] max-h-[920px] p-5 flex flex-col gap-3"
+        with (
+            self.autofill_dialog,
+            ui.card().classes("w-[94vw] max-w-[1500px] h-[88vh] max-h-[920px] p-5 flex flex-col gap-3"),
         ):
             ui.label("发现历史项目中存在相同内容的关联配置，是否快捷填充？").classes(
                 "text-lg font-bold text-blue-900 shrink-0"
@@ -7855,9 +7870,7 @@ class OverviewTableGroup:
                             value=project_name if project_name == selected_idx["val"] else None,
                         ).classes("w-full")
                         project_radios[project_name] = radio
-                        radio.on_value_change(
-                            lambda event, name=project_name: handle_radio_change(name, event.value)
-                        )
+                        radio.on_value_change(lambda event, name=project_name: handle_radio_change(name, event.value))
                         with ui.column().classes("w-full gap-1 pl-10 -mt-2"):
                             for title, chip_list in combo.items():
                                 display_texts = []
@@ -7901,7 +7914,10 @@ class OverviewTableGroup:
                     "确认填充",
                     color="green",
                     on_click=lambda e: self._execute_autofill(
-                        row_id, combinations[selected_idx["val"]], col_configs, unified_reason.value,
+                        row_id,
+                        combinations[selected_idx["val"]],
+                        col_configs,
+                        unified_reason.value,
                         btn=e.sender,
                     ),
                 )
@@ -7924,7 +7940,7 @@ class OverviewTableGroup:
 
         req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "0.0")
         creator = app.storage.user.get("current_user", "匿名用户")
-        time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        time_str = datetime.now().isoformat(sep=" ", timespec="microseconds")
         select_activ_dic = self._get_select_activ_dic(req_max_ver)
         for col_cfg in col_configs:
             label = col_cfg["label"]
@@ -8030,7 +8046,7 @@ class OverviewTableGroup:
                             )
 
                         # --- 独立更新 连带影响的历史台账（原子追加） ---
-                        time_str = record_time or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        time_str = record_time or datetime.now().isoformat(sep=" ", timespec="microseconds")
                         current_user = app.storage.user.get("current_user", "匿名用户")
                         record_entry = {
                             "operate_user": current_user,
@@ -8163,7 +8179,7 @@ class OverviewTableGroup:
         【重构：内存聚合，单次原子级写入，杜绝并发撕裂】
         """
         first_col_label = self.configs[0]["label"]
-        time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        time_str = datetime.now().isoformat(sep=" ", timespec="microseconds")
 
         for config in self.configs:
             label = config["label"]
@@ -8204,10 +8220,12 @@ class OverviewTableGroup:
                             "reason": get_automatic_overview_reason("row_cascade_inactive"),
                             "select_activ_dic": copy.deepcopy(new_chip_data["select_activ_dic"]),
                         }
-                        await overview_storage.set_deep_item([f"{self.project}_over_data", label, chip_id], new_chip_data)
+                        await overview_storage.set_deep_item(
+                            [f"{self.project}_over_data", label, chip_id], new_chip_data
+                        )
                         change_bool = True
 
-                        time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        time_str = datetime.now().isoformat(sep=" ", timespec="microseconds")
 
                         def process_close_record(chip_record_dic):
                             if not chip_record_dic or "open" not in chip_record_dic:
@@ -8298,7 +8316,6 @@ class OverviewTableGroup:
                     return
 
             if new_select_activ_dic != OLD_CHIP_SELECT_DIC:
-
                 req_max_ver = f"{str(max([int(float(v)) for v in new_select_activ_dic.keys()]))}.0"
                 ui_spinner.set_visibility(True)
                 target_state = new_select_activ_dic.get(req_max_ver)
@@ -8397,7 +8414,9 @@ class OverviewTableGroup:
             await overview_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "icon"], None)
 
         await overview_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "enabled"], True)
-        await overview_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "bg_color"], "bg-light-blue-1")
+        await overview_storage.set_deep_item(
+            [f"{self.project}_over_data", label, chip_id, "bg_color"], "bg-light-blue-1"
+        )
 
     def show_chip_history(self, chip_data, config):
         self.history_dialog.clear()
@@ -8721,7 +8740,10 @@ class OverviewTableGroup:
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
-                ui.button("提交修改" if prefill else "添加", on_click=lambda e: self._add_svn_chip_data(ui_spinner, btn=e.sender))
+                ui.button(
+                    "提交修改" if prefill else "添加",
+                    on_click=lambda e: self._add_svn_chip_data(ui_spinner, btn=e.sender),
+                )
         self.chip_dialog.open()
 
     async def _add_svn_chip_data(self, ui_spinner, btn=None):
@@ -8855,7 +8877,7 @@ class OverviewTableGroup:
                     "req_ver": req_max_ver,
                     "select_activ_dic": select_activ_dic,
                     "timestamp": {
-                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                        datetime.now().isoformat(sep=" ", timespec="microseconds"): {
                             "creator": creator,
                             "reason": notes,
                             "select_activ_dic": select_activ_dic,
@@ -8981,8 +9003,10 @@ class OverviewTableGroup:
             if selection["mode"] == "existing" and self.change_upload_control is not None:
                 self.change_upload_control.reset()
             ui.notify(
-                f"已选择服务器文件：{selection['name']}" if selection["mode"] == "existing"
-                else f"纠错文件已暂存：{selection['name']}", type="info"
+                f"已选择服务器文件：{selection['name']}"
+                if selection["mode"] == "existing"
+                else f"纠错文件已暂存：{selection['name']}",
+                type="info",
             )
 
     def handle_change_upload_removed(self, _event=None) -> None:
@@ -9088,7 +9112,7 @@ class OverviewTableGroup:
             ui.label(f"{'修改并重提' if existing_req else '申请纠正原记录'} - {config.get('title', label)}").classes(
                 "text-lg font-bold text-blue-900"
             )
-            ui.label("仅用于纠正原始录入错误；技术事实发生变化时请使用批量概述业务变更。").classes(
+            ui.label("仅用于纠正原始录入错误；技术事实发生变化时请使用常规操作进行变更。").classes(
                 "text-xs text-orange-700"
             )
             if existing_req:
@@ -9146,9 +9170,7 @@ class OverviewTableGroup:
                             on_removed=self.handle_change_upload_removed,
                             label="选择纠错文件",
                         )
-                        self.change_upload_status_label = ui.label("未选择纠错文件").classes(
-                            "text-xs text-gray-500"
-                        )
+                        self.change_upload_status_label = ui.label("未选择纠错文件").classes("text-xs text-gray-500")
                         self.new_filename_input = (
                             ui.input(
                                 "纠正后的文件名",
@@ -9262,10 +9284,13 @@ class OverviewTableGroup:
                         ui.notify(str(ex), type="warning")
                         return
                 request_staged_path = (
-                    "" if action_mode["val"] == "delete" or (
+                    ""
+                    if action_mode["val"] == "delete"
+                    or (
                         self.last_temp_upload_selection is not None
                         and self.last_temp_upload_selection["mode"] == "existing"
-                    ) else str(self.last_temp_upload_path or stored_staged_path)
+                    )
+                    else str(self.last_temp_upload_path or stored_staged_path)
                 )
                 media_audit = {}
                 if action_mode["val"] == "correct" and chip_type in {"file", "image", "video"}:
@@ -9332,7 +9357,9 @@ class OverviewTableGroup:
                     "payload": request_payload,
                 }
                 if existing_rid:
-                    saved = await update_correction_request(existing_rid, record, expected=existing_req, actor=current_user)
+                    saved = await update_correction_request(
+                        existing_rid, record, expected=existing_req, actor=current_user
+                    )
                 else:
                     saved, _ = await create_correction_request(record)
                 if not saved:

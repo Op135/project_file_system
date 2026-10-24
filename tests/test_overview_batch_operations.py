@@ -303,7 +303,7 @@ class OverviewBatchOperationTests(unittest.TestCase):
         self.assertEqual(chip["row_id"], "row-1")
         self.assertEqual(chip["select_activ_dic"], {"0.0": False, "1.0": False, "2.0": True})
         timestamp = next(iter(chip["timestamp"]))
-        datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+        datetime.fromisoformat(timestamp)
         self.assertNotIn("notes", chip)
         self.assertEqual(chip["timestamp"][timestamp]["reason"], "批量添加")
         self.assertEqual(get_chip_state_visuals("image", None), ("question_mark", None, "bg-amber-5"))
@@ -373,7 +373,7 @@ class OverviewBatchOperationTests(unittest.TestCase):
         self.assertEqual(updated["icon"], "question_mark")
         self.assertIsNone(updated["enabled"])
         timestamp = next(reversed(updated["timestamp"]))
-        datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+        datetime.fromisoformat(timestamp)
         self.assertEqual(updated["timestamp"][timestamp]["reason"], "状态确认")
 
     def test_state_update_can_require_state_to_still_be_pending(self):

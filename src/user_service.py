@@ -357,6 +357,19 @@ class UserService:
     def get_primary_membership(self, username: str) -> dict[str, Any]:
         return self.identity_store.get_primary_membership(username)
 
+    def get_overview_owner_position_policy(self) -> dict[str, dict[str, Any]]:
+        return self.identity_store.get_overview_owner_position_policy()
+
+    def set_overview_owner_position_policy(
+        self, dimension: str, position_ids: list[str], *, actor_username: str | None = None,
+    ) -> None:
+        self.identity_store.set_overview_owner_position_policy(
+            dimension, position_ids, actor_username=actor_username,
+        )
+
+    def is_overview_owner_eligible(self, username: str, position_ids: set[str]) -> bool:
+        return self.identity_store.is_overview_owner_eligible(username, position_ids)
+
     def list_primary_memberships(self) -> dict[str, dict[str, Any]]:
         return self.identity_store.list_primary_memberships()
 

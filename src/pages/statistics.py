@@ -421,7 +421,7 @@ def statistics_page():
                                 # 特意标记为最近指定，这个特殊标记，给全局刷新概述负责人时，可以跳过，不然指定后又被刷新掉
                                 app.storage.general["overview_role"][pn][role]["latest_user"] = f"最近指定：{new_user}"
                                 app.storage.general["overview_role"][pn][role]["latest_designation_time"] = (
-                                    datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                    datetime.now().isoformat(sep=" ", timespec="microseconds")
                                 )
                             else:
                                 app.storage.general["overview_role"][pn][role]["latest_user"] = ""

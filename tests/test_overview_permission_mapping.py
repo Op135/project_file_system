@@ -1,14 +1,19 @@
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from src.overview_permission_mapping import (
     build_overview_position_permission_plan,
     collect_legacy_overview_role_usage,
     normalize_overview_role_position_mapping,
 )
+from src.overview_operation import append_overview_timestamp
 from src.permission_catalog import PROJECT_VIEW_PERMISSION, project_overview_item_permission
 from src.user_service import UserService
+from src.utils import overview_role_update
 
 
 OVERVIEW_CONFIG = {
@@ -118,6 +123,94 @@ class OverviewPermissionMappingTests(unittest.TestCase):
         )
         self.assertIn(PROJECT_VIEW_PERMISSION, quality_codes)
 
+
+
+class OverviewOwnerPolicyTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.service = UserService(
+            db_path=Path(self.temp.name) / "identity.db", password_iterations=1_000,
+        )
+        self.service.modify_user("add", "张三", "123456", "研发结构")
+        self.service.modify_user("add", "李四", "123456", "研发经理")
+        unit = self.service.save_org_unit(code="test.owner", name="负责人测试部")
+        self.editor_position = self.service.save_position(code="test.owner.editor", name="结构工程师")
+        self.helper_position = self.service.save_position(code="test.owner.helper", name="协助岗位")
+        self.service.set_primary_membership("张三", org_unit_id=unit, position_id=self.editor_position)
+        self.service.set_primary_membership("李四", org_unit_id=unit, position_id=self.helper_position)
+
+    def test_policy_uses_primary_position_and_persists(self):
+        self.service.set_overview_owner_position_policy("结构", [self.editor_position])
+        policy = self.service.get_overview_owner_position_policy()["结构"]
+        self.assertEqual(policy["position_ids"], [self.editor_position])
+        self.assertTrue(self.service.is_overview_owner_eligible("张三", {self.editor_position}))
+        self.assertFalse(self.service.is_overview_owner_eligible("李四", {self.editor_position}))
+        self.assertFalse(self.service.is_overview_owner_eligible("admin", {self.editor_position}))
+        reloaded = UserService(db_path=Path(self.temp.name) / "identity.db", password_iterations=1_000)
+        self.assertEqual(reloaded.get_overview_owner_position_policy()["结构"], policy)
+        chip: dict = {}
+        event_time = append_overview_timestamp(chip, creator="张三", reason="维护")
+        self.assertGreater(
+            datetime.fromisoformat(event_time), datetime.fromisoformat(policy["effective_from"]),
+        )
+
+    def test_restricted_owner_ignores_assisting_edits_and_keeps_history(self):
+        self.service.set_overview_owner_position_policy("结构", [self.editor_position])
+        base = datetime.now() + timedelta(days=1)
+
+        def record(operator: str, offset: int) -> dict:
+            time_text = (base + timedelta(seconds=offset)).isoformat(sep=" ", timespec="seconds")
+            return {"creator": operator, "timestamp": {time_text: {"creator": operator}}}
+
+        data = {"drawing": {
+            "old": record("李四", -100_000),
+            "editor": record("张三", 1),
+            "helper": record("李四", 2),
+        }}
+        general = {
+            "overview_role": {"P1": {"结构": {"latest_user": "最近指定：李四", "most_user": ""}}},
+            "overview_charge_pending": {},
+            "over_config_data": {"结构": {"图纸": [{"label": "drawing"}]}},
+        }
+        fake_app = SimpleNamespace(state=SimpleNamespace(user_service=self.service),
+                                   storage=SimpleNamespace(general=general))
+        with (
+            patch("src.utils.app", fake_app),
+            patch("src.utils.db_storage.get_item", return_value=data),
+            patch("src.utils.update_overview_charge_pending_dic"),
+        ):
+            overview_role_update("P1", "结构")
+            self.assertEqual(general["overview_role"]["P1"]["结构"]["latest_user"], "最近：张三")
+            overview_role_update("P1", "结构")
+            self.assertEqual(general["overview_role"]["P1"]["结构"]["latest_user"], "最近：张三")
+            data["drawing"]["helper2"] = record("李四", 3)
+            overview_role_update("P1", "结构")
+            self.assertEqual(general["overview_role"]["P1"]["结构"]["latest_user"], "最近：张三")
+            self.assertEqual(data["drawing"]["helper2"]["creator"], "李四")
+            role_state = general["overview_role"]["P1"]["结构"]
+            role_state["latest_user"] = "最近指定：李四"
+            role_state["latest_designation_time"] = (base + timedelta(seconds=10)).isoformat(
+                sep=" ", timespec="seconds",
+            )
+            overview_role_update("P1", "结构")
+            self.assertEqual(role_state["latest_user"], "最近指定：李四")
+            data["drawing"]["editor2"] = record("张三", 11)
+            overview_role_update("P1", "结构")
+            self.assertEqual(role_state["latest_user"], "最近：张三")
+
+    def test_empty_policy_keeps_existing_owner(self):
+        self.service.set_overview_owner_position_policy("结构", [])
+        self.assertFalse(self.service.is_overview_owner_eligible("张三", set()))
+
+    def test_invalid_policy_does_not_replace_existing_rules(self):
+        self.service.set_overview_owner_position_policy("结构", [self.editor_position])
+        before = self.service.get_overview_owner_position_policy()
+        with self.assertRaisesRegex(ValueError, "无效的概述职能"):
+            self.service.set_overview_owner_position_policy("不存在", [self.helper_position])
+        with self.assertRaisesRegex(ValueError, "不存在或已停用"):
+            self.service.set_overview_owner_position_policy("结构", ["missing-position"])
+        self.assertEqual(self.service.get_overview_owner_position_policy(), before)
 
 if __name__ == "__main__":
     unittest.main()

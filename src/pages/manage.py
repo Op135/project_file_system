@@ -18,6 +18,7 @@ from ..approval_workflow import (
 from ..config import BASE_DIR, IMG_DIR, PRESET_AVATARS
 from ..identity_codes import STABLE_CODE_HINT, normalize_stable_code, validate_stable_code
 from ..notification_recipients import resolve_position_usernames
+from ..permission_catalog import PROJECT_OVERVIEW_DIMENSIONS, project_overview_item_permission
 from ..requirement_overview_impact import (
     REQUIREMENT_OVERVIEW_IMPACT_STORAGE_KEY,
     RequirementOverviewImpactConfigError,
@@ -1730,6 +1731,72 @@ def manage_page():
                     render_comparison()
                 compare_dialog.open()
 
+            def open_overview_owner_policy_dialog():
+                """配置哪些主岗位的概述维护操作可以自动接管职能负责人。"""
+                policy = user_svc.get_overview_owner_position_policy()
+                positions = [
+                    position for position in user_svc.list_positions()
+                    if position.get("status") == "active"
+                ]
+                config_by_dimension = app.storage.general.get("over_config_data", {})
+                with ui.dialog() as policy_dialog, ui.card().classes(
+                    "w-[54rem] max-w-[95vw] max-h-[90vh] overflow-y-auto p-5 gap-4"
+                ):
+                    ui.label("概述负责人接管岗位").classes("text-xl font-bold")
+                    ui.label(
+                        "维护权限仍决定能否修改；只有主岗位列在此处的人员，其维护记录才会自动改变该项目的职能负责人。"
+                        "未单独配置的职能沿用现有最近操作人规则。"
+                    ).classes("text-sm text-gray-600")
+                    for _code, dimension in PROJECT_OVERVIEW_DIMENSIONS:
+                        labels = {
+                            str(item.get("label") or "")
+                            for items in config_by_dimension.get(dimension, {}).values()
+                            for item in items
+                        }
+                        edit_codes = {
+                            project_overview_item_permission(label, "edit")
+                            for label in labels if label
+                        }
+                        available = {
+                            str(position["position_id"]): str(position["name"])
+                            for position in positions
+                            if edit_codes.intersection(position.get("permission_codes", []))
+                        }
+                        saved = policy.get(dimension)
+                        selected_ids = (
+                            [value for value in saved.get("position_ids", []) if value in available]
+                            if isinstance(saved, dict) else list(available)
+                        )
+                        with ui.column().classes("w-full gap-2 rounded border p-3"):
+                            ui.label(dimension).classes("font-semibold")
+                            position_select = ui.select(
+                                available,
+                                value=selected_ids,
+                                multiple=True,
+                            ).props("outlined use-chips options-dense").classes("w-full")
+
+                            def save_policy(dim=dimension, selector=position_select, choices=available):
+                                if not can(user_svc, current_user, "system.manage"):
+                                    ui.notify("当前账号没有系统管理权限", type="negative")
+                                    return
+                                selected = [str(value) for value in (selector.value or [])]
+                                if any(value not in choices for value in selected):
+                                    ui.notify("所选岗位已失效，请重新打开配置", type="warning")
+                                    return
+                                try:
+                                    user_svc.set_overview_owner_position_policy(
+                                        dim, selected, actor_username=current_user,
+                                    )
+                                except Exception as exc:
+                                    logger.exception("保存概述负责人接管岗位失败：%s", dim)
+                                    ui.notify(f"保存失败：{exc}", type="negative")
+                                    return
+                                ui.notify(f"{dim}接管岗位已保存，现有负责人保持不变", type="positive")
+
+                            ui.button("保存本职能", on_click=save_policy).props("outline dense color=primary")
+                    ui.button("关闭", on_click=policy_dialog.close).props("flat")
+                policy_dialog.open()
+
             with ui.tabs().classes("w-full shrink-0") as tabs:
                 position_tab = ui.tab("岗位默认权限", icon="badge")
                 role_tab = ui.tab("附加权限组", icon="admin_panel_settings")
@@ -1748,11 +1815,17 @@ def manage_page():
                                     ui.label(
                                         "员工绑定主岗位后自动继承这里配置的权限。"
                                     ).classes("text-xs text-gray-500")
-                                ui.button(
-                                    "对比岗位权限",
-                                    icon="compare_arrows",
-                                    on_click=open_compare_position_permissions_dialog,
-                                ).props("outline dense color=primary")
+                                with ui.row().classes("items-center gap-2 flex-wrap"):
+                                    ui.button(
+                                        "对比岗位权限",
+                                        icon="compare_arrows",
+                                        on_click=open_compare_position_permissions_dialog,
+                                    ).props("outline dense color=primary")
+                                    ui.button(
+                                        "概述负责人接管岗位",
+                                        icon="assignment_ind",
+                                        on_click=open_overview_owner_policy_dialog,
+                                    ).props("outline dense color=primary")
                             position_list_container = ui.column().classes(
                                 "w-full flex-grow min-h-0 overflow-y-auto gap-1 pt-2"
                             )

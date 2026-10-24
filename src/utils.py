@@ -1884,6 +1884,11 @@ def overview_role_update(project_name, input_role="all_update"):
     """
     # 将服务器概述资料获取到
     OVERVIEW_DATA = db_storage.get_item(f"{project_name}_over_data", {})
+    user_service = getattr(getattr(app, "state", None), "user_service", None)
+    policy_getter = getattr(user_service, "get_overview_owner_position_policy", None)
+    raw_owner_policy = policy_getter() if callable(policy_getter) else {}
+    owner_policy: dict = raw_owner_policy if isinstance(raw_owner_policy, dict) else {}
+    eligibility_cache: dict[tuple[str, str], bool] = {}
 
     # ---------------------------------------------------------
     # 核心新增：封装交接逻辑闭包函数，用于处理待办数据的抹除与继承
@@ -1921,11 +1926,27 @@ def overview_role_update(project_name, input_role="all_update"):
 
     # ---------------------------------------------------------
 
-    def _collect_role_statistics(over_data_dic: dict) -> tuple[dict, dict, str, datetime | None]:
+    def _collect_role_statistics(role_name: str, over_data_dic: dict) -> tuple[dict, dict, str, datetime | None]:
         frequency_user_dic: dict[str, int] = {}
         original_user_time_dic: dict[str, datetime] = {}
         latest_operator = ""
         latest_operation_time: datetime | None = None
+        rule = owner_policy.get(role_name)
+        restricted = isinstance(rule, dict)
+        eligible_positions = set(rule.get("position_ids", [])) if restricted else set()
+        cutoff = datetime.min
+        if restricted:
+            role_state = app.storage.general["overview_role"][project_name].get(role_name, {})
+            for time_text in (
+                rule.get("effective_from"),
+                role_state.get("latest_owner_operation_time"),
+                role_state.get("latest_designation_time"),
+            ):
+                if time_text:
+                    try:
+                        cutoff = max(cutoff, parse_overview_timestamp(time_text))
+                    except (TypeError, ValueError):
+                        continue
         for over_config_li in over_data_dic.values():
             for over_config in over_config_li:
                 for over_data in OVERVIEW_DATA.get(over_config.get("label"), {}).values():
@@ -1941,13 +1962,45 @@ def overview_role_update(project_name, input_role="all_update"):
                     if operation_time > original_user_time_dic.get(original_creator, datetime.min):
                         original_user_time_dic[original_creator] = operation_time
                     operator = str(latest_record.get("creator") or original_creator)
-                    if latest_operation_time is None or operation_time > latest_operation_time:
+                    if not restricted and (latest_operation_time is None or operation_time > latest_operation_time):
                         latest_operator = operator
                         latest_operation_time = operation_time
+                    if (
+                        restricted
+                        and eligible_positions
+                        and user_service is not None
+                        and operation_time > cutoff
+                        and (latest_operation_time is None or operation_time > latest_operation_time)
+                    ):
+                        history = over_data.get("timestamp", {})
+                        if not isinstance(history, dict):
+                            continue
+                        for event_time_text, event in history.items():
+                            if not isinstance(event, dict):
+                                continue
+                            try:
+                                event_time = parse_overview_timestamp(event_time_text)
+                            except (TypeError, ValueError):
+                                continue
+                            if event_time <= cutoff or (
+                                latest_operation_time is not None and event_time <= latest_operation_time
+                            ):
+                                continue
+                            event_operator = str(event.get("creator") or "").strip()
+                            cache_key = (role_name, event_operator)
+                            if cache_key not in eligibility_cache:
+                                eligibility_cache[cache_key] = user_service.is_overview_owner_eligible(
+                                    event_operator, eligible_positions,
+                                )
+                            if eligibility_cache[cache_key]:
+                                latest_operator = event_operator
+                                latest_operation_time = event_time
         return frequency_user_dic, original_user_time_dic, latest_operator, latest_operation_time
 
     def _apply_role_statistics(role_name: str, over_data_dic: dict) -> None:
-        frequency_user_dic, original_time_dic, latest_user, latest_time = _collect_role_statistics(over_data_dic)
+        frequency_user_dic, original_time_dic, latest_user, latest_time = _collect_role_statistics(
+            role_name, over_data_dic,
+        )
         if not frequency_user_dic:
             return
         over_role_dic = app.storage.general["overview_role"][project_name]
@@ -1967,6 +2020,10 @@ def overview_role_update(project_name, input_role="all_update"):
             return
         _execute_role_handover(role_name, latest_user)
         over_role_dic[role_name]["latest_user"] = f"最近：{latest_user}"
+        if role_name in owner_policy:
+            over_role_dic[role_name]["latest_owner_operation_time"] = latest_time.isoformat(
+                sep=" ", timespec="microseconds",
+            )
 
     # 如果项目名不存在服务器概述数据的键里
     if project_name not in app.storage.general["overview_role"]:

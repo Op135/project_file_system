@@ -115,8 +115,8 @@ def append_overview_timestamp(
     operation_time: Optional[str] = None,
     source_id: str = "",
 ) -> str:
-    """在状态已经修改后，追加一条秒级概述状态快照。"""
-    time_text = operation_time or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    """在状态已经修改后，追加一条高精度概述状态快照。"""
+    time_text = operation_time or datetime.now().isoformat(sep=" ", timespec="microseconds")
     timestamp = chip.setdefault("timestamp", {})
     if time_text in timestamp:
         base_time = datetime.fromisoformat(time_text)

@@ -420,7 +420,7 @@ def build_new_overview_chip(
     actual_type = processing_type or config.get("processing_type", "text")
     icon, enabled, bg_color = get_chip_state_visuals(actual_type, True)
     select_activ_dic = build_select_activ_dic(req_max_ver)
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now_str = datetime.now().isoformat(sep=" ", timespec="microseconds")
     chip = {
         "id": str(uuid.uuid4()),
         "role": config.get("role", ""),
@@ -769,7 +769,7 @@ async def apply_related_overview_impacts(
 ) -> set[str]:
     """把选定的关联概述中所有当前激活 chip 改为待定并记录来源。"""
     changed_labels = set()
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now_str = datetime.now().isoformat(sep=" ", timespec="microseconds")
     record_entry = {
         "operate_user": creator,
         "operate_type": operation_type,
