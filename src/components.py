@@ -1914,7 +1914,6 @@ class InteractiveButton:
         title: str,
         label: str,
         processing_type: str,
-        permission: dict,
         nature: str = "必填",
         allowed_state: list = ["研发", "转产"],
         impact_list: list = [],
@@ -1956,7 +1955,6 @@ class InteractiveButton:
         self.search_hierarchy = search_hierarchy
         self.dialog_placeholder = dialog_placeholder
         self.dialog_label = dialog_label
-        self.permission = permission
         self.test_nature_options = test_nature_options
         self.state_options = state_options
         self.node_options = node_options
@@ -2336,7 +2334,7 @@ class InteractiveButton:
         self.chip_dialog.clear()
         current_user = str(app.storage.user.get("current_user") or "匿名用户")
         current_role = str(app.storage.user.get("current_role") or "")
-        access_config = {"role": self.role, "label": self.label, "permission": self.permission}
+        access_config = {"role": self.role, "label": self.label}
         if not can_edit_overview_item(access_config, current_role, current_user):
             ui.notify("当前角色没有该概述项的纠错申请权限。", type="negative")
             return
@@ -2392,7 +2390,6 @@ class InteractiveButton:
             "title": self.title,
             "role": self.role,
             "processing_type": self.processing_type,
-            "permission": copy.deepcopy(self.permission),
             "upload_path": self.upload_path,
             "state_path": copy.deepcopy(self.state_path),
             "search_scope_regular": self.search_scope_regular,
@@ -4501,7 +4498,7 @@ class InteractiveButton:
         if (
             not self.temp_bool
             and can_edit_overview_item(
-                {"role": self.role, "label": self.label, "permission": self.permission},
+                {"role": self.role, "label": self.label},
                 app.storage.user.get("current_role", ""),
                 str(app.storage.user.get("current_user") or ""),
             )
@@ -4520,7 +4517,7 @@ class InteractiveButton:
             )
             return False
         elif not can_edit_overview_item(
-            {"role": self.role, "label": self.label, "permission": self.permission},
+            {"role": self.role, "label": self.label},
             app.storage.user.get("current_role", ""),
             str(app.storage.user.get("current_user") or ""),
         ):

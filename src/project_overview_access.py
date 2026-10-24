@@ -33,12 +33,6 @@ def _database_mode(user_service=None) -> bool:
     return service is not None
 
 
-def _permission_roles(config: dict, action: str) -> tuple[str, ...]:
-    permission = config.get("permission", {}) if isinstance(config, dict) else {}
-    values = permission.get(f"{action}_role", []) if isinstance(permission, dict) else []
-    return tuple(str(value) for value in values if str(value))
-
-
 def _item_permission(config: dict, action: str) -> str:
     label = str(config.get("label") or "").strip().lower()
     return project_overview_item_permission(label, action) if label else ""
@@ -54,16 +48,7 @@ def can_view_overview_item(
     """判断用户能否查看指定 label 的概述项；维护权限自动包含查看。"""
     service = _service(user_service)
     if not current_user or not _item_permission(config, "view") or not _database_mode(service):
-        role = str(current_role or "")
-        allowed = role in _permission_roles(config, "read") or role in _permission_roles(config, "edit")
-        if current_user and allowed:
-            record_legacy_compatibility_hit(
-                "legacy_role_grant",
-                _item_permission(config, "view") or "project_overview.item.view",
-                username=current_user,
-                detail=f"role={role or '-'}; source=overview_config.json",
-            )
-        return allowed
+        return False
     view_code = _item_permission(config, "view")
     edit_code = _item_permission(config, "edit")
     return bool(view_code and (can(service, current_user, view_code) or can(service, current_user, edit_code)))
@@ -80,24 +65,13 @@ def can_edit_overview_item(
     service = _service(user_service)
     edit_code = _item_permission(config, "edit")
     if not current_user or not _database_mode(service):
-        role = str(current_role or "")
-        allowed = role in _permission_roles(config, "edit")
-        if current_user and allowed:
-            record_legacy_compatibility_hit(
-                "legacy_role_grant",
-                edit_code or "project_overview.item.edit",
-                username=current_user,
-                detail=f"role={role or '-'}; source=overview_config.json",
-            )
-        return allowed
+        return False
     return bool(
         edit_code
         and can(
             service,
             current_user,
             edit_code,
-            legacy_role=str(current_role or ""),
-            legacy_allowed_roles=_permission_roles(config, "edit"),
         )
     )
 

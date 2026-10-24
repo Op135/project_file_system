@@ -18,6 +18,15 @@ OVERVIEW_ROLE_POSITION_MANAGED_META_KEY = "project_overview_role_position_manage
 OVERVIEW_ITEM_PERMISSION_PREFIX = "project_overview.item."
 
 
+def _require_legacy_role_rules(config: dict[str, Any]) -> None:
+    """拒绝把已移除旧角色规则的配置当作空授权计划。"""
+    for groups in config.values():
+        for items in groups.values():
+            for item in items:
+                if not isinstance(item.get("permission"), dict):
+                    raise ValueError("概述配置不含旧角色权限规则，无法执行旧角色批量映射")
+
+
 def load_overview_permission_source(path: Path | str) -> dict[str, Any]:
     """读取并严格校验用于批量映射的概述配置。"""
     source = Path(path)
@@ -26,12 +35,14 @@ def load_overview_permission_source(path: Path | str) -> dict[str, Any]:
     except Exception as exc:
         raise ValueError(f"读取概述配置失败：{exc}") from exc
     project_overview_permission_definitions(config)
+    _require_legacy_role_rules(config)
     return config
 
 
 def collect_legacy_overview_role_usage(config: dict[str, Any]) -> list[dict[str, Any]]:
     """统计旧角色在概述查看和维护规则中分别覆盖多少个 label。"""
     project_overview_permission_definitions(config)
+    _require_legacy_role_rules(config)
     usage: dict[str, dict[str, set[str]]] = defaultdict(
         lambda: {"view_labels": set(), "edit_labels": set()}
     )
@@ -98,6 +109,7 @@ def build_overview_position_permission_plan(
 ) -> dict[str, set[str]]:
     """按旧角色读写规则计算每个目标岗位应拥有的完整概述项权限集合。"""
     project_overview_permission_definitions(config)
+    _require_legacy_role_rules(config)
     plan: dict[str, set[str]] = defaultdict(set)
     for groups in config.values():
         for items in groups.values():

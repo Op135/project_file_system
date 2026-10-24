@@ -273,12 +273,16 @@ class OverviewBatchOperationTests(unittest.TestCase):
         config = {
             "结构": {
                 "图纸": [
-                    {"label": "a", "permission": {"edit_role": ["研发结构"]}},
-                    {"label": "b", "permission": {"edit_role": ["研发经理"]}},
+                    {"label": "a"},
+                    {"label": "b"},
                 ]
             }
         }
-        result = collect_editable_overview_configs(config, "研发结构", {"图纸": "OverviewTableGroup"})
+        with patch(
+            "src.overview_batch_operations.can_edit_overview_item",
+            side_effect=lambda item, role, user: item["label"] == "a",
+        ):
+            result = collect_editable_overview_configs(config, "研发结构", {"图纸": "OverviewTableGroup"})
         self.assertEqual([item["label"] for item in result], ["a"])
         self.assertTrue(result[0]["is_table_group"])
         self.assertEqual(result[0]["first_col_label"], "a")

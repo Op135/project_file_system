@@ -30,6 +30,7 @@ class OverviewECNIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.app = SimpleNamespace(storage=SimpleNamespace(user={"current_user": "测试人员"}, general={}))
         self.stack.enter_context(patch.object(components, "app", self.app))
         self.stack.enter_context(patch.object(overview_corrections, "app", self.app))
+        self.stack.enter_context(patch.object(overview_corrections, "can_edit_overview_item", return_value=True))
         self.notify = self.stack.enter_context(patch.object(components.ui, "notify"))
         self.bump = self.stack.enter_context(patch.object(components.OverviewVersionManager, "bump"))
 
@@ -166,7 +167,7 @@ class OverviewECNIntegrationTests(unittest.IsolatedAsyncioTestCase):
         if isolated:
             before["local_file_path"] = str(old)
         config = {"label": "files", "processing_type": chip_type, "upload_path": str(self.root),
-                  "permission": {"edit_role": ["editor"]}, "content_regular": []}
+                  "content_regular": []}
         await self.storage.set_item("P_over_data", {"files": {"f": before}})
         self.app.storage.general = {"over_config_data_flat": {"files": config}}
         request = {"project": "P", "label": "files", "chip_id": "f", "action": "correct",

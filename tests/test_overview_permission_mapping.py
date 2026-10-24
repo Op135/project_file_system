@@ -52,6 +52,11 @@ class OverviewPermissionMappingTests(unittest.TestCase):
     def tearDown(self):
         self.temp_dir.cleanup()
 
+    def test_mapping_rejects_config_without_legacy_rules(self):
+        config = {"硬件": {"电路": [{"label": "alpha_item", "title": "甲项目"}]}}
+        with self.assertRaisesRegex(ValueError, "不含旧角色权限规则"):
+            build_overview_position_permission_plan(config, {"质量": [self.quality_position]})
+
     def test_collect_usage_and_build_many_position_plan(self):
         usage = {item["role"]: item for item in collect_legacy_overview_role_usage(OVERVIEW_CONFIG)}
         self.assertEqual(usage["质量"]["view_count"], 2)

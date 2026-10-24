@@ -2,6 +2,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from src.access_control import can_use_tool, can_view_tools
 from src.ecn_management_config import ECNState
@@ -564,11 +565,9 @@ class AccessControlTests(unittest.TestCase):
         overview_config = {
             "hardware_summary": {
                 "label": "hardware_summary",
-                "permission": {"edit_role": ["研发硬件"]},
             },
             "optical_summary": {
                 "label": "optical_summary",
-                "permission": {"edit_role": ["研发光学"]},
             },
         }
 
@@ -944,15 +943,17 @@ class AccessControlTests(unittest.TestCase):
             ],
             actor_username="admin",
         )
-        hardware = {"role": "硬件", "label": "drive_pcb", "permission": {"read_role": [], "edit_role": []}}
+        hardware = {"role": "硬件", "label": "drive_pcb"}
         software = {
             "role": "软件",
             "label": "software_manual",
-            "permission": {"read_role": [], "edit_role": ["研发硬件"]},
         }
         self.assertTrue(can_view_overview_item(hardware, "普通岗位", "张三", user_service=self.service))
         self.assertTrue(can_edit_overview_item(hardware, "普通岗位", "张三", user_service=self.service))
         self.assertFalse(can_view_overview_item(software, "研发硬件", "张三", user_service=self.service))
+        with patch("src.project_overview_access._service", return_value=None):
+            self.assertFalse(can_view_overview_item(hardware, "研发硬件", "张三"))
+            self.assertFalse(can_edit_overview_item(hardware, "研发硬件", "张三"))
         self.assertTrue(
             can_submit_batch_overview("普通岗位", "张三", ["其它旧角色"], user_service=self.service)
         )
